@@ -1,0 +1,11 @@
+build/
+install/
+log/
+__pycache__/
+*.pyc
+*.egg-info/
+.eggs/
+*.pt
+*.onnx
+*.whl
+yolov5/
