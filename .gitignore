@@ -9,3 +9,5 @@ __pycache__/
 *.onnx
 *.whl
 yolov5/
+src/examples/
+src/geometry2/
