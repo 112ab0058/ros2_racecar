@@ -1,0 +1,123 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <world name="wro2026_open_narrow">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- 地板 -->
+    <model name="ground"><static>true</static>
+      <link name="link">
+        <collision name="col"><geometry><box><size>3.2 3.2 0.01</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>3.2 3.2 0.01</size></box></geometry>
+          <material><ambient>0.95 0.95 0.95 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material></visual>
+      </link></model>
+
+    <!-- 外牆 4面 (同 wide) -->
+    <model name="wall_north"><static>true</static><pose>0 1.6 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>3.2 0.02 0.3</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>3.2 0.02 0.3</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material></visual>
+      </link></model>
+    <model name="wall_south"><static>true</static><pose>0 -1.6 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>3.2 0.02 0.3</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>3.2 0.02 0.3</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material></visual>
+      </link></model>
+    <model name="wall_east"><static>true</static><pose>1.6 0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.02 3.2 0.3</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.02 3.2 0.3</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material></visual>
+      </link></model>
+    <model name="wall_west"><static>true</static><pose>-1.6 0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.02 3.2 0.3</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.02 3.2 0.3</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material></visual>
+      </link></model>
+
+    <!-- 內牆 600mm 走道: 內牆中心 y=±1.0, 長 1.96m -->
+    <model name="inner_north"><static>true</static><pose>0 1.0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>1.96 0.02 0.3</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>1.96 0.02 0.3</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material></visual>
+      </link></model>
+    <model name="inner_south"><static>true</static><pose>0 -1.0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>1.96 0.02 0.3</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>1.96 0.02 0.3</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material></visual>
+      </link></model>
+    <model name="inner_east"><static>true</static><pose>1.0 0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.02 1.96 0.3</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.02 1.96 0.3</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material></visual>
+      </link></model>
+    <model name="inner_west"><static>true</static><pose>-1.0 0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.02 1.96 0.3</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.02 1.96 0.3</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse></material></visual>
+      </link></model>
+
+    <!-- 起始區 visual only -->
+    <model name="start_zone"><static>true</static><pose>0 -1.3 0.006 0 0 0</pose>
+      <link name="link">
+        <visual name="vis"><geometry><box><size>0.2 0.5 0.001</size></box></geometry>
+          <material><ambient>1 0 1 1</ambient><diffuse>1 0 1 1</diffuse></material></visual>
+      </link></model>
+
+    <!-- 橘藍線 (narrow 走道中線在 1.3m, 重新計算位置) -->
+    <model name="orange_line_nw"><static>true</static><pose>-1.2400 1.0550 0.006 0 0 -0.3187</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.6530 0.02 0.001</size></box></geometry>
+        <material><ambient>1.0 0.4 0 1</ambient><diffuse>1.0 0.4 0 1</diffuse></material></visual></link></model>
+    <model name="blue_line_nw"><static>true</static><pose>-1.0550 1.2400 0.006 0 0 -1.2520</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.6530 0.02 0.001</size></box></geometry>
+        <material><ambient>0 0.2 1.0 1</ambient><diffuse>0 0.2 1.0 1</diffuse></material></visual></link></model>
+    <model name="orange_line_ne"><static>true</static><pose>1.0550 1.2400 0.006 0 0 -1.8895</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.6530 0.02 0.001</size></box></geometry>
+        <material><ambient>1.0 0.4 0 1</ambient><diffuse>1.0 0.4 0 1</diffuse></material></visual></link></model>
+    <model name="blue_line_ne"><static>true</static><pose>1.2400 1.0550 0.006 0 0 -2.8228</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.6530 0.02 0.001</size></box></geometry>
+        <material><ambient>0 0.2 1.0 1</ambient><diffuse>0 0.2 1.0 1</diffuse></material></visual></link></model>
+    <model name="orange_line_se"><static>true</static><pose>1.2400 -1.0550 0.006 0 0 2.8228</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.6530 0.02 0.001</size></box></geometry>
+        <material><ambient>1.0 0.4 0 1</ambient><diffuse>1.0 0.4 0 1</diffuse></material></visual></link></model>
+    <model name="blue_line_se"><static>true</static><pose>1.0550 -1.2400 0.006 0 0 1.8895</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.6530 0.02 0.001</size></box></geometry>
+        <material><ambient>0 0.2 1.0 1</ambient><diffuse>0 0.2 1.0 1</diffuse></material></visual></link></model>
+    <model name="orange_line_sw"><static>true</static><pose>-1.0550 -1.2400 0.006 0 0 1.2520</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.6530 0.02 0.001</size></box></geometry>
+        <material><ambient>1.0 0.4 0 1</ambient><diffuse>1.0 0.4 0 1</diffuse></material></visual></link></model>
+    <model name="blue_line_sw"><static>true</static><pose>-1.2400 -1.0550 0.006 0 0 0.3187</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.6530 0.02 0.001</size></box></geometry>
+        <material><ambient>0 0.2 1.0 1</ambient><diffuse>0 0.2 1.0 1</diffuse></material></visual></link></model>
+
+    <!-- TurtleBot3 -->
+    <include>
+      <uri>model://turtlebot3_burger_cam</uri>
+      <pose>0 -1.3 0.01 0 0 0</pose>
+    </include>
+
+  </world>
+</sdf>
