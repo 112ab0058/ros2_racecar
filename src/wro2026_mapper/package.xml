@@ -3,9 +3,9 @@
 <package format="3">
   <name>wro2026_mapper</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="ray@todo.todo">ray</maintainer>
-  <license>TODO: License declaration</license>
+  <description>Independent WRO 2026 lawn-mower mapping tool for /odom and /scan based coverage runs.</description>
+  <maintainer email="team@wro2026.com">WRO 2026 Team</maintainer>
+  <license>MIT</license>
 
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>

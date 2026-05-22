@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""
+Independent WRO 2026 lawn-mower mapping tool.
+
+This node subscribes to /odom and /scan, then publishes motion commands on
+/cmd_vel while it executes a fixed coverage pattern. Do not run it at the same
+time as wro2026_sim/scripts/line_follower.py, because both nodes can publish
+/cmd_vel. Step 6/7 official line-triggered race control still uses
+wro2026_sim/scripts/line_follower.py.
+"""
 
 import math
 import time

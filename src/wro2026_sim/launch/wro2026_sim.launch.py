@@ -5,6 +5,8 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    # Legacy SLAM launch. This is not the official Step 6/7 line-triggered
+    # control launch; use wro2026_step6_lidar.launch.py for that workflow.
 
     set_gz_resource = SetEnvironmentVariable(
         name="GZ_SIM_RESOURCE_PATH",

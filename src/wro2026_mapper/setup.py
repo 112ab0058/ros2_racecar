@@ -13,10 +13,10 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='ray',
-    maintainer_email='ray@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    maintainer='WRO 2026 Team',
+    maintainer_email='team@wro2026.com',
+    description='Independent WRO 2026 lawn-mower mapping tool for /odom and /scan based coverage runs.',
+    license='MIT',
     extras_require={
         'test': [
             'pytest',
@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'wro2026_mapper = wro2026_mapper.wro2026_mapper:main'
+            'wro2026_mapper = wro2026_mapper.wro2026_mapper:main',
         ],
     },
 )
