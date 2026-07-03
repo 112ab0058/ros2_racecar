@@ -6,6 +6,9 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    # LiDAR/odom debug baseline only. This launch does not start the camera
+    # bridge or line_detector, so it is not the official line-triggered
+    # Step 6/7 full-lap test launch.
     package_dir = os.path.expanduser("~/ros2_ws/src/wro2026_sim")
     world_file = os.path.join(package_dir, "worlds", "wro2026_field.sdf")
     line_follower_script = os.path.join(package_dir, "scripts", "line_follower.py")
