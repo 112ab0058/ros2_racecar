@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Step 6/7: line-triggered LiDAR wall-centering + odom-yaw corner controller.
+160 cm field controller: line-triggered turns, speed zones, and LiDAR gap
+avoidance for the upper continuous-obstacle section.
 
 Normal cornering is triggered by /line_detection:
   - orange trigger: right turn
   - blue trigger: left turn
 
-Front LiDAR distance is only an emergency / recovery guard. The wall-distance
-turning version is kept separately as line_follower_wall_debug.py.
+The controller keeps the earlier line/odom turn state machine, then adds a
+bounded obstacle-avoidance layer for the 1600 x 1600 mm project field.
 """
 
 from __future__ import annotations
@@ -24,16 +25,18 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Float32MultiArray
 
 # Motion tuning
-STRAIGHT_SPEED       = 0.170
-APPROACH_SPEED       = 0.095
-ALIGN_SPEED          = 0.085
-POST_TURN_SPEED      = 0.120
-TURN_LINEAR_SPEED    = 0.060
+STRAIGHT_SPEED       = 0.125
+FAST_STRAIGHT_SPEED  = 0.180
+OBSTACLE_ZONE_SPEED  = 0.090
+APPROACH_SPEED       = 0.080
+ALIGN_SPEED          = 0.070
+POST_TURN_SPEED      = 0.095
+TURN_LINEAR_SPEED    = 0.045
 
 MAX_STRAIGHT_ANGULAR = 0.55
-MAX_TURN_ANGULAR     = 0.62
+MAX_TURN_ANGULAR     = 0.58
 MIN_TURN_ANGULAR     = 0.20
-TURN_KP              = 1.05
+TURN_KP              = 0.95
 
 # LiDAR geometry
 FRONT_DEG            = 0.0
@@ -43,19 +46,19 @@ LEFT_SIDE_DEG        = 90.0
 RIGHT_SIDE_DEG       = 270.0
 
 SECTOR_WIDTH_DEG     = 8.0
-WIDE_SECTOR_WIDTH_DEG = 8.0   # was 14.0 — narrowed to avoid corner opening reads
+WIDE_SECTOR_WIDTH_DEG = 8.0   # was 14.0, narrowed to avoid corner opening reads
 MIN_VALID_RANGE      = 0.05
 MAX_VALID_RANGE      = 10.0
 MAX_SIDE_FOR_CENTERING = 1.20
 MAX_DIAG_FOR_CENTERING = 1.20
 
 # Line-triggered corner detection
-EMERGENCY_FRONT_DIST     = 0.30
+EMERGENCY_FRONT_DIST     = 0.20
 LINE_TRIGGER_LATCH_SEC   = 1.2
 LINE_TRIGGER_COOLDOWN_SEC = 2.0
 LINE_TRIGGER_LOCKOUT_DIST = 0.45
 LINE_APPROACH_MIN_SEC    = 0.35
-LINE_APPROACH_DIST       = 0.14
+LINE_APPROACH_DIST       = 0.10
 LINE_APPROACH_MAX_SEC    = 2.0
 
 # Turn completion
@@ -71,10 +74,33 @@ ALIGN_MIN_SEC            = 0.45
 ALIGN_MAX_SEC            = 2.2
 ALIGN_EXIT_FRONT_DIST    = 0.48
 POST_TURN_MIN_SEC        = 0.75
-POST_TURN_MIN_DIST       = 0.26
+POST_TURN_MIN_DIST       = 0.18
 POST_TURN_MAX_SEC        = 5.0
 POST_TURN_CLEAR_FRONT_DIST = 0.45
-POST_TURN_RECOVER_FRONT_DIST = 0.32
+POST_TURN_RECOVER_FRONT_DIST = 0.24
+
+# 160 cm field zones
+FAST_ZONE_Y_MAX       = -0.32
+OBSTACLE_ZONE_Y_MIN   = 0.28
+OBSTACLE_ZONE_X_LIMIT = 0.58
+CORNER_ZONE_ABS_X     = 0.46
+CORNER_ZONE_ABS_Y     = 0.46
+CORNER_SPEED          = 0.090
+
+# Continuous obstacle avoidance
+AVOID_TRIGGER_DIST    = 0.46
+AVOID_CLEAR_DIST      = 0.62
+AVOID_MIN_SEC         = 0.45
+AVOID_MAX_SEC         = 4.0
+AVOID_SPEED           = 0.075
+AVOID_MAX_ANGULAR     = 0.48
+AVOID_TURN_BIAS       = 0.34
+RETURN_TO_LINE_SEC    = 0.70
+RETURN_TO_LINE_DIST   = 0.14
+RETURN_TO_LINE_SPEED  = 0.085
+GAP_LEFT_DEG          = 35.0
+GAP_RIGHT_DEG         = 325.0
+GAP_WIDTH_DEG         = 18.0
 
 # Recovery
 RECOVER_STOP_SEC         = 0.25
@@ -167,11 +193,13 @@ class SquareCourseFollower(Node):
         self._line_reason = "none"
         self._last_line_trigger_t = -1.0
         self._last_line_trigger_xy: tuple[float, float] | None = None
+        self._avoid_direction = 0.0
 
         self._prev_wall_error = 0.0
         self._prev_wall_t = self._now()
 
-        self.get_logger().info("Line-triggered LiDAR follower started")
+        self.get_logger().info(
+            "160 cm line-triggered follower with LiDAR gap avoidance started")
 
     def _now(self) -> float:
         return self._odom_t if self._odom_t is not None else time.monotonic()
@@ -408,6 +436,67 @@ class SquareCourseFollower(Node):
             return s.front_min
         return s.front
 
+    def _in_fast_zone(self) -> bool:
+        if self._xy is None:
+            return False
+        return self._xy[1] < FAST_ZONE_Y_MAX and abs(self._xy[0]) < OBSTACLE_ZONE_X_LIMIT
+
+    def _in_obstacle_zone(self) -> bool:
+        if self._xy is None:
+            return False
+        return self._xy[1] > OBSTACLE_ZONE_Y_MIN and abs(self._xy[0]) < OBSTACLE_ZONE_X_LIMIT
+
+    def _in_corner_zone(self) -> bool:
+        if self._xy is None:
+            return False
+        return abs(self._xy[0]) > CORNER_ZONE_ABS_X and abs(self._xy[1]) > CORNER_ZONE_ABS_Y
+
+    def _straight_speed(self) -> float:
+        if self._in_corner_zone():
+            return CORNER_SPEED
+        if self._in_obstacle_zone():
+            return OBSTACLE_ZONE_SPEED
+        if self._in_fast_zone():
+            return FAST_STRAIGHT_SPEED
+        return STRAIGHT_SPEED
+
+    def _gap_score(self, msg: LaserScan, center_deg: float) -> float:
+        values = self._sector_values(msg, center_deg, GAP_WIDTH_DEG)
+        if not values:
+            return 0.0
+        values.sort()
+        return values[len(values) // 2]
+
+    def _choose_gap_direction(self, msg: LaserScan) -> float:
+        left_score = self._gap_score(msg, GAP_LEFT_DEG)
+        right_score = self._gap_score(msg, GAP_RIGHT_DEG)
+        if left_score == 0.0 and right_score == 0.0:
+            return -1.0
+        return 1.0 if left_score >= right_score else -1.0
+
+    def _should_start_avoidance(self, front: float | None) -> bool:
+        if front is None:
+            return False
+        if not self._in_obstacle_zone():
+            return False
+        return EMERGENCY_FRONT_DIST < front < AVOID_TRIGGER_DIST
+
+    def _start_avoidance(self, msg: LaserScan, front: float | None):
+        self._avoid_direction = self._choose_gap_direction(msg)
+        self._clear_line_latch()
+        self._set_state("AVOID_OBSTACLE")
+        self.get_logger().warn(
+            f"AVOID_OBSTACLE start front={front} "
+            f"direction={self._avoid_direction:+.0f} {self._pose_text()}")
+
+    def _avoid_angular(self, msg: LaserScan, s: ScanSummary) -> tuple[float, float]:
+        direction = self._choose_gap_direction(msg)
+        if direction != 0.0:
+            self._avoid_direction = direction
+        wall_angular, wall_error = self._wall_angular(s, 0.18)
+        angular = self._avoid_direction * AVOID_TURN_BIAS + wall_angular
+        return clamp(angular, -AVOID_MAX_ANGULAR, AVOID_MAX_ANGULAR), wall_error
+
     def _start_approach(self, reason: str, direction: float):
         if self._state != "STRAIGHT":
             return
@@ -507,11 +596,17 @@ class SquareCourseFollower(Node):
             if front is not None and front < EMERGENCY_FRONT_DIST:
                 self._start_recover(f"emergency front={front:.3f}m in STRAIGHT")
                 return
-            angular, error = self._drive_centered(s, STRAIGHT_SPEED, MAX_STRAIGHT_ANGULAR)
+            if self._should_start_avoidance(front):
+                self._start_avoidance(msg, front)
+                return
+            speed = self._straight_speed()
+            angular, error = self._drive_centered(s, speed, MAX_STRAIGHT_ANGULAR)
             self.get_logger().info(
                 f"STRAIGHT front={front} LS={s.left_side} RS={s.right_side} "
                 f"LF={s.left_front} RF={s.right_front} "
-                f"err={error:+.3f} ang={angular:+.3f} {self._pose_text()}",
+                f"speed={speed:.3f} err={error:+.3f} ang={angular:+.3f} "
+                f"zones fast={self._in_fast_zone()} obs={self._in_obstacle_zone()} "
+                f"corner={self._in_corner_zone()} {self._pose_text()}",
                 throttle_duration_sec=0.6)
             return
 
@@ -568,10 +663,17 @@ class SquareCourseFollower(Node):
                 return
             angular = self._turn_angular()
             self._publish(TURN_LINEAR_SPEED, angular)
+            yaw_text = f"{self._yaw:+.3f}" if self._yaw is not None else "None"
+            target_text = (
+                f"{self._turn_target_yaw:+.3f}"
+                if self._turn_target_yaw is not None
+                else "None"
+            )
+            error_text = f"{yaw_error:+.3f}" if yaw_error is not None else "None"
             self.get_logger().info(
                 f"TURN {self._elapsed():.2f}/{TURN_TIMEOUT_SEC:.2f}s "
-                f"yaw={self._yaw:+.3f} target={self._turn_target_yaw:+.3f} "
-                f"error={yaw_error:+.3f} progress={math.degrees(progress):.1f}deg "
+                f"yaw={yaw_text} target={target_text} "
+                f"error={error_text} progress={math.degrees(progress):.1f}deg "
                 f"front={front} lin={TURN_LINEAR_SPEED:.3f} ang={angular:+.3f}",
                 throttle_duration_sec=0.25)
             return
@@ -640,6 +742,45 @@ class SquareCourseFollower(Node):
                 f"POST_TURN {elapsed:.2f}s dist={distance:.3f} front={front} "
                 f"heading_err={heading_error:+.3f} ang={angular:+.3f} "
                 f"{self._pose_text()}",
+                throttle_duration_sec=0.4)
+            return
+
+        if self._state == "AVOID_OBSTACLE":
+            elapsed = self._elapsed()
+            if front is not None and front < EMERGENCY_FRONT_DIST:
+                self._start_recover(f"emergency front={front:.3f}m in AVOID_OBSTACLE")
+                return
+            angular, wall_error = self._avoid_angular(msg, s)
+            self._publish(AVOID_SPEED, angular)
+            if elapsed >= AVOID_MIN_SEC and self._front_is_clear(front, AVOID_CLEAR_DIST):
+                self._set_state("RETURN_TO_LINE")
+                return
+            if elapsed >= AVOID_MAX_SEC:
+                self.get_logger().warn(
+                    f"AVOID_OBSTACLE timeout front={front}; returning to line")
+                self._set_state("RETURN_TO_LINE")
+                return
+            self.get_logger().warn(
+                f"AVOID_OBSTACLE {elapsed:.2f}s front={front} "
+                f"dir={self._avoid_direction:+.0f} wall_err={wall_error:+.3f} "
+                f"ang={angular:+.3f} {self._pose_text()}",
+                throttle_duration_sec=0.3)
+            return
+
+        if self._state == "RETURN_TO_LINE":
+            elapsed = self._elapsed()
+            distance = self._distance_from_state_start()
+            if front is not None and front < EMERGENCY_FRONT_DIST:
+                self._start_recover(f"emergency front={front:.3f}m in RETURN_TO_LINE")
+                return
+            angular, error = self._drive_centered(
+                s, RETURN_TO_LINE_SPEED, STRAIGHT_CENTER_MAX_ANGULAR)
+            if elapsed >= RETURN_TO_LINE_SEC and distance >= RETURN_TO_LINE_DIST:
+                self._set_state("STRAIGHT")
+                return
+            self.get_logger().info(
+                f"RETURN_TO_LINE {elapsed:.2f}s dist={distance:.3f} front={front} "
+                f"err={error:+.3f} ang={angular:+.3f} {self._pose_text()}",
                 throttle_duration_sec=0.4)
             return
 

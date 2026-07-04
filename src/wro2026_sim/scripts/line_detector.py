@@ -37,7 +37,7 @@ class LineDetector(Node):
     def __init__(self):
         super().__init__('line_detector')
         self.declare_parameter('image_topic',   '/camera/image_raw')
-        self.declare_parameter('debug',          True)
+        self.declare_parameter('debug',          False)
         self.declare_parameter('area_threshold', AREA_THRESHOLD)
         self.declare_parameter('trigger_area',   TRIGGER_AREA)
         self.declare_parameter('roi_top_ratio',  ROI_TOP_RATIO)
