@@ -7,7 +7,8 @@ The WSL workflow should prioritize stable real-time simulation over pretty visua
 ## Current Defaults
 
 - Official race launch: `race.launch.py`
-- Gazebo mode: server-only by default, `gz sim -r -s`
+- Gazebo mode: server-only by default, `gui:=false` -> `gz sim -r -s`
+- GUI inspection mode: `gui:=true` -> `gz sim -r`
 - Physics step: `max_step_size = 0.005`
 - Race launch does not start SLAM or Nav2.
 - `line_detector.py` debug image publishing is disabled by default.
@@ -43,6 +44,18 @@ Do not start SLAM/Nav2 in `race.launch.py`.
 ros2 launch wro2026_sim race.launch.py
 ```
 
+For one-shot visual inspection, either start with GUI:
+
+```bash
+ros2 launch wro2026_sim race.launch.py gui:=true
+```
+
+or attach a GUI to an already running server-only simulation:
+
+```bash
+gz sim -g
+```
+
 2. Confirm topics:
 
 ```bash
@@ -68,10 +81,16 @@ ros2 topic echo /cmd_vel --once
 
 ## GUI Mode
 
-For visual inspection only, run Gazebo GUI manually with the same world:
+For visual inspection only, prefer the launch argument:
 
 ```bash
-gz sim -r ~/ros2_ws/src/wro2026_sim/worlds/wro2026_field.sdf
+ros2 launch wro2026_sim race.launch.py gui:=true
 ```
 
-Do not use GUI mode for long tuning runs unless the machine can keep real-time factor near 1.0.
+When race launch is already running in the default server-only mode, attach the GUI with:
+
+```bash
+gz sim -g
+```
+
+2026-07-05 test result: server-only `race.launch.py` ran cleanly, `gz sim -g` could attach for visual inspection, and the no-obstacle baseline completed at least 1 lap without immediate recovery. Do not use GUI mode for long tuning runs unless the machine can keep real-time factor near 1.0.

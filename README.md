@@ -118,7 +118,8 @@ ros2 launch wro2026_sim race.launch.py
 
 It starts:
 
-- Gazebo server-only: `gz sim -r -s`
+- Gazebo server-only by default: `gz sim -r -s`
+- Optional GUI inspection: `ros2 launch wro2026_sim race.launch.py gui:=true`
 - bridge topics: `/cmd_vel`, `/scan`, `/clock`, `/camera/image_raw`, `/camera/camera_info`
 - `gazebo_ground_truth_odom.py`
 - `line_detector.py`
@@ -174,6 +175,8 @@ Current behavior:
 - South straight uses a faster speed zone.
 - North obstacle zone uses a slower LiDAR gap-selection avoidance mode.
 - Emergency recovery still stops/reverses only when the obstacle is too close.
+- Current no-obstacle baseline starts from `(-0.05, -0.50, yaw 0)` with startup line lockout and has completed at least 1 lap in Gazebo.
+- Yellow obstacle models are temporarily staged on the central island for no-obstacle tuning; move them back to the north section for 1-obstacle and 3-obstacle tests.
 
 AI is intentionally not in the first control loop. YOLO can be added later for red/green pillars or parking/station markers, but it should not directly control the car in the first stable version.
 
@@ -182,6 +185,7 @@ AI is intentionally not in the first control loop. YOLO can be added later for r
 Race mode is optimized for WSL:
 
 - server-only Gazebo by default
+- GUI available with `gui:=true` only for inspection
 - `max_step_size = 0.005`
 - simple box/cylinder primitives
 - no SLAM/Nav2 in race launch
@@ -226,9 +230,9 @@ The old tutorial packages, loose demo scripts, old 3.2 m maps, old mapper packag
 
 ## Next Work
 
-1. Run `race.launch.py` and verify the 160 cm world starts smoothly.
-2. Tune line detection positions and turn parameters until the car can complete 3 laps without obstacles.
-3. Test one obstacle, then three obstacles, in the north continuous obstacle zone.
+1. Run the no-obstacle baseline for 3 laps and watch line trigger repeatability.
+2. Move one obstacle back to the north continuous obstacle zone and tune avoidance.
+3. Test three obstacles after the one-obstacle case is stable.
 4. Tune speed zones so the south straight is visibly faster and corners remain controlled.
 5. Add parking/docking detection and action.
 6. Create the future physical packages when encoder, IMU, CAN, and MCU interfaces are ready.

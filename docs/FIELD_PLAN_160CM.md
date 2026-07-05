@@ -40,6 +40,7 @@ central island: x/y = -0.2 to +0.2
 high-speed straight: y around -0.5
 obstacle zone: y around +0.5
 parking/docking bay: x around +0.6
+current spawn: x=-0.05, y=-0.50, yaw=0
 ```
 
 ## Physical Materials
@@ -62,5 +63,9 @@ The first Gazebo version keeps the lines and uses the existing line detector. Th
 The orange and blue turn lines must stay diagonal, matching the old WRO-style corner trigger layout scaled down to the 160 cm field. Do not replace them with horizontal/vertical cross marks.
 
 The east parking/docking dividers are visual-only in the current race world so the main loop is not blocked. Add physical collision for parking only when the parking behavior is implemented and tested separately.
+
+During the no-obstacle baseline tuning on 2026-07-05, the three yellow obstacle models are temporarily staged on the central island at `x=-0.08/0.00/+0.08, y=0.00`. Their model names and collisions remain in the world so they can be moved back to the north obstacle section for the next 1-obstacle and 3-obstacle tests.
+
+The race robot spawn is on the south straight at `(-0.05, -0.50, yaw 0)`. This keeps the robot away from the southwest diagonal line at startup while still pointing along the counterclockwise race direction.
 
 Do not generate a new map until the world dimensions and obstacle module positions are stable. The old 3.2 m map files were removed from the mainline to avoid using the wrong scale by accident.

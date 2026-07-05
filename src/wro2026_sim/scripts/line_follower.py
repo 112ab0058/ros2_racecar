@@ -27,11 +27,12 @@ from std_msgs.msg import Float32MultiArray
 # Motion tuning
 STRAIGHT_SPEED       = 0.125
 FAST_STRAIGHT_SPEED  = 0.180
+STARTUP_SPEED        = 0.110
 OBSTACLE_ZONE_SPEED  = 0.090
 APPROACH_SPEED       = 0.080
 ALIGN_SPEED          = 0.070
 POST_TURN_SPEED      = 0.095
-TURN_LINEAR_SPEED    = 0.045
+TURN_LINEAR_SPEED    = 0.035
 
 MAX_STRAIGHT_ANGULAR = 0.55
 MAX_TURN_ANGULAR     = 0.58
@@ -54,11 +55,13 @@ MAX_DIAG_FOR_CENTERING = 1.20
 
 # Line-triggered corner detection
 EMERGENCY_FRONT_DIST     = 0.20
+STARTUP_IGNORE_LINES_SEC = 2.0
+STARTUP_IGNORE_LINES_DIST = 0.25
 LINE_TRIGGER_LATCH_SEC   = 1.2
 LINE_TRIGGER_COOLDOWN_SEC = 2.0
-LINE_TRIGGER_LOCKOUT_DIST = 0.45
+LINE_TRIGGER_LOCKOUT_DIST = 0.60
 LINE_APPROACH_MIN_SEC    = 0.35
-LINE_APPROACH_DIST       = 0.10
+LINE_APPROACH_DIST       = 0.18
 LINE_APPROACH_MAX_SEC    = 2.0
 
 # Turn completion
@@ -178,6 +181,9 @@ class SquareCourseFollower(Node):
         self._yaw: float | None = None
         self._odom_t: float | None = None
         self._xy: tuple[float, float] | None = None
+        self._startup_t: float | None = None
+        self._startup_xy: tuple[float, float] | None = None
+        self._startup_line_lockout_done = False
 
         self._state = "STRAIGHT"
         self._state_start_t = self._now()
@@ -221,6 +227,40 @@ class SquareCourseFollower(Node):
         dy = self._xy[1] - xy[1]
         return math.hypot(dx, dy)
 
+    def _startup_elapsed(self) -> float:
+        if self._startup_t is None:
+            return 0.0
+        return max(0.0, self._now() - self._startup_t)
+
+    def _startup_distance(self) -> float:
+        return self._distance_from_xy(self._startup_xy) or 0.0
+
+    def _startup_line_lockout_active(self) -> bool:
+        if self._startup_line_lockout_done:
+            return False
+        if self._startup_t is None or self._startup_xy is None:
+            return True
+        active = (self._startup_elapsed() < STARTUP_IGNORE_LINES_SEC
+                  or self._startup_distance() < STARTUP_IGNORE_LINES_DIST)
+        if not active:
+            self._startup_line_lockout_done = True
+        return active
+
+    def _fmt_range(self, value: float | None) -> str:
+        return "None" if value is None else f"{value:.3f}"
+
+    def _scan_text(self, s: ScanSummary | None) -> str:
+        if s is None:
+            return "scan=None"
+        return (
+            f"front={self._fmt_range(s.front)} "
+            f"front_min={self._fmt_range(s.front_min)} "
+            f"LF={self._fmt_range(s.left_front)} "
+            f"RF={self._fmt_range(s.right_front)} "
+            f"LS={self._fmt_range(s.left_side)} "
+            f"RS={self._fmt_range(s.right_side)}"
+        )
+
     def _pose_text(self) -> str:
         if self._xy is None or self._yaw is None:
             return "x=None y=None yaw=None"
@@ -234,6 +274,9 @@ class SquareCourseFollower(Node):
         self._odom_t = float(stamp.sec) + float(stamp.nanosec) * 1e-9
         self._yaw = quaternion_to_yaw(msg.pose.pose.orientation)
         self._xy = (msg.pose.pose.position.x, msg.pose.pose.position.y)
+        if self._startup_t is None:
+            self._startup_t = self._odom_t
+            self._startup_xy = self._xy
         if self._straight_target_yaw is None:
             self._straight_target_yaw = self._nearest_cardinal_yaw(self._yaw)
 
@@ -243,14 +286,23 @@ class SquareCourseFollower(Node):
         if self._state != "STRAIGHT":
             return
         now = self._now()
+        orange_trig  = msg.data[LD_ORANGE_TRIG] > 0.5
+        blue_trig    = msg.data[LD_BLUE_TRIG]   > 0.5
+        if not orange_trig and not blue_trig:
+            return
+        if self._startup_line_lockout_active():
+            self.get_logger().info(
+                f"Line trigger ignored during startup "
+                f"elapsed={self._startup_elapsed():.2f}s "
+                f"dist={self._startup_distance():.3f}m "
+                f"orange={float(orange_trig):.0f} blue={float(blue_trig):.0f} "
+                f"{self._pose_text()}",
+                throttle_duration_sec=0.5)
+            return
         if now < self._last_line_trigger_t + LINE_TRIGGER_COOLDOWN_SEC:
             return
         trigger_dist = self._distance_from_xy(self._last_line_trigger_xy)
         if trigger_dist is not None and trigger_dist < LINE_TRIGGER_LOCKOUT_DIST:
-            return
-        orange_trig  = msg.data[LD_ORANGE_TRIG] > 0.5
-        blue_trig    = msg.data[LD_BLUE_TRIG]   > 0.5
-        if not orange_trig and not blue_trig:
             return
 
         if orange_trig:
@@ -267,7 +319,7 @@ class SquareCourseFollower(Node):
         self._line_latched_until = self._now() + LINE_TRIGGER_LATCH_SEC
         self._last_line_trigger_t = now
         self._last_line_trigger_xy = self._xy
-        self._start_approach(reason, turn_direction)
+        self._start_approach(reason, turn_direction, trigger_dist, orange_trig, blue_trig)
 
     def _angle_to_index(self, msg: LaserScan, angle_deg: float) -> int | None:
         if msg.angle_increment <= 0.0 or not msg.ranges:
@@ -452,6 +504,8 @@ class SquareCourseFollower(Node):
         return abs(self._xy[0]) > CORNER_ZONE_ABS_X and abs(self._xy[1]) > CORNER_ZONE_ABS_Y
 
     def _straight_speed(self) -> float:
+        if self._startup_line_lockout_active():
+            return STARTUP_SPEED
         if self._in_corner_zone():
             return CORNER_SPEED
         if self._in_obstacle_zone():
@@ -497,15 +551,23 @@ class SquareCourseFollower(Node):
         angular = self._avoid_direction * AVOID_TURN_BIAS + wall_angular
         return clamp(angular, -AVOID_MAX_ANGULAR, AVOID_MAX_ANGULAR), wall_error
 
-    def _start_approach(self, reason: str, direction: float):
+    def _start_approach(self, reason: str, direction: float,
+                        trigger_dist: float | None = None,
+                        orange_trig: bool = False,
+                        blue_trig: bool = False):
         if self._state != "STRAIGHT":
             return
         self._turn_direction = LEFT_TURN_DIRECTION if direction > 0.0 else RIGHT_TURN_DIRECTION
         self._line_turn_direction = self._turn_direction
         self._set_state("APPROACH")
+        trigger_dist_text = (
+            "None" if trigger_dist is None else f"{trigger_dist:.3f}m"
+        )
         self.get_logger().info(
             f"APPROACH start direction={self._turn_direction:+.0f} "
-            f"reason={reason} {self._pose_text()}")
+            f"reason={reason} dist_from_last_trigger={trigger_dist_text} "
+            f"orange={float(orange_trig):.0f} blue={float(blue_trig):.0f} "
+            f"{self._pose_text()}")
 
     def _start_turn(self, reason: str, direction: float | None = None,
                     scan: ScanSummary | None = None):
@@ -535,13 +597,18 @@ class SquareCourseFollower(Node):
         self._set_state("TURN")
         self._publish(TURN_LINEAR_SPEED, self._turn_angular())
 
-    def _start_recover(self, reason: str):
+    def _start_recover(self, reason: str, scan: ScanSummary | None = None,
+                       front: float | None = None):
         if self._state == "RECOVER_FAILED":
             return
+        previous_state = self._state
         self._clear_line_latch()
         self._stop()
         self._set_state("RECOVER")
-        self.get_logger().warn(f"RECOVER start {self._pose_text()} reason={reason}")
+        self.get_logger().warn(
+            f"RECOVER start from={previous_state} "
+            f"front={self._fmt_range(front)} {self._pose_text()} "
+            f"{self._scan_text(scan)} reason={reason}")
 
     def _ensure_turn_target(self):
         if self._state != "TURN" or self._turn_target_yaw is not None:
@@ -594,7 +661,8 @@ class SquareCourseFollower(Node):
 
         if self._state == "STRAIGHT":
             if front is not None and front < EMERGENCY_FRONT_DIST:
-                self._start_recover(f"emergency front={front:.3f}m in STRAIGHT")
+                self._start_recover(
+                    f"emergency front={front:.3f}m in STRAIGHT", s, front)
                 return
             if self._should_start_avoidance(front):
                 self._start_avoidance(msg, front)
@@ -612,7 +680,8 @@ class SquareCourseFollower(Node):
 
         if self._state == "APPROACH":
             if front is not None and front < EMERGENCY_FRONT_DIST:
-                self._start_recover(f"emergency front={front:.3f}m in APPROACH")
+                self._start_recover(
+                    f"emergency front={front:.3f}m in APPROACH", s, front)
                 return
             elapsed = self._elapsed()
             distance = self._distance_from_state_start()
@@ -640,7 +709,8 @@ class SquareCourseFollower(Node):
             if front is not None and front < EMERGENCY_FRONT_DIST:
                 self._start_recover(
                     f"emergency front={front:.3f}m in TURN "
-                    f"progress={math.degrees(progress):.1f}deg")
+                    f"progress={math.degrees(progress):.1f}deg",
+                    s, front)
                 return
             if (yaw_error is not None
                     and abs(yaw_error) <= TURN_YAW_TOLERANCE_RAD
@@ -681,7 +751,8 @@ class SquareCourseFollower(Node):
         if self._state == "ALIGN":
             elapsed = self._elapsed()
             if front is not None and front < EMERGENCY_FRONT_DIST:
-                self._start_recover(f"emergency front={front:.3f}m in ALIGN")
+                self._start_recover(
+                    f"emergency front={front:.3f}m in ALIGN", s, front)
                 return
             angular, heading_error = self._heading_hold_angular(ALIGN_HEADING_MAX_ANGULAR)
             if heading_error is None:
@@ -708,7 +779,8 @@ class SquareCourseFollower(Node):
             distance = self._distance_from_state_start()
             if front is not None and front < POST_TURN_RECOVER_FRONT_DIST:
                 self._start_recover(
-                    f"post-turn front too close {front:.3f}m dist={distance:.3f}m")
+                    f"post-turn front too close {front:.3f}m dist={distance:.3f}m",
+                    s, front)
                 return
             angular, heading_error = self._heading_hold_angular(
                 POST_TURN_HEADING_MAX_ANGULAR)
@@ -736,7 +808,8 @@ class SquareCourseFollower(Node):
                     return
                 self._start_recover(
                     f"post-turn timeout without clear exit dist={distance:.3f}m "
-                    f"front={front}")
+                    f"front={front}",
+                    s, front)
                 return
             self.get_logger().info(
                 f"POST_TURN {elapsed:.2f}s dist={distance:.3f} front={front} "
@@ -748,7 +821,8 @@ class SquareCourseFollower(Node):
         if self._state == "AVOID_OBSTACLE":
             elapsed = self._elapsed()
             if front is not None and front < EMERGENCY_FRONT_DIST:
-                self._start_recover(f"emergency front={front:.3f}m in AVOID_OBSTACLE")
+                self._start_recover(
+                    f"emergency front={front:.3f}m in AVOID_OBSTACLE", s, front)
                 return
             angular, wall_error = self._avoid_angular(msg, s)
             self._publish(AVOID_SPEED, angular)
@@ -771,7 +845,8 @@ class SquareCourseFollower(Node):
             elapsed = self._elapsed()
             distance = self._distance_from_state_start()
             if front is not None and front < EMERGENCY_FRONT_DIST:
-                self._start_recover(f"emergency front={front:.3f}m in RETURN_TO_LINE")
+                self._start_recover(
+                    f"emergency front={front:.3f}m in RETURN_TO_LINE", s, front)
                 return
             angular, error = self._drive_centered(
                 s, RETURN_TO_LINE_SPEED, STRAIGHT_CENTER_MAX_ANGULAR)

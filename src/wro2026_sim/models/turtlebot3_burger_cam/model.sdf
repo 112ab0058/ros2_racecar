@@ -138,7 +138,6 @@
         <pose>-0.032 0 0.171 0 0 0</pose>
         <update_rate>8</update_rate>
         <topic>scan</topic>
-        <gz_frame_id>base_scan</gz_frame_id>
         <lidar>
           <scan>
             <horizontal>
@@ -341,7 +340,6 @@
         <visualize>false</visualize>
         <update_rate>10</update_rate>
         <topic>camera/image_raw</topic>
-        <gz_frame_id>camera_rgb_frame</gz_frame_id>
         <camera name="pi_cam">
           <camera_info_topic>camera/camera_info</camera_info_topic>
           <horizontal_fov>3.183</horizontal_fov>

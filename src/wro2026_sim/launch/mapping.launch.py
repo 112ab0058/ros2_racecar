@@ -2,7 +2,9 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, SetEnvironmentVariable, TimerAction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, SetEnvironmentVariable, TimerAction
+from launch.conditions import IfCondition, UnlessCondition
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
@@ -20,8 +22,17 @@ def generate_launch_description():
     if existing_resource_path:
         resource_paths.append(existing_resource_path)
 
-    gazebo = ExecuteProcess(
+    gui = LaunchConfiguration("gui")
+
+    gazebo_server = ExecuteProcess(
         cmd=["gz", "sim", "-r", "-s", world_file],
+        condition=UnlessCondition(gui),
+        output="screen",
+    )
+
+    gazebo_gui = ExecuteProcess(
+        cmd=["gz", "sim", "-r", world_file],
+        condition=IfCondition(gui),
         output="screen",
     )
 
@@ -80,8 +91,14 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "gui",
+                default_value="false",
+                description="Start Gazebo with GUI when true; server-only when false.",
+            ),
             SetEnvironmentVariable("GZ_SIM_RESOURCE_PATH", os.pathsep.join(resource_paths)),
-            gazebo,
+            gazebo_server,
+            gazebo_gui,
             bridge,
             ground_truth_odom,
             slam,
