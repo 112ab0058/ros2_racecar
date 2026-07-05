@@ -59,4 +59,8 @@ Recommended first purchase/build list:
 
 The first Gazebo version keeps the lines and uses the existing line detector. This lets the old controller continue to work while the new field and obstacle zone are introduced.
 
+The orange and blue turn lines must stay diagonal, matching the old WRO-style corner trigger layout scaled down to the 160 cm field. Do not replace them with horizontal/vertical cross marks.
+
+The east parking/docking dividers are visual-only in the current race world so the main loop is not blocked. Add physical collision for parking only when the parking behavior is implemented and tested separately.
+
 Do not generate a new map until the world dimensions and obstacle module positions are stable. The old 3.2 m map files were removed from the mainline to avoid using the wrong scale by accident.

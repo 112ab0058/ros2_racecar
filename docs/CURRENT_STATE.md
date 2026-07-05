@@ -37,6 +37,8 @@ ros2 launch wro2026_sim race.launch.py
 - 場地尺寸：`1600 x 1600 mm`。
 - 中央分隔島：`400 x 400 mm`。
 - 下方高速直線區、上方連續避障區、右側停車/靠站區已建入 world。
+- 橘/藍線使用舊 3.2 m world 的對角線配置縮放到 160 cm，不是橫直十字線。
+- 右側停車/靠站隔板目前是 visual-only，不讓它卡住主賽道。
 - 舊的 `open_wide`、`open_narrow`、`obstacle_wide` 世界檔已移除。
 - 模擬車型使用 `turtlebot3_burger_cam`。
 - 模擬牆高維持 `0.30 m`，確保 TurtleBot3 LiDAR 掃得到。

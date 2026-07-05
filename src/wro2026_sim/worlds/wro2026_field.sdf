@@ -126,28 +126,26 @@
     <!-- Dock / parking zone on the east side. -->
     <model name="parking_zone">
       <static>true</static>
-      <pose>0.62 0 0.013 0 0 0</pose>
+      <pose>0.70 0 0.013 0 0 0</pose>
       <link name="link">
         <visual name="vis">
-          <geometry><box><size>0.30 0.46 0.002</size></box></geometry>
+          <geometry><box><size>0.16 0.42 0.002</size></box></geometry>
           <material><ambient>0.16 0.38 1.0 0.55</ambient><diffuse>0.16 0.38 1.0 0.55</diffuse></material>
         </visual>
       </link>
     </model>
     <model name="parking_block_top">
       <static>true</static>
-      <pose>0.58 0.25 0.05 0 0 0</pose>
+      <pose>0.70 0.23 0.05 0 0 0</pose>
       <link name="link">
-        <collision name="col"><geometry><box><size>0.22 0.03 0.10</size></box></geometry></collision>
-        <visual name="vis"><geometry><box><size>0.22 0.03 0.10</size></box></geometry><material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material></visual>
+        <visual name="vis"><geometry><box><size>0.14 0.02 0.10</size></box></geometry><material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material></visual>
       </link>
     </model>
     <model name="parking_block_bottom">
       <static>true</static>
-      <pose>0.58 -0.25 0.05 0 0 0</pose>
+      <pose>0.70 -0.23 0.05 0 0 0</pose>
       <link name="link">
-        <collision name="col"><geometry><box><size>0.22 0.03 0.10</size></box></geometry></collision>
-        <visual name="vis"><geometry><box><size>0.22 0.03 0.10</size></box></geometry><material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material></visual>
+        <visual name="vis"><geometry><box><size>0.14 0.02 0.10</size></box></geometry><material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material></visual>
       </link>
     </model>
 
@@ -177,46 +175,46 @@
       </link>
     </model>
 
-    <!-- Orange / blue turn lines kept for the existing detector/controller. -->
+    <!-- Orange / blue turn lines use the original diagonal layout, scaled to 160 cm. -->
     <model name="orange_line_ne">
       <static>true</static>
-      <pose>0.49 0.54 0.014 0 0 -1.5708</pose>
-      <link name="link"><visual name="vis"><geometry><box><size>0.28 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
+      <pose>0.3775 0.5450 0.014 0 0 -1.8895</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
     </model>
     <model name="blue_line_ne">
       <static>true</static>
-      <pose>0.54 0.49 0.014 0 0 0</pose>
-      <link name="link"><visual name="vis"><geometry><box><size>0.28 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
+      <pose>0.5450 0.3775 0.014 0 0 -2.8228</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
     </model>
     <model name="orange_line_se">
       <static>true</static>
-      <pose>0.49 -0.54 0.014 0 0 1.5708</pose>
-      <link name="link"><visual name="vis"><geometry><box><size>0.28 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
+      <pose>0.5450 -0.3775 0.014 0 0 2.8228</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
     </model>
     <model name="blue_line_se">
       <static>true</static>
-      <pose>0.54 -0.49 0.014 0 0 0</pose>
-      <link name="link"><visual name="vis"><geometry><box><size>0.28 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
+      <pose>0.3775 -0.5450 0.014 0 0 1.8895</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
     </model>
     <model name="orange_line_sw">
       <static>true</static>
-      <pose>-0.49 -0.54 0.014 0 0 1.5708</pose>
-      <link name="link"><visual name="vis"><geometry><box><size>0.28 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
+      <pose>-0.3775 -0.5450 0.014 0 0 1.2520</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
     </model>
     <model name="blue_line_sw">
       <static>true</static>
-      <pose>-0.54 -0.49 0.014 0 0 0</pose>
-      <link name="link"><visual name="vis"><geometry><box><size>0.28 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
+      <pose>-0.5450 -0.3775 0.014 0 0 0.3187</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
     </model>
     <model name="orange_line_nw">
       <static>true</static>
-      <pose>-0.49 0.54 0.014 0 0 -1.5708</pose>
-      <link name="link"><visual name="vis"><geometry><box><size>0.28 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
+      <pose>-0.5450 0.3775 0.014 0 0 -0.3187</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
     </model>
     <model name="blue_line_nw">
       <static>true</static>
-      <pose>-0.54 0.49 0.014 0 0 0</pose>
-      <link name="link"><visual name="vis"><geometry><box><size>0.28 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
+      <pose>-0.3775 0.5450 0.014 0 0 -1.2520</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
     </model>
 
     <include>
