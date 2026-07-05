@@ -98,8 +98,10 @@ AVOID_MAX_SEC         = 4.0
 AVOID_SPEED           = 0.075
 AVOID_MAX_ANGULAR     = 0.48
 AVOID_TURN_BIAS       = 0.34
-RETURN_TO_LINE_SEC    = 0.70
-RETURN_TO_LINE_DIST   = 0.14
+RETURN_TO_LINE_SEC    = 0.90
+RETURN_TO_LINE_DIST   = 0.055
+RETURN_TO_LINE_MAX_SEC = 2.5
+RETURN_TO_LINE_CLEAR_DIST = 0.50
 RETURN_TO_LINE_SPEED  = 0.085
 GAP_LEFT_DEG          = 35.0
 GAP_RIGHT_DEG         = 325.0
@@ -851,6 +853,18 @@ class SquareCourseFollower(Node):
             angular, error = self._drive_centered(
                 s, RETURN_TO_LINE_SPEED, STRAIGHT_CENTER_MAX_ANGULAR)
             if elapsed >= RETURN_TO_LINE_SEC and distance >= RETURN_TO_LINE_DIST:
+                self.get_logger().info(
+                    f"RETURN_TO_LINE exit reason=distance "
+                    f"elapsed={elapsed:.2f}s dist={distance:.3f} front={front} "
+                    f"{self._pose_text()}")
+                self._set_state("STRAIGHT")
+                return
+            if (elapsed >= RETURN_TO_LINE_MAX_SEC
+                    and self._front_is_clear(front, RETURN_TO_LINE_CLEAR_DIST)):
+                self.get_logger().warn(
+                    f"RETURN_TO_LINE exit reason=timeout_clear "
+                    f"elapsed={elapsed:.2f}s dist={distance:.3f} front={front} "
+                    f"{self._pose_text()}")
                 self._set_state("STRAIGHT")
                 return
             self.get_logger().info(
