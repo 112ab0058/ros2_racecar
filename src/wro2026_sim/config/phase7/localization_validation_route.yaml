@@ -1,0 +1,34 @@
+phase7_localization_validation:
+  source_evidence: /home/ray/ros2_evidence/phase7dr_complete_slam_mapping_acceptance_20260724_051156/mapping_route_waypoints.yaml
+  source_evidence_sha256: 3454caff7b1df9b19c237b9ca1df919cf576fc6b6b237cb483d6e56d1d41e4cd
+  motion_source: phase7_mapping_traversal
+  motion_source_semantics_modified: false
+  frame_id: odom
+  world_spawn: [-0.050, -0.500, 0.0]
+  world_to_map:
+    x: map_x = world_x - (-0.050)
+    y: map_y = world_y - (-0.500)
+    yaw: map_yaw = world_yaw
+  expected_polyline_length_m: 3.900
+  footprint_radius_m: 0.124
+  required_static_margin_m: 0.080
+  offline_minimum_world_clearance_m: 0.111000
+  offline_minimum_map_clearance_m: 0.09100232556881804
+  maximum_linear_speed_mps: 0.10
+  maximum_angular_speed_radps: 0.45
+  waypoints:
+    - {id: SOUTH_EAST, side: south, x: 0.500, y: 0.000, target_yaw: 0.000000000000, expected_segment_length_m: 0.500}
+    - {id: NORTH_EAST, side: east, x: 0.500, y: 1.000, target_yaw: 1.570796326795, expected_segment_length_m: 1.000}
+    - {id: NORTH_WEST, side: north, x: -0.450, y: 1.000, target_yaw: 3.141592653590, expected_segment_length_m: 0.950}
+    - {id: SOUTH_WEST, side: west, x: -0.450, y: 0.000, target_yaw: -1.570796326795, expected_segment_length_m: 1.000}
+    - {id: START_CLOSED_LOOP, side: return, x: 0.000, y: 0.000, target_yaw: 0.000000000000, expected_segment_length_m: 0.450}
+  initial_pose:
+    frame_id: map
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    covariance_x: 0.0025
+    covariance_y: 0.0025
+    covariance_yaw: 0.007615435494667714
+    publish_count: 1
+    source: exact Phase 7B spawn transformed by the Phase 7D-R fixed world-to-map initialization

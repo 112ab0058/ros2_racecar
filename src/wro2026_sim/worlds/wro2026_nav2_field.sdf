@@ -1,0 +1,216 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <world name="wro2026_nav2_field">
+    <physics name="fast_step" type="ignored">
+      <max_step_size>0.005</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <light name="sun" type="directional">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_1600">
+      <static>true</static>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>1.6 1.6 0.01</size></box></geometry>
+        </collision>
+        <visual name="base">
+          <geometry><box><size>1.6 1.6 0.01</size></box></geometry>
+          <material>
+            <ambient>0.90 0.90 0.86 1</ambient>
+            <diffuse>0.90 0.90 0.86 1</diffuse>
+          </material>
+        </visual>
+        <visual name="track">
+          <pose>0 0 0.006 0 0 0</pose>
+          <geometry><box><size>1.50 1.50 0.002</size></box></geometry>
+          <material>
+            <ambient>0.55 0.55 0.55 1</ambient>
+            <diffuse>0.55 0.55 0.55 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Outer walls: 1600 x 1600 mm field, 300 mm simulation height for LiDAR. -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 0.8 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>1.6 0.03 0.30</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>1.6 0.03 0.30</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -0.8 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>1.6 0.03 0.30</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>1.6 0.03 0.30</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="wall_east">
+      <static>true</static>
+      <pose>0.8 0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.03 1.6 0.30</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.03 1.6 0.30</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-0.8 0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.03 1.6 0.30</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.03 1.6 0.30</size></box></geometry><material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Central island: 400 x 400 mm with simple R80-style visual corner hints. -->
+    <model name="central_island_floor">
+      <static>true</static>
+      <pose>0 0 0.011 0 0 0</pose>
+      <link name="link">
+        <visual name="green_center">
+          <geometry><box><size>0.38 0.38 0.002</size></box></geometry>
+          <material><ambient>0.55 0.85 0.42 1</ambient><diffuse>0.55 0.85 0.42 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="island_wall_north">
+      <static>true</static>
+      <pose>0 0.2 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.30 0.03 0.30</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.30 0.03 0.30</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="island_wall_south">
+      <static>true</static>
+      <pose>0 -0.2 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.30 0.03 0.30</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.30 0.03 0.30</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="island_wall_east">
+      <static>true</static>
+      <pose>0.2 0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.03 0.30 0.30</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.03 0.30 0.30</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="island_wall_west">
+      <static>true</static>
+      <pose>-0.2 0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.03 0.30 0.30</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.03 0.30 0.30</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Phase 7 / Nav2 parking layout A.
+         Ground-level visual only: no collision, curb, or height transition.
+         The achromatic material is deliberately separate from the immutable
+         orange / blue camera control-line semantics. -->
+    <model name="parking_zone_nav2_config_a">
+      <static>true</static>
+      <pose>0.655 0 0.013 0 0 0</pose>
+      <link name="link">
+        <visual name="vis">
+          <geometry><box><size>0.260 0.500 0.002</size></box></geometry>
+          <material><ambient>0.72 0.72 0.72 1.0</ambient><diffuse>0.72 0.72 0.72 1.0</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Continuous obstacle zone. One obstacle is active in the north lane for
+         the first avoidance test; the side obstacles remain staged on the
+         central island for later 3-obstacle runs. -->
+    <model name="obstacle_yellow_left">
+      <static>true</static>
+      <pose>-0.08 0.00 0.075 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.06 0.06 0.15</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.06 0.06 0.15</size></box></geometry><material><ambient>1.0 0.78 0.05 1</ambient><diffuse>1.0 0.78 0.05 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="obstacle_yellow_mid">
+      <static>true</static>
+      <pose>0.00 0.42 0.075 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.06 0.06 0.15</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.06 0.06 0.15</size></box></geometry><material><ambient>1.0 0.78 0.05 1</ambient><diffuse>1.0 0.78 0.05 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="obstacle_yellow_right">
+      <static>true</static>
+      <pose>0.08 0.00 0.075 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.06 0.06 0.15</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.06 0.06 0.15</size></box></geometry><material><ambient>1.0 0.78 0.05 1</ambient><diffuse>1.0 0.78 0.05 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Orange / blue turn lines use the original diagonal layout, scaled to 160 cm. -->
+    <model name="orange_line_ne">
+      <static>true</static>
+      <pose>0.3775 0.5450 0.014 0 0 -1.8895</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
+    </model>
+    <model name="blue_line_ne">
+      <static>true</static>
+      <pose>0.5450 0.3775 0.014 0 0 -2.8228</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
+    </model>
+    <model name="orange_line_se">
+      <static>true</static>
+      <pose>0.5450 -0.3775 0.014 0 0 2.8228</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
+    </model>
+    <model name="blue_line_se">
+      <static>true</static>
+      <pose>0.3775 -0.5450 0.014 0 0 1.8895</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
+    </model>
+    <model name="orange_line_sw">
+      <static>true</static>
+      <pose>-0.3775 -0.5450 0.014 0 0 1.2520</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
+    </model>
+    <model name="blue_line_sw">
+      <static>true</static>
+      <pose>-0.5450 -0.3775 0.014 0 0 0.3187</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
+    </model>
+    <model name="orange_line_nw">
+      <static>true</static>
+      <pose>-0.5450 0.3775 0.014 0 0 -0.3187</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>1.0 0.36 0 1</ambient><diffuse>1.0 0.36 0 1</diffuse></material></visual></link>
+    </model>
+    <model name="blue_line_nw">
+      <static>true</static>
+      <pose>-0.3775 0.5450 0.014 0 0 -1.2520</pose>
+      <link name="link"><visual name="vis"><geometry><box><size>0.527 0.02 0.002</size></box></geometry><material><ambient>0.0 0.22 1.0 1</ambient><diffuse>0.0 0.22 1.0 1</diffuse></material></visual></link>
+    </model>
+
+    <include>
+      <uri>model://turtlebot3_burger_cam</uri>
+      <pose>-0.05 -0.50 0.01 0 0 0</pose>
+    </include>
+  </world>
+</sdf>

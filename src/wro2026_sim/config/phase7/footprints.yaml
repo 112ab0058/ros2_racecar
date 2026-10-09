@@ -1,0 +1,32 @@
+phase: 7C
+parking_lane_static_width_m: 0.310
+
+current_turtlebot3_simulation:
+  authority: models/turtlebot3_burger_cam/model.sdf collision projection
+  kind: conservative_axis_aligned_collision_projection
+  x_bounds_m: [-0.102, 0.038]
+  y_bounds_m: [-0.089, 0.089]
+  length_m: 0.140
+  width_m: 0.178
+  footprint:
+    - [-0.102, -0.089]
+    - [-0.102, 0.089]
+    - [0.038, 0.089]
+    - [0.038, -0.089]
+  lane_total_static_margin_m: 0.132
+  ideal_centered_side_margin_m: 0.066
+
+v550_design_candidate:
+  authority: Phase 7 design envelope only
+  production_ready: false
+  ackermann_sweep_validated: false
+  length_m: 0.300
+  width_m: 0.210
+  footprint:
+    - [-0.150, -0.105]
+    - [-0.150, 0.105]
+    - [0.150, 0.105]
+    - [0.150, -0.105]
+  lane_total_static_margin_m: 0.100
+  ideal_centered_side_margin_m: 0.050
+  dynamic_passability: BLOCKED

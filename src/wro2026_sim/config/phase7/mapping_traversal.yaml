@@ -1,0 +1,115 @@
+mapping_traversal:
+  scope:
+    simulation_mapping_only: true
+    differential_drive_only: true
+    v550_ackermann_supported: false
+    final_accepted_route_supported: false
+
+  topics:
+    odom: /odom
+    cmd_vel: /cmd_vel
+
+  frames:
+    odom: odom
+    base: base_footprint
+    scan: base_scan
+
+  limits:
+    linear_speed_mps: 0.10
+    minimum_drive_speed_mps: 0.035
+    angular_speed_radps: 0.45
+    drive_heading_angular_limit_radps: 0.35
+    drive_heading_gain: 1.8
+    rotate_gain: 1.8
+    heading_stop_threshold_rad: 0.35
+
+  tolerances:
+    position_m: 0.040
+    yaw_rad: 0.080
+    initial_position_m: 0.100
+    initial_yaw_rad: 0.200
+    final_position_acceptance_m: 0.150
+    final_yaw_acceptance_rad: 0.300
+
+  timeouts:
+    readiness_wall_s: 15.0
+    odom_freshness_wall_s: 0.50
+    segment_base_sim_s: 8.0
+    segment_per_meter_sim_s: 28.0
+    overall_sim_s: 120.0
+    stop_settle_sim_s: 2.0
+
+  safety:
+    footprint_radius_m: 0.124
+    required_static_margin_m: 0.080
+    runtime_stop_clearance_m: 0.050
+    outer_wall_inner_bound_m: 0.785
+    central_island_envelope:
+      x_min: -0.215
+      x_max: 0.215
+      y_min: -0.215
+      y_max: 0.215
+
+  initial_pose:
+    frame_id: odom
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+    world_x: -0.05
+    world_y: -0.50
+    world_yaw: 0.0
+
+  route:
+    name: phase7_counterclockwise_conservative_centerline
+    expected_polyline_length_m: 3.900
+    source:
+      - Phase 7B world outer-wall inner bounds +/-0.785 m
+      - Phase 7B central-island collision envelope +/-0.215 m
+      - Phase 7D saved occupancy map
+      - TurtleBot3 collision union conservative planar radius 0.124 m
+    waypoints:
+      - id: SOUTH_EAST
+        side: south
+        x: 0.500
+        y: 0.000
+        target_yaw: 0.0
+        world_x: 0.450
+        world_y: -0.500
+        expected_segment_length_m: 0.500
+        source: south corridor centerline; east line chosen outside parking-board visual footprint at northbound yaw
+      - id: NORTH_EAST
+        side: east
+        x: 0.500
+        y: 1.000
+        target_yaw: 1.5707963267948966
+        world_x: 0.450
+        world_y: 0.500
+        expected_segment_length_m: 1.000
+        source: east corridor between central island and outer wall; parking board is ground-only non-collision
+      - id: NORTH_WEST
+        side: north
+        x: -0.450
+        y: 1.000
+        target_yaw: 3.141592653589793
+        world_x: -0.500
+        world_y: 0.500
+        expected_segment_length_m: 0.950
+        source: north corridor centerline from Phase 7B world and Phase 7D free cells
+      - id: SOUTH_WEST
+        side: west
+        x: -0.450
+        y: 0.000
+        target_yaw: -1.5707963267948966
+        world_x: -0.500
+        world_y: -0.500
+        expected_segment_length_m: 1.000
+        source: west corridor centerline from Phase 7B world and Phase 7D free cells
+      - id: START_CLOSED_LOOP
+        side: return
+        x: 0.000
+        y: 0.000
+        target_yaw: 0.0
+        world_x: -0.050
+        world_y: -0.500
+        expected_segment_length_m: 0.450
+        source: exact simulation spawn odom origin; closes the south-side loop
