@@ -1,89 +1,65 @@
 # AI Sync
 
-Updated: 2026-07-06
+Last updated: 2026-07-06
 
-This file is the compact source of truth for handing this project between ChatGPT/GPT and Codex.
+## Current Task
 
-## Current Repositories
+Tune the 160 cm Gazebo race controller for a single obstacle at:
 
-| Item | Value |
-|---|---|
-| Git repo | `~/ros2_racecar` |
-| Runtime workspace | `~/ros2_ws` |
-| Main package | `src/wro2026_sim` |
-| GitHub main | `5f65dbc Tune return-to-line exit for one-obstacle test` |
-| WSL local state | May be `main...origin/main [ahead 2]` because WSL cannot push and has local tuning commits/changes |
+- `obstacle_yellow_mid`: `x=0.00 y=0.42`
 
-Do not assume WSL local commits are already on GitHub. If WSL has useful work, export a single-commit patch with `git format-patch -1 <commit> --stdout`.
+Do not enable 2 or 3 obstacles. Do not add AI, Nav2, SLAM, or parking behavior.
 
-## Stable Project Facts
+## Current Code State
 
-- Field is a fixed `1600 x 1600 mm` Gazebo/physical planning layout.
-- Official world is `src/wro2026_sim/worlds/wro2026_field.sdf`.
-- Orange/blue line marks must stay diagonal, copied from the old WRO-style corner trigger layout and scaled to 160 cm.
-- Parking/docking divider models are visual-only in race mode so they do not block the course.
-- `race.launch.py` must stay lightweight and must not start SLAM or Nav2.
-- GUI is optional through `gui:=true`; server-only remains the default.
-- Use system Python for ROS 2 Jazzy: `/usr/bin/python3`, Python `3.12.x`.
+`src/wro2026_sim/scripts/line_follower.py` has uncommitted controller work:
 
-## Current Behavior Status
+- Three-phase avoidance states:
+  - `AVOID_LANE_SHIFT`
+  - `AVOID_PASS_OBSTACLE`
+  - `AVOID_RETURN_HEADING`
+- Return-to-line heading gate and timeout logging.
+- Conservative LiDAR cluster trigger experiment:
+  - ROI: `-60..+60 deg`
+  - cluster threshold: `0.50 m`
+  - obstacle max min-range: `0.215 m`
+  - width gate: `2..42 deg`
+  - point-count gate: `2..42`
 
-| Test | Status | Evidence |
-|---|---|---|
-| Gazebo launch | Done | `race.launch.py` runs, GUI can attach, topics are present |
-| No-obstacle baseline | Done | 3 laps completed, no `RECOVER` / `RECOVER_FAILED`, stable blue-trigger turns |
-| 1 obstacle return-to-line | Done | `AVOID_OBSTACLE` and `RETURN_TO_LINE` occurred; `timeout_clear` returned to `STRAIGHT` |
-| 1 obstacle full lap | Partial | B position can sometimes return bottom, but current trigger/avoid behavior is not robust |
-| 2/3 obstacles | Not started | Do not start until 1 obstacle is stable |
-| Parking/docking | Not started | Keep visual-only for now |
-| Nav2/SLAM race flow | Not started | Keep out of `race.launch.py` |
+Do not commit this state unless the regression tests pass.
 
-## Current 1-Obstacle Diagnosis
+## Latest Result
 
-Obstacle positions tested:
+Partial.
 
-| Position | Pose | Result |
-|---|---|---|
-| A | `x=-0.12 y=0.42` | Partial, caused `RECOVER_FAILED` |
-| B | `x=0.00 y=0.42` | Best current 1-obstacle test position |
-| C | `x=+0.12 y=0.42` | Partial, too close to upper-lane entry |
+The no-obstacle regression was re-run after explicitly verifying that
+`obstacle_yellow_mid` was moved to the center holding pose:
 
-Use B for the next 1-obstacle work:
+- runtime `obstacle_yellow_mid`: `x=0.00 y=0.00`
+- `is_obstacle_active=no` for the B-point obstacle
 
-```text
-obstacle_yellow_mid x=0.00 y=0.42 z=0.075
-```
+The 0.215 m cluster min-range gate still false-triggers in this clean
+no-obstacle run. Evidence:
 
-The latest diagnosis found that no-obstacle upper geometry can look similar to early B-obstacle readings if the controller only checks sector values. The next technical step is to distinguish a narrow obstacle cluster from long wall/island geometry in the LiDAR scan.
+- `avoid_start_count=1`
+- false trigger pose: `x=+0.135 y=+0.383 yaw=+3.141`
+- false trigger front: `0.199`
+- `recover=True`
+- `recover_failed=False`
 
-## Current Controller Direction
+This confirms the previous failure was not caused by leaving the B-point
+obstacle active. The 0.215 m min-range gate is not sufficient by itself.
 
-The controller is still based on:
+## Next Direction
 
-```text
-/camera/image_raw -> line_detector.py -> /line_detection
-/scan + /odom + /line_detection -> line_follower.py -> /cmd_vel
-```
+Do not keep raising or lowering one threshold blindly.
 
-Keep this architecture. Do not remove the line detector.
+Next step should be a paired diagnostic, not another one-threshold tweak:
 
-The current obstacle logic has been moving toward:
+- disable or bypass the formal AVOID action for the diagnostic run only;
+- record no-obstacle and B-point scans over the same pose band;
+- compare top 3 clusters for `x=0.08..0.20`, `y=0.36..0.43`;
+- only after that choose a new gate.
 
-- startup line lockout
-- LiDAR obstacle trigger in the upper zone
-- staged avoidance phases
-- `RETURN_TO_LINE` timeout protections
-
-The next change should not be a larger state explosion. It should improve obstacle trigger classification using scan cluster shape.
-
-## Next Recommended Task
-
-Implement a LiDAR scan cluster gate for obstacle trigger:
-
-- Keep no-obstacle upper pass at `avoid_start_count=0`.
-- Allow B obstacle to trigger earlier than the current late trigger.
-- Distinguish narrow obstacle cluster from normal field geometry.
-- Do not start 2/3 obstacle tests yet.
-
-See `docs/NEXT_PROMPT.md` for the exact next Codex prompt.
-
+If paired scans still overlap, report that LiDAR-only cluster gating cannot
+separate the B obstacle from normal top geometry at this pose.
