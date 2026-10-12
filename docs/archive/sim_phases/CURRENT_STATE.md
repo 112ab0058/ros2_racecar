@@ -1,3 +1,5 @@
+> 已封存（2026-10-13）。目前狀態見 docs/STATUS.md。
+
 # WRO 2026 — Current State
 
 更新時間：2026-07-22

@@ -1,3 +1,5 @@
+> 已封存（2026-10-13）。目前狀態見 docs/STATUS.md。
+
 # WRO ROS 2 Racecar 專案交接
 
 ## 1. 現在要做什麼

@@ -77,10 +77,10 @@ wro2026_navigation
 | 加 camera / LiDAR bridge topic | `~/ros2_ws/src/wro2026_sim/launch/race.launch.py` |
 | 改場地幾何 | `~/ros2_ws/src/wro2026_sim/worlds/wro2026_field.sdf` |
 | 改 SLAM 參數 | `~/ros2_ws/src/wro2026_sim/config/slam_params.yaml` |
-| 更新目前狀態 | `~/ros2_racecar/docs/CURRENT_STATE.md` |
-| 場地與材料規劃 | `~/ros2_racecar/docs/FIELD_PLAN_160CM.md` |
+| 更新目前狀態 | `~/ros2_racecar/docs/STATUS.md` |
+| 場地與材料規劃 | `~/ros2_racecar/docs/sim/FIELD_PLAN_160CM.md` |
 | 系統架構 | `~/ros2_racecar/docs/SYSTEM_ARCHITECTURE.md` |
-| Gazebo 效能 | `~/ros2_racecar/docs/GAZEBO_PERFORMANCE.md` |
+| Gazebo 效能 | `~/ros2_racecar/docs/sim/GAZEBO_PERFORMANCE.md` |
 | GitHub commit / push | `~/ros2_racecar` |
 
 ## 建議同步流程

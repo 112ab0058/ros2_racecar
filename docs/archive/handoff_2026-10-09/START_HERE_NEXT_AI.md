@@ -1,3 +1,5 @@
+> 已封存（2026-10-13）。目前狀態見 docs/STATUS.md。
+
 # START HERE — 給下一個 AI 的指令
 
 使用者現在手邊有一台實體車與 NVIDIA Jetson Orin，目標是從模擬研究轉入正式實車開發。不要再把主線放在舊模擬器的 wheel calibration/residual odom 負結果；應先辨識硬體，建立安全、可重現的低階控制，再逐層加入 ROS 2、感測器、定位與 Nav2。

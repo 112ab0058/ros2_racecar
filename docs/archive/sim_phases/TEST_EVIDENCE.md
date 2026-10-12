@@ -1,3 +1,5 @@
+> 已封存（2026-10-13）。目前狀態見 docs/STATUS.md。
+
 # Test Evidence
 
 Last updated: 2026-07-22

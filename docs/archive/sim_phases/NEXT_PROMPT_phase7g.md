@@ -1,3 +1,5 @@
+> 已封存（2026-10-13）。目前狀態見 docs/STATUS.md。
+
 執行以下長期自主完成目標。
 
 Phase 7G Autonomous State-Dependent Residual Odom Campaign

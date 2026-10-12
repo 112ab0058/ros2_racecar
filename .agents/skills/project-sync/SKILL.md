@@ -1,18 +1,18 @@
 ---
 name: project-sync
-description: Use after ROS/Gazebo coding or testing work in this repository to update handoff docs, evidence, next prompts, and ChatGPT-ready summaries.
+description: Use after ROS/Gazebo or real-car coding or testing work in this repository to update docs/STATUS.md and produce a ChatGPT-ready summary.
 ---
 
 # Project Sync Skill
 
-Use this skill after any meaningful coding, testing, tuning, or debugging round in the WRO 160 cm ROS 2 / Gazebo project.
+Use this skill after any meaningful coding, testing, tuning, or debugging round in the WRO 160 cm ROS 2 project (Gazebo simulation or the real car).
 
 ## Required Updates
 
-1. Update `docs/AI_SYNC.md` when project state, git state, current task, known issues, or next action changes.
-2. Update `docs/TEST_EVIDENCE.md` after every test run with meaningful evidence.
-3. Update `docs/NEXT_PROMPT.md` with the next Codex task prompt.
-4. Update `docs/CURRENT_STATE.md` if behavior, launch commands, world geometry, or controller strategy changed.
+1. Update `docs/STATUS.md` (the only "current state" document, one page, Traditional Chinese) when project state, milestone status, known issues, or the next step changes. Keep it to facts from checked-in docs or test output; write `UNKNOWN` when unsure.
+2. Do not maintain `AI_SYNC.md`, `NEXT_PROMPT.md`, `CURRENT_STATE.md` or `TEST_EVIDENCE.md` any more: they are archived in `docs/archive/sim_phases/` and frozen (only the one-line archive header was added).
+3. Put longer test evidence for a work session in a dated report (`docs/reports/<date>_<topic>.md`) and link it from `docs/STATUS.md` if it matters for the current state.
+4. If a document is added, moved, or renamed, update `docs/README.md` (the index) and run `python3 tools/check_md_links.py`.
 
 ## Required Evidence In The Final Response
 

@@ -157,10 +157,10 @@
 新 Codex 對話開始時，依序讀取：
 
 1. AGENTS.md
-2. docs/SPEC.md
-3. docs/CURRENT_STATE.md
-4. docs/NEXT_PROMPT.md
-5. docs/TEST_EVIDENCE.md
+2. docs/sim/SPEC.md
+3. docs/archive/sim_phases/CURRENT_STATE.md
+4. docs/archive/sim_phases/NEXT_PROMPT.md
+5. docs/archive/sim_phases/TEST_EVIDENCE.md
 
 以目前 working tree、CURRENT_STATE.md 與 controller SHA 為準。
 

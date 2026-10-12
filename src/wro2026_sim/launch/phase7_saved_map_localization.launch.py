@@ -26,6 +26,12 @@ def generate_launch_description():
     )
     map_server_file = os.path.join(phase7_config, "map_server.yaml")
     amcl_file = os.path.join(phase7_config, "amcl.yaml")
+    default_map_file = os.path.join(
+        package_share,
+        "maps",
+        "candidates",
+        "phase7_nav2_field_map_7dr_candidate.yaml",
+    )
 
     with open(robot_description_file, encoding="utf-8") as stream:
         robot_description = stream.read()
@@ -40,6 +46,7 @@ def generate_launch_description():
 
     gui = LaunchConfiguration("gui")
     localization_delay = LaunchConfiguration("localization_delay")
+    map_file = LaunchConfiguration("map")
 
     gazebo_server = ExecuteProcess(
         cmd=["gz", "sim", "-r", "-s", world_file],
@@ -87,7 +94,7 @@ def generate_launch_description():
                 package="nav2_map_server",
                 executable="map_server",
                 name="map_server",
-                parameters=[map_server_file],
+                parameters=[map_server_file, {"yaml_filename": map_file}],
                 output="screen",
             ),
             Node(
@@ -120,6 +127,15 @@ def generate_launch_description():
                 "gui",
                 default_value="false",
                 description="Start Gazebo GUI when true.",
+            ),
+            DeclareLaunchArgument(
+                "map",
+                default_value=default_map_file,
+                description=(
+                    "Map YAML for map_server (overrides yaml_filename). "
+                    "Default: the Phase 7D-R candidate map installed with "
+                    "wro2026_sim."
+                ),
             ),
             DeclareLaunchArgument(
                 "localization_delay",

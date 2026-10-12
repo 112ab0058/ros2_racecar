@@ -1,3 +1,5 @@
+> 已封存（2026-10-13）。目前狀態見 docs/STATUS.md。
+
 # 實車＋Jetson Orin：第一天 Checklist
 
 ## 安全
