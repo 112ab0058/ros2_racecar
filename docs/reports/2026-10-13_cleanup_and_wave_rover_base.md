@@ -44,7 +44,7 @@ a0120ed Add AI project sync handoff docs
 
 **請你先處理：**
 
-1. 未追蹤檔案 `docs/HARDWARE_INVENTORY.md`（3676 bytes，2026-10-09 18:21，H0 草稿，內容已被 `docs/real/REAL_CAR_HARDWARE.md` 取代）。
+1. WSL repo 裡的未追蹤檔案 docs/HARDWARE_INVENTORY.md（3676 bytes，2026-10-09 18:21，H0 草稿，內容已被 `docs/real/REAL_CAR_HARDWARE.md` 取代）。
 2. `stash@{0}: On main: backup before 160cm update`。
 3. 本機分支 `backup/local-main-20261009` 有 2 個 GitHub 上沒有的 commit：`c7938cd Tune return-to-line exit for one-obstacle test`、`bd189d0 Tune startup and cornering for 160cm field`（訊息和 main 上的 `5f65dbc`、`02983ad` 相同，SHA 不同，可能是 rebase 前的版本）。
 4. WSL 的 `main` 和 GitHub `main` 同一個 commit（`c9061f5`）；沒有未 commit 的修改。
