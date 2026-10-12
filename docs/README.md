@@ -38,3 +38,5 @@
 | [archive/sim_phases/AI_SYNC.md](archive/sim_phases/AI_SYNC.md) | 2026-07-06 的 AI 同步紀錄（已過期） |
 | [archive/sim_phases/NEXT_PROMPT_phase7g.md](archive/sim_phases/NEXT_PROMPT_phase7g.md) | Phase 7G residual odom campaign 的完整 prompt |
 | [archive/handoff_2026-10-09/](archive/handoff_2026-10-09/README.md) | 2026-10-09 從模擬轉實車的交接包（H0–H9 里程碑定義、Phase 7 結論、證據路徑） |
+
+
