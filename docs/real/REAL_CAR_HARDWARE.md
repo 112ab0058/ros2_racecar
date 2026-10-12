@@ -2,13 +2,14 @@
 
 更新時間：2026-10-13
 狀態：過渡測試車已可由 Orin 透過 HTTP 下指令；序列埠接線預計 2026-10-14 完成。
+2026-10-13 晚：driver 已搬進 repo（`src/wro2026_base_waverover`），新 driver 以 HTTP 做過只讀驗證（見下方「已驗證（2026-10-13 晚）」）。Jetson 的 `~/ros2_ws/src/wave_rover_driver` 保留為備份，兩個不能同時跑。操作步驟見 [RUNBOOK.md](RUNBOOK.md)。
 規則：未經實物或文件確認的項目一律標 `UNKNOWN`。
 
 ## 系統一覽
 
 ```text
 Jetson Orin Nano (Ubuntu 24.04, ROS 2 Jazzy)
-   │  wave_rover_driver: /cmd_vel → {"T":1,"L":..,"R":..}
+   │  wro2026_base_waverover（原 wave_rover_driver）: /cmd_vel → {"T":1,"L":..,"R":..}
    │  ├─ 目前：HTTP  http://<ESP32 IP>/js?json=...（Wi-Fi）
    │  └─ 規劃：UART  /dev/ttyTHS1 115200（40-pin：pin 8 TX、pin 10 RX、pin 6 GND）
    ▼
@@ -69,16 +70,38 @@ Waveshare WAVE ROVER（ESP32 驅動板 + 4 顆馬達，差速、無 encoder）
 - 啟動只送停止、前進/後退/左轉/右轉各約 0.9 s、`/cmd_vel` 中斷 0.306 s 內送停止、關閉 driver 時送停止：全部 PASS。
 - 輪子實際轉向：**待人工目視確認**（沒有 encoder，回授無法證明）。
 
+## 已驗證（2026-10-13 晚，新 driver `wro2026_base_waverover`，HTTP，只讀）
+
+條件：`ros2 launch wro2026_real bringup.launch.py transport:=http host:=192.168.0.16 max_speed:=0.0`，沒有任何 `/cmd_vel` publisher（啟動前後都確認 Publisher count 0）。只送了 `{"T":1,"L":0,"R":0}`、`{"T":130}`、`{"T":126}`。Log：Jetson `~/wave_rover_logs/verify_2_5_20261013_022804/`。
+
+| 項目 | 結果 |
+|---|---|
+| 啟動後只送停止 | `/wave_rover/sent_cmd` 收到 170 筆，全部 `{"T":1,"L":0,"R":0}`、全部送達 |
+| `/battery` | 約 4.8 Hz，12.12 V，frame `base_link` |
+| `/imu/data` | 約 4.8 Hz，frame `imu_link` |
+| `/diagnostics` | 1.0 Hz，level OK，回授延遲約 0.15 s |
+| `/odom` | 20 Hz；沒有指令時相隔 33.7 s 的兩筆都是位置 0、角度 0 |
+| TF | `odom → base_link`（driver）→ `imu_link`、`camera_link`（robot_state_publisher）可以查到 |
+| 關閉送停止 | 對 `ros2 launch` 送 SIGINT：log `shutdown stop sent: ok`，兩個 process 正常結束；之後直接讀 T:130 為 L=0、R=0 |
+
+### 新發現
+
+- **IMU gz 靜止時雜訊很大**：直接讀 30 筆 T:126，gz 平均 0.05 deg/s、標準差 5.1 deg/s、範圍 -14.7～+13.9 deg/s；gx、gy 標準差只有約 0.2 deg/s。韌體融合後的 yaw（`y`）在同一段約 3 秒內只變 0.16°。odom 在沒有指令時固定不動，但行進中用 gz 積分的 yaw 可能漂得快（之後可考慮改用 `y`）。
+- HTTP 模式下，沒變的停止指令實際約 1.7 Hz 重送（設定每 0.5 s，加上 HTTP 延遲與回授輪詢）。
+- T:130 回授的 `L`/`R` 靜止時為 0（與先前一致）；電池 12.12 V。
+
 ## 對里程碑的影響
 
 - **H3 encoder odometry 在這台車上做不到**：WAVE ROVER 沒有 encoder。過渡期只能用 IMU yaw + 指令速度做 dead reckoning，精度有限，不可作為 Nav2 的主要 odom。比賽車選型時 encoder 為必要條件。
+  - 2026-10-13：`wro2026_base_waverover` 已實作這個 dead reckoning（線速度 = 送出的輪指令 × `pwm_to_mps`，角速度 = IMU gz）。`pwm_to_mps` 還沒量（預設 0，所以 odom 只會轉向不會位移）。
 - 底盤以上的節點仍只依賴 `/cmd_vel`、`/odom`、`/imu`、TF，不得依賴 WAVE ROVER 的原地旋轉能力。
 
 ## UNKNOWN 清單
 
-1. 實測輪距、輪徑、最大線速度（PWM 比例 → m/s 的對應）。
+1. 實測輪距、輪徑、最大線速度（PWM 比例 → m/s 的對應，driver 參數 `pwm_to_mps`）。量法見 [RUNBOOK.md](RUNBOOK.md) 第 5 節。
 2. 車上替 Orin 供電的方式（行動電源 PD 20V + 誘騙線為候選，未購買）。
 3. 相機型號與安裝位置。
 4. LiDAR 型號（尚未安裝）。
 5. 比賽車的底盤、馬達、encoder、MCU。
 6. 急停：目前只有車子電源鍵與 ESP32 3 s timeout，沒有獨立急停開關。
+7. IMU 軸向與 `base_link` 的關係（`imu_yaw_rate_sign`）、IMU 安裝位置。

@@ -19,8 +19,9 @@ Codex 時期的專案規則在 AGENTS.md，模擬（`src/wro2026_sim`）相關�
 
 ### Package 規劃
 - `src/wro2026_sim`：模擬，保持原樣，不得部署到 Jetson。
-- `src/wro2026_real`（待建立）：實車 bringup、底盤 driver、相機、參數化的 line detector。不得依賴 Gazebo / ros_gz / turtlebot3。
-- WAVE ROVER 底盤 driver 目前在 Jetson 的 `~/ros2_ws/src/wave_rover_driver`（本機 git，未進這個 repo），之後要搬進 `src/` 成為獨立的底盤 package。
+- `src/wro2026_real`（2026-10-13 建立）：實車 bringup、相機、參數化的 line detector、URDF。不得依賴 Gazebo / ros_gz / turtlebot3。
+- `src/wro2026_base_waverover`（2026-10-13 建立）：WAVE ROVER 底盤 driver，由 Jetson 的 `~/ros2_ws/src/wave_rover_driver`（本機 git）搬進來；舊的那份留在 Jetson 當備份，不要修改，也不要和新的同時啟動。
+- Jetson 上用 `~/racecar_ws`（不是 git repo）build / test 這兩個 package；操作步驟在 `docs/real/RUNBOOK.md`。
 
 ### 安全規則（實車）
 - 任何會讓馬達轉動的程式或指令，執行前先跟我確認，並說明：限速、限時、怎麼停。

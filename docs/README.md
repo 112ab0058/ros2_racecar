@@ -14,6 +14,9 @@
 | 文件 | 用途 |
 |---|---|
 | [real/REAL_CAR_HARDWARE.md](real/REAL_CAR_HARDWARE.md) | Jetson 與 WAVE ROVER 的硬體盤點、允許的 ESP32 指令、已驗證項目、UNKNOWN 清單 |
+| [real/RUNBOOK.md](real/RUNBOOK.md) | 實車操作：部署、啟動 / 停止、架空目視測試、UART 接線後的步驟、量測輪距與 `pwm_to_mps` |
+| [../src/wro2026_base_waverover/README.md](../src/wro2026_base_waverover/README.md) | 底盤 driver：結構、topic、安全行為、odometry 的限制 |
+| [../src/wro2026_real/README.md](../src/wro2026_real/README.md) | bringup、URDF、line detector 與 `/line_detection` 格式 |
 
 ## 模擬（`sim/`）
 

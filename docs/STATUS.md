@@ -20,16 +20,17 @@
 
 ## 實車線：Jetson Orin Nano + Waveshare WAVE ROVER（過渡測試車）
 
-硬體細節見 [real/REAL_CAR_HARDWARE.md](real/REAL_CAR_HARDWARE.md)。里程碑定義來自 [START_HERE_NEXT_AI](archive/handoff_2026-10-09/START_HERE_NEXT_AI.md)。
+硬體細節見 [real/REAL_CAR_HARDWARE.md](real/REAL_CAR_HARDWARE.md)，操作步驟見 [real/RUNBOOK.md](real/RUNBOOK.md)。里程碑定義來自 [START_HERE_NEXT_AI](archive/handoff_2026-10-09/START_HERE_NEXT_AI.md)。
+程式：`src/wro2026_base_waverover`（底盤 driver，由 Jetson 的 `wave_rover_driver` 搬進來）、`src/wro2026_real`（bringup、URDF、參數化 line detector）。兩個 package 都有不需硬體的 pytest（Jetson `colcon test` 61 項 0 失敗）。
 
 | 里程碑 | 狀態 | 說明 |
 |---|---|---|
-| H0 硬體盤點 | DONE（過渡車） | WAVE ROVER + Orin 已盤點；UNKNOWN 6 項（輪距/輪徑/速度比例、車上供電、相機、LiDAR、比賽車、急停） |
+| H0 硬體盤點 | DONE（過渡車） | WAVE ROVER + Orin 已盤點；UNKNOWN 7 項（輪距/輪徑/速度比例、車上供電、相機、LiDAR、比賽車、急停、IMU 軸向） |
 | H1 Jetson / OS / ROS 2 | DONE | Ubuntu 24.04.4、L4T R39.2.1、ROS 2 Jazzy `ros-base` + `ros-dev-tools`；沒有 Gazebo / GUI |
-| H2 架空低速與停止 | PARTIAL | 2026-10-13 HTTP、max_speed 0.05、架空：啟動只送停止、前後左右、`/cmd_vel` 中斷 0.306 s 停車、關閉送停止全部 PASS。**輪子是否真的轉動待人工目視**；UART 接線預計 2026-10-14 |
-| H3 encoder odometry | BLOCKED（這台車） | WAVE ROVER 沒有 encoder；過渡期只能用 IMU yaw + 指令速度做 dead reckoning，不可作為 Nav2 主要 odom |
-| H4 感測器 driver / TF | PARTIAL | IMU 可由 T:126 讀到；相機型號 UNKNOWN；LiDAR 未安裝 |
-| H5 URDF 與實際尺寸 | 未開始 | 輪距、輪徑、感測器位置 UNKNOWN |
+| H2 架空低速與停止 | PARTIAL | 舊 driver 2026-10-13 HTTP、max_speed 0.05、架空：啟動只送停止、前後左右、`/cmd_vel` 中斷 0.306 s 停車、關閉送停止全部 PASS。新 driver 加了回授遺失停車與低電壓拒絕（pytest 驗證），HTTP 只讀實機驗證通過（沒有送非零指令）。**輪子是否真的轉動待人工目視**；UART 接線預計 2026-10-14；新 driver 還沒跑過會動輪子的測試 |
+| H3 encoder odometry | BLOCKED（這台車） | WAVE ROVER 沒有 encoder。過渡用的 dead reckoning（送出的輪指令 × `pwm_to_mps` + IMU gz）已實作；`pwm_to_mps` UNKNOWN（預設 0，只轉向不位移）；低品質，不可作為 Nav2 主要 odom |
+| H4 感測器 driver / TF | PARTIAL | `/imu/data`、`/battery`、`/diagnostics`、TF `odom → base_link → imu_link / camera_link` 實機確認；IMU gz 靜止雜訊大（標準差 5.1 deg/s）；相機型號 UNKNOWN、沒有相機 driver；LiDAR 未安裝 |
+| H5 URDF 與實際尺寸 | PARTIAL | 最小 URDF（`base_link`、`imu_link`、`camera_link`）已建立，尺寸全是暫定值；輪距、輪徑、感測器位置 UNKNOWN |
 | H6 localization | 未開始 | |
 | H7 mapping / Nav2 | 未開始 | |
 | H8 WRO 行為 | 未開始 | |
@@ -37,13 +38,17 @@
 
 ## 下一步
 
-1. 人工目視確認 0.05 PWM 時輪子有轉、方向正確、停得住（H2）。
-2. 2026-10-14 接 UART（Orin pin 8/10/6 ↔ 車頂 RX/TX/GND，`/dev/ttyTHS1`），重跑 H2 的 serial 版本。
-3. 量測輪距、輪徑、PWM → m/s 對應，補上 UNKNOWN。
+1. 人工目視確認 0.05 PWM 時輪子有轉、方向正確、停得住（H2）。步驟：[RUNBOOK 第 3 節](real/RUNBOOK.md)。
+2. 2026-10-14 接 UART（Orin pin 8/10/6 ↔ 車頂 RX/TX/GND，`/dev/ttyTHS1`），照 [RUNBOOK 第 4 節](real/RUNBOOK.md)用新 driver 重跑 H2 的 serial 版本。
+3. 量測輪距、輪徑、`pwm_to_mps`、IMU 方向，補上 UNKNOWN（[RUNBOOK 第 5 節](real/RUNBOOK.md)）。
+4. 決定相機型號並裝相機 driver，才能在實車上跑 line detector。
 
 ## 已知問題
 
 - `src/wro2026_sim/config/phase7/` 裡有 Python 腳本（`localization_probe.py`、`mapping_motion_supervisor.py`、`mapping_traversal.py`），放在 config 資料夾不合理，但搬移有風險，暫不動。
 - `src/wro2026_sim/config/phase7/localization_validation_route.yaml` 的 `source_evidence` 只是紀錄欄位，不影響執行；它指向的證據檔案（`~/ros2_evidence/...`）只存在 Ray 的 WSL 電腦上，不在 repo 裡。歷史 Phase 的 evidence 也都在那台電腦。
-- 模擬 package 沒有任何自動測試。
+- 模擬 package 沒有任何自動測試（實車的兩個 package 有）。
+- `/line_detection` 的 Float32MultiArray 格式只靠位置表示意義，很脆弱，之後應改成自訂 message。
+- Jetson 沒有 OpenCV / cv_bridge：line detector 只支援 rgb8 / bgr8 / rgba8 / bgra8 影像。
+- Ray 的 WSL `~/ros2_racecar` 有一份未追蹤的 H0 草稿（WSL repo 的 docs 底下的 HARDWARE_INVENTORY.md）、一個 stash、一個只在本機的 `backup/local-main-20261009` 分支（2026-10-13 唯讀檢查，未處理）。
 - 封存文件的內文沒有改，裡面提到的 `docs/` 路徑（例如舊的 CURRENT_STATE 位置）指的是 2026-10-13 搬移前的位置。

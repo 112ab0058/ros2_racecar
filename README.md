@@ -11,7 +11,7 @@ The project has two lines. The single source of truth for "where are we now" is 
 | Line | Status (2026-10-13) |
 |---|---|
 | Simulation (`src/wro2026_sim`, Gazebo) | Finished. Phase 6J controller accepted (`line_follower.py`, SHA-256 `de79e41c…`). Phase 7 odometry-calibration campaigns ended with documented architecture blockers in the frozen simulation model. Kept as reference only; it is not ported to the real car. Workflow rules: [docs/sim/SPEC.md](docs/sim/SPEC.md). |
-| Real car (Jetson Orin Nano, ROS 2 Jazzy) | H0 hardware inventory and H1 OS/ROS baseline done; H2 suspended-wheel low-speed / stop tests pass over HTTP, visual confirmation and UART wiring pending. The WAVE ROVER has no wheel encoders. Hardware: [docs/real/REAL_CAR_HARDWARE.md](docs/real/REAL_CAR_HARDWARE.md). Rules: [CLAUDE.md](CLAUDE.md). |
+| Real car (Jetson Orin Nano, ROS 2 Jazzy) | H0 hardware inventory and H1 OS/ROS baseline done; H2 suspended-wheel low-speed / stop tests pass over HTTP, visual confirmation and UART wiring pending. The WAVE ROVER has no wheel encoders. Packages: `src/wro2026_base_waverover` (chassis driver with stop/timeout/feedback-loss/low-battery protection, dead-reckoning odom) and `src/wro2026_real` (bringup, URDF, parameterised line detector), both with hardware-free pytest suites. Hardware: [docs/real/REAL_CAR_HARDWARE.md](docs/real/REAL_CAR_HARDWARE.md). How to run: [docs/real/RUNBOOK.md](docs/real/RUNBOOK.md). Rules: [CLAUDE.md](CLAUDE.md). |
 
 The rest of this README describes the simulation line as it was developed in 2026-05 to 2026-07.
 
@@ -220,9 +220,11 @@ ros2_racecar/
 │   ├── real/                  real-car hardware notes
 │   ├── sim/                   SPEC, field plan, Gazebo performance, WSL notes
 │   └── archive/               frozen phase docs and the 2026-10-09 handoff
-├── tools/
+├── tools/                     check_md_links.py, fix_lines.py
 ├── ros2_wsl_network.bash
 └── src/
+    ├── wro2026_base_waverover/  real car: WAVE ROVER chassis driver (Jetson)
+    ├── wro2026_real/            real car: bringup, URDF, line detector (Jetson)
     └── wro2026_sim/
         ├── CMakeLists.txt
         ├── package.xml
