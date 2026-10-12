@@ -1,4 +1,5 @@
-"""Automated low-speed motion test. WHEELS MUST BE OFF THE GROUND.
+"""
+Automated low-speed motion test. WHEELS MUST BE OFF THE GROUND.
 
   ros2 run wro2026_base_waverover test_motion --transport http --host 192.168.0.16
   ros2 run wro2026_base_waverover test_motion --transport serial --port /dev/ttyTHS1
@@ -28,13 +29,15 @@ import time
 import urllib.parse
 import urllib.request
 
-import rclpy
-from ament_index_python.packages import get_package_prefix
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from geometry_msgs.msg import Twist
+import rclpy
 from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
+
+from .process_guard import find_other_drivers
 
 SPEED_CAP = 0.1
 
@@ -44,6 +47,8 @@ def spin_quietly(ex):
         ex.spin()
     except ExternalShutdownException:
         pass
+
+
 STOP = {'T': 1, 'L': 0, 'R': 0}
 
 
@@ -68,7 +73,8 @@ class Recorder(Node):
     def row(self, event, sent='', fb='', note='', t=None):
         t = time.time() if t is None else t
         with self.lock:
-            self.csv.writerow([datetime.datetime.fromtimestamp(t).isoformat(timespec='milliseconds'),
+            wall = datetime.datetime.fromtimestamp(t).isoformat(timespec='milliseconds')
+            self.csv.writerow([wall,
                                f'{t:.3f}', self.step, event, sent, fb,
                                '' if self.battery_v is None else f'{self.battery_v:.3f}', note])
             self.csv_file.flush()
@@ -177,11 +183,14 @@ class MotionTest:
 
     # ---------------------------------------------------------------- steps
     def start_driver(self):
-        exe = os.path.join(get_package_prefix('wro2026_base_waverover'), 'lib', 'wro2026_base_waverover', 'driver')
-        cmd = [exe, '--ros-args',
+        pkg = 'wro2026_base_waverover'
+        exe = os.path.join(get_package_prefix(pkg), 'lib', pkg, 'driver')
+        config = os.path.join(get_package_share_directory(pkg), 'config', 'wave_rover.yaml')
+        cmd = [exe, '--ros-args', '--params-file', config,
                '-p', f'transport:={self.a.transport}', '-p', f'host:={self.a.host}',
                '-p', f'port:={self.a.port}', '-p', f'max_speed:={self.a.speed}',
-               '-p', f'track_width:={self.a.track_width}', '-p', f'cmd_timeout:={self.a.cmd_timeout}']
+               '-p', f'track_width:={self.a.track_width}',
+               '-p', f'cmd_timeout:={self.a.cmd_timeout}']
         self.driver_log = open(self.driver_log_path, 'w')
         self.n.step = 'B1_startup'
         self.n.row('driver_start', note=' '.join(cmd))
@@ -192,7 +201,8 @@ class MotionTest:
     def step_startup(self):
         deadline = time.monotonic() + 10.0
         while time.monotonic() < deadline:
-            if self.n.battery_v is not None and self.n.sent and self.n.cmd_pub.get_subscription_count() > 0:
+            if (self.n.battery_v is not None and self.n.sent
+                    and self.n.cmd_pub.get_subscription_count() > 0):
                 break
             if not self.driver_alive():
                 break
@@ -202,9 +212,11 @@ class MotionTest:
         fb = self.n.fb_between(0, time.time())
         nonzero_sent = [s for s in sent if s[1] != 0 or s[2] != 0]
         nonzero_fb = [f for f in fb if f[1] != 0 or f[2] != 0]
-        ok = (self.driver_alive() and len(sent) > 0 and len(fb) > 0 and self.n.battery_v is not None
+        ok = (self.driver_alive() and len(sent) > 0 and len(fb) > 0
+              and self.n.battery_v is not None
               and not nonzero_sent and not nonzero_fb and all(s[3] for s in sent))
-        self.result('B1 startup only sends stop', ok, sent_count=len(sent), sent_nonzero=len(nonzero_sent),
+        self.result('B1 startup only sends stop', ok, sent_count=len(sent),
+                    sent_nonzero=len(nonzero_sent),
                     send_failures=sum(1 for s in sent if not s[3]), t130_count=len(fb),
                     t130_nonzero=len(nonzero_fb), battery_v=self.n.battery_v,
                     driver_alive=self.driver_alive())
@@ -239,7 +251,8 @@ class MotionTest:
         # stop must be sent within 0.5 s; otherwise stop immediately, not after the pause
         deadline = time.monotonic() + 0.5
         while time.monotonic() < deadline:
-            if any(s[1] == 0 and s[2] == 0 for s in self.n.sent_between(t_zero - 0.05, time.time())):
+            recent = self.n.sent_between(t_zero - 0.05, time.time())
+            if any(s[1] == 0 and s[2] == 0 for s in recent):
                 break
             time.sleep(0.02)
         else:
@@ -248,21 +261,25 @@ class MotionTest:
         t_end = time.time()
 
         sent = self.n.sent_between(t0, t_end)
-        moving = [s for s in sent if s[0] < t_zero + 0.05 and abs(s[1] - exp_l) < 1e-3 and abs(s[2] - exp_r) < 1e-3]
+        moving = [s for s in sent if s[0] < t_zero + 0.05
+                  and abs(s[1] - exp_l) < 1e-3 and abs(s[2] - exp_r) < 1e-3]
         stops = [s for s in sent if s[0] >= t_zero - 0.05 and s[1] == 0 and s[2] == 0]
         stop_latency = (stops[0][0] - t_zero) if stops else None
         last_motion = max((s[0] for s in moving), default=None)
         on_time = (last_motion - moving[0][0]) if moving else None
         fb = self.n.fb_between(t0, t_end)
-        fb_moving = [f for f in fb if f[1] and f[2] and (f[1] > 0) == (exp_l > 0) and (f[2] > 0) == (exp_r > 0)]
+        fb_moving = [f for f in fb if f[1] and f[2]
+                     and (f[1] > 0) == (exp_l > 0) and (f[2] > 0) == (exp_r > 0)]
         fb_after = self.n.fb_between(t_zero + 0.8, t_end)
         fb_stopped = bool(fb_after) and all(f[1] == 0 and f[2] == 0 for f in fb_after)
         failures = [s for s in sent if not s[3]]
-        ok = bool(moving) and stop_latency is not None and stop_latency <= 0.5 and fb_stopped and not failures
+        ok = (bool(moving) and stop_latency is not None and stop_latency <= 0.5
+              and fb_stopped and not failures)
         self.result(name, ok, expected={'L': exp_l, 'R': exp_r},
                     motion_cmds_sent=len(moving),
                     motion_cmd_span_s=None if on_time is None else round(on_time, 3),
-                    stop_sent_after_zero_s=None if stop_latency is None else round(stop_latency, 3),
+                    stop_sent_after_zero_s=(None if stop_latency is None
+                                            else round(stop_latency, 3)),
                     t130_applied_pwm=sorted({(f[1], f[2]) for f in fb_moving}),
                     t130_samples_in_motion=len(fb_moving), t130_zero_after=fb_stopped,
                     send_failures=len(failures), battery_v=self.n.battery_v)
@@ -292,7 +309,8 @@ class MotionTest:
         deadline = time.monotonic() + 1.0
         stop_t = None
         while time.monotonic() < deadline:
-            stops = [s for s in self.n.sent_between(t_last, time.time()) if s[1] == 0 and s[2] == 0]
+            stops = [s for s in self.n.sent_between(t_last, time.time())
+                     if s[1] == 0 and s[2] == 0]
             if stops:
                 stop_t = stops[0][0]
                 break
@@ -303,7 +321,8 @@ class MotionTest:
         latency = None if stop_t is None else stop_t - t_last
         fb_after = self.n.fb_between(t_last + 0.8, time.time())
         fb_stopped = bool(fb_after) and all(f[1] == 0 and f[2] == 0 for f in fb_after)
-        moving = [s for s in self.n.sent_between(t0, t_last + 0.05) if s[1] == self.a.speed and s[2] == self.a.speed]
+        moving = [s for s in self.n.sent_between(t0, t_last + 0.05)
+                  if s[1] == self.a.speed and s[2] == self.a.speed]
         ok = bool(moving) and latency is not None and latency <= 0.5 and fb_stopped
         self.result(name, ok, motion_cmds_sent=len(moving),
                     stop_sent_after_last_cmd_vel_s=None if latency is None else round(latency, 3),
@@ -351,9 +370,10 @@ class MotionTest:
         s, tw = self.a.speed, self.a.track_width
         w_spin = 2.0 * s / tw
         try:
-            self.decisions.append('no automatic retry at 0.1: the car has no encoders and T:130 L/R '
-                                  'stay 0 while T:1 is applied, so feedback cannot show whether a '
-                                  'wheel physically turns; check visually and rerun with --speed 0.1')
+            self.decisions.append('no automatic retry at 0.1: the car has no encoders and '
+                                  'T:130 L/R stay 0 while T:1 is applied, so feedback cannot '
+                                  'show whether a wheel physically turns; check visually and '
+                                  'rerun with --speed 0.1')
             self.start_driver()
             self.step_startup()
             if self.a.startup_only:
@@ -395,12 +415,14 @@ class MotionTest:
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--transport', choices=['http', 'serial'], default='http')
     ap.add_argument('--host', default='192.168.0.16')
     ap.add_argument('--port', default='/dev/ttyTHS1')
-    ap.add_argument('--speed', type=float, default=0.05, help=f'wheel PWM fraction, max {SPEED_CAP}')
-    ap.add_argument('--track-width', type=float, default=0.17)
+    ap.add_argument('--speed', type=float, default=0.05,
+                    help=f'wheel PWM fraction, max {SPEED_CAP}')
+    ap.add_argument('--track-width', type=float, default=0.125)
     ap.add_argument('--cmd-timeout', type=float, default=0.3)
     ap.add_argument('--duration', type=float, default=1.0, help='max seconds per motion (<= 1.0)')
     ap.add_argument('--pause', type=float, default=2.0, help='seconds between motions (>= 2.0)')
@@ -416,9 +438,10 @@ def main():
         ap.error('--duration must be in (0, 1.0]')
     if args.pause < 2.0:
         ap.error('--pause must be >= 2.0')
-    running = subprocess.run(['pgrep', '-f', 'lib/wro2026_base_waverover/driver'], capture_output=True, text=True)
-    if running.stdout.strip():
-        ap.error(f'a wave_rover driver is already running (pid {running.stdout.split()}); stop it first')
+    running = find_other_drivers()
+    if running:
+        pids = [pid for pid, _ in running]
+        ap.error(f'a wave_rover driver is already running (pid {pids}); stop it first')
     return MotionTest(args).run()
 
 

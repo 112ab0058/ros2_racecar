@@ -1,4 +1,5 @@
-"""Read-only check of the Orin 40-pin UART before using transport:=serial.
+"""
+Read-only check of the Orin 40-pin UART before using transport:=serial.
 
   ros2 run wro2026_base_waverover check_serial [--port /dev/ttyTHS1]
 
@@ -30,7 +31,8 @@ def systemctl(*args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--port', default='/dev/ttyTHS1')
     args = ap.parse_args()
     port = args.port
@@ -55,7 +57,8 @@ def main():
     if group in proc_groups:
         report('OK', 'group', f'{user} is in {group} (this session)')
     elif user in db_members:
-        report('WARN', 'group', f'{user} added to {group} but this session predates it: log out and back in')
+        report('WARN', 'group',
+               f'{user} added to {group} but this session predates it: log out and back in')
     else:
         report('FAIL', 'group', f'{user} not in {group}: needs sudo usermod -aG {group} {user}')
 
@@ -113,7 +116,8 @@ def main():
     if holders:
         report('FAIL', 'open by', ', '.join(holders))
     else:
-        report('OK', 'open by', f'nobody among visible processes ({hidden} processes not inspectable without sudo)')
+        report('OK', 'open by', f'nobody among visible processes '
+                                f'({hidden} processes not inspectable without sudo)')
 
     fails = results.count('FAIL')
     warns = results.count('WARN')
