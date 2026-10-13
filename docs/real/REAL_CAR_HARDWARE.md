@@ -42,8 +42,10 @@ Waveshare WAVE ROVER（ESP32 驅動板 + 4 顆馬達，差速、無 encoder）
 | Encoder | **無**。T:130 回授的 L/R 在送出 T:1 期間仍為 0 | 2026-10-13 實測 |
 | IMU | 有，T:126 回傳 r/p/y（度）、ax/ay/az（mg）、gx/gy/gz（deg/s） | 韌體原始碼 + 實測（靜止 az ≈ 980） |
 | 輪距 | 韌體常數 0.125 m；Waveshare 正視尺寸圖：輪寬 42.5 mm、兩輪內側之間標 81.6 mm，推算輪心距約 0.124 m，和韌體常數一致；實測 UNKNOWN | ugv_base_general 原始碼、Waveshare 尺寸圖 |
-| 外型（正視圖） | 含天線高 100 mm、車身頂部 88.5 mm、底盤離地 33.7 mm | Waveshare 尺寸圖 |
-| 輪徑 | UNKNOWN | |
+| 外型 | 長 183 mm（含天線 194 mm）；含天線高 100 mm、車身頂部 88.5 mm、底盤離地 33.7 mm；俯視圖另標 136 mm（含義未確認） | Waveshare 尺寸圖 |
+| 軸距（前後輪心） | 97 mm | Waveshare 側視圖 |
+| 輪徑 | 圖上沒有標，從側視圖比例估約 85 mm（誤差可能 ±5 mm），實測 UNKNOWN | Waveshare 側視圖（估算） |
+| 車頂主機孔位 | 58 × 49 mm（Raspberry Pi）、58 × 86 mm（Jetson Nano 系列） | Waveshare 俯視圖 |
 | 電池 | 3 × INR18650 2.5 Ah 串聯（3S，滿電 12.6 V），電池座在底板下（拆 4 顆黑色內六角螺絲） | 實物 |
 | 充電 | 12.6 V 2A 變壓器，可邊充邊用；剛裝電池需先插充電器喚醒保護板 | 實測 |
 | 上位機介面 | 車頂 40-pin 母座（5V、GND、TX、RX、SDA、SCL，對應 Raspberry Pi 腳位 2–10） | 實物絲印 |
