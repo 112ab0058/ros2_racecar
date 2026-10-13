@@ -68,7 +68,7 @@ Waveshare WAVE ROVER（ESP32 驅動板 + 4 顆馬達，差速、無 encoder）
 ## 已驗證（2026-10-13，車輪架空，max_speed 0.05）
 
 - 啟動只送停止、前進/後退/左轉/右轉各約 0.9 s、`/cmd_vel` 中斷 0.306 s 內送停止、關閉 driver 時送停止：全部 PASS。
-- 輪子實際轉向：**待人工目視確認**（沒有 encoder，回授無法證明）。
+- 輪子實際轉向：2026-10-13 11:14 用新 driver（`wro2026_base_waverover`，HTTP，max_speed 0.05，架空）跑 `test_motion`，B1–B4 全部 PASS（`/cmd_vel` 中斷後 0.306 s 送停止，電池 11.99 V），使用者目視確認前進、後退、原地左轉、原地右轉的方向正確，每次都有停住。紀錄：Jetson `~/wave_rover_logs/motion_20261013_111415.csv`。
 
 ## 已驗證（2026-10-13 02:28，新 driver `wro2026_base_waverover`，HTTP，只讀）
 

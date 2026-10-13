@@ -27,7 +27,7 @@
 |---|---|---|
 | H0 硬體盤點 | DONE（過渡車） | WAVE ROVER + Orin 已盤點；UNKNOWN 7 項（輪距/輪徑/速度比例、車上供電、相機、LiDAR、比賽車、急停、IMU 軸向）。比賽車另有草稿 [real/FINAL_CAR_DRAFT.md](real/FINAL_CAR_DRAFT.md)（Ackermann、STM32、Orbbec 深度相機、LiDAR、encoder；型號大多 UNKNOWN） |
 | H1 Jetson / OS / ROS 2 | DONE | Ubuntu 24.04.4、L4T R39.2.1、ROS 2 Jazzy `ros-base` + `ros-dev-tools`；沒有 Gazebo / GUI |
-| H2 架空低速與停止 | PARTIAL | 舊 driver 2026-10-13 HTTP、max_speed 0.05、架空：啟動只送停止、前後左右、`/cmd_vel` 中斷 0.306 s 停車、關閉送停止全部 PASS。新 driver 加了回授遺失停車與低電壓拒絕（pytest 驗證），HTTP 只讀實機驗證通過（沒有送非零指令）。**輪子是否真的轉動待人工目視**；UART 接線預計 2026-10-14；新 driver 還沒跑過會動輪子的測試 |
+| H2 架空低速與停止 | PARTIAL | 舊 driver 2026-10-13 HTTP、max_speed 0.05、架空：啟動只送停止、前後左右、`/cmd_vel` 中斷 0.306 s 停車、關閉送停止全部 PASS。新 driver 加了回授遺失停車與低電壓拒絕（pytest 驗證），HTTP 只讀實機驗證通過。2026-10-13 11:14 新 driver HTTP、0.05、架空跑 `test_motion`：B1–B4 全部 PASS，**使用者目視確認四個動作方向正確、停得住**。剩下：UART 版本（預計 2026-10-14） |
 | H3 encoder odometry | BLOCKED（這台車） | WAVE ROVER 沒有 encoder。過渡用的 dead reckoning（送出的輪指令 × `pwm_to_mps` + IMU gz）已實作；`pwm_to_mps` UNKNOWN（預設 0，只轉向不位移）；低品質，不可作為 Nav2 主要 odom |
 | H4 感測器 driver / TF | PARTIAL | `/imu/data`、`/battery`、`/diagnostics`、TF `odom → base_link → imu_link / camera_link` 實機確認；IMU gz 靜止雜訊大（標準差 5.1 deg/s）；相機型號 UNKNOWN、沒有相機 driver；LiDAR 未安裝 |
 | H5 URDF 與實際尺寸 | PARTIAL | 最小 URDF（`base_link`、`imu_link`、`camera_link`）已建立，尺寸全是暫定值；輪距、輪徑、感測器位置 UNKNOWN |
@@ -38,7 +38,7 @@
 
 ## 下一步
 
-1. 人工目視確認 0.05 PWM 時輪子有轉、方向正確、停得住（H2）。步驟：[RUNBOOK 第 3 節](real/RUNBOOK.md)。
+1. ~~人工目視確認（H2，HTTP）~~：2026-10-13 完成，方向正確。
 2. 2026-10-14 接 UART（Orin pin 8/10/6 ↔ 車頂 RX/TX/GND，`/dev/ttyTHS1`），照 [RUNBOOK 第 4 節](real/RUNBOOK.md)用新 driver 重跑 H2 的 serial 版本。
 3. 量測輪距、輪徑、`pwm_to_mps`、IMU 方向，補上 UNKNOWN（[RUNBOOK 第 5 節](real/RUNBOOK.md)）。
 4. 決定相機型號並裝相機 driver，才能在實車上跑 line detector。
