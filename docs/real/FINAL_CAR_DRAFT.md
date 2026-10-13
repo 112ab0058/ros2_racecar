@@ -1,4 +1,6 @@
 > 來源：WSL `~/ros2_racecar/docs/HARDWARE_INVENTORY.md`（2026-10-09 建立，未追蹤），2026-10-13 搬進 repo。內容描述的是**最終比賽車**（Ackermann），不是目前的過渡測試車 WAVE ROVER；WAVE ROVER 見 [REAL_CAR_HARDWARE.md](REAL_CAR_HARDWARE.md)。除了交接文件路徑已更新為封存後的位置外，內文未修改。
+>
+> 2026-10-13 更新（使用者）：Orbbec 深度相機**可能不會用**；LiDAR 型號與到貨時間仍在確認中。
 
 # 實車硬體盤點（H0 草稿）
 

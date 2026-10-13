@@ -41,7 +41,7 @@
 1. ~~人工目視確認（H2，HTTP）~~：2026-10-13 完成，方向正確。
 2. 2026-10-14 接 UART（Orin pin 8/10/6 ↔ 車頂 RX/TX/GND，`/dev/ttyTHS1`），照 [RUNBOOK 第 4 節](real/RUNBOOK.md)用新 driver 重跑 H2 的 serial 版本。
 3. 量測輪距、輪徑、`pwm_to_mps`、IMU 方向，補上 UNKNOWN（[RUNBOOK 第 5 節](real/RUNBOOK.md)）。
-4. 決定相機型號並裝相機 driver，才能在實車上跑 line detector。
+4. 決定相機型號並裝相機 driver，才能在實車上跑 line detector。2026-10-13：深度相機可能不用，一般相機是否要用、用哪一款都 UNKNOWN；LiDAR 型號與到貨時間確認中。
 5. 分支 `control/pose-free-race-controller`（2026-10-13，WIP）有不依賴座標的比賽控制器 `wro2026_control`。合併前要先解決：它訂閱 `/imu`，底盤 driver 發佈 `/imu/data`；它輸出 m/s 的 `/cmd_vel`，底盤 driver 目前把 `/cmd_vel` 當 PWM 比例（見已知問題）；它需要 `/scan`（LiDAR）和行駛距離（需要 `pwm_to_mps`）。
 
 ## 已知問題
