@@ -1,6 +1,12 @@
 > 來源：WSL `~/ros2_racecar/docs/HARDWARE_INVENTORY.md`（2026-10-09 建立，未追蹤），2026-10-13 搬進 repo。內容描述的是**最終比賽車**（Ackermann），不是目前的過渡測試車 WAVE ROVER；WAVE ROVER 見 [REAL_CAR_HARDWARE.md](REAL_CAR_HARDWARE.md)。除了交接文件路徑已更新為封存後的位置外，內文未修改。
 >
 > 2026-10-13 更新（使用者）：Orbbec 深度相機**可能不會用**；LiDAR 型號與到貨時間仍在確認中。
+>
+> 2026-10-13 更新（使用者轉述組員）：比賽車是 **R550，內建光達**。repo 舊資料寫的是「V550」，兩者是否為同一台、是哪一個版本（AKM / DiffBot）待確認。
+> 廠商頁面上的 WHEELTEC R550 AKM/DiffBot（Raspberry Pi 5 版）規格，**我們實際買到的配置未確認**：
+> 參考尺寸 271 × 189 × 151 mm、約 1.8 kg；MG513 減速馬達 + 500 線 AB 相 GMR encoder；STM32 控制板（WheelBoard C30D）；
+> M10P ToF 光達；深度相機（型號未列）；IMU 與 odometry 回授；控制介面列出 CAN 與序列埠；最高速度 1.2 m/s。
+> 來源：[openelab 商品頁](https://openelab.io/de/products/wheeltec-r550-akm-diffbot-rpi5)。頁面也註明舊版 R550 可能搭配不同的控制板、光達或相機。
 
 # 實車硬體盤點（H0 草稿）
 
