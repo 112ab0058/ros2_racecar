@@ -12,7 +12,7 @@ status_topic.  The Gazebo launch sets imu_topic to /imu.
 The node only converts messages; every decision is in ``core.py``.
 
 Odometry use: only yaw and the travelled path length are taken from /odom
-(or yaw from /imu when ``use_imu_yaw`` is true).  The absolute x / y position
+(or yaw from the imu_topic when ``use_imu_yaw`` is true).  The absolute x / y position
 is never used for decisions, so the same node runs on Gazebo odom, wheel
 odom or IMU dead reckoning.
 

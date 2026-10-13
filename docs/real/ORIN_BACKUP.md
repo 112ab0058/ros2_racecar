@@ -32,7 +32,7 @@
 | `ros2_ws_src.tar.gz` | `~/ros2_ws/src`（舊 driver `wave_rover_driver`，含它的本機 git） |
 | `racecar_ws_src.tar.gz` | `~/racecar_ws/src`（不含 build / install / log） |
 
-**刻意不備份**：`~/.ssh`、NetworkManager 的連線設定（裡面有 Wi-Fi 密碼）、任何私鑰、build / install / log。建立時用 grep 檢查過文字檔，沒有 Wi-Fi 金鑰、密碼或私鑰的內容。
+**刻意不備份**：`~/.ssh`、NetworkManager 的連線設定（裡面有 Wi-Fi 密碼）、任何私鑰、build / install / log。建立時用 grep 檢查過**文字檔**，沒有 Wi-Fi 金鑰、密碼或私鑰的內容；兩個原始碼壓縮檔只檢查了檔名（沒有金鑰類檔名），沒有逐檔掃描內容（`ros2_ws_src.tar.gz` 含舊 driver 的本機 `.git`）。
 
 再做一次（Jetson，不需要 sudo）：
 
@@ -46,6 +46,7 @@ cp /etc/apt/sources.list /etc/apt/sources.list.d/* apt_sources/ 2>/dev/null
 ros2 pkg list > ros2_pkg_list.txt
 cp /etc/nv_tegra_release nv_tegra_release.txt; uname -a > uname_a.txt; cat /etc/os-release > os_release.txt
 nvpmodel -q > nvpmodel_q.txt; lsblk > lsblk.txt; df -h > df_h.txt; cp ~/.bashrc bashrc.txt
+printenv | grep -E '^(ROS_|RMW_|AMENT_PREFIX_PATH|COLCON)' > ros_env.txt; python3 --version > python_version.txt
 tar czf ros2_ws_src.tar.gz -C ~ --exclude=__pycache__ ros2_ws/src
 tar czf racecar_ws_src.tar.gz -C ~ --exclude=__pycache__ racecar_ws/src
 cd ~ && tar czf $(basename $B).tar.gz $(basename $B) && sha256sum $(basename $B).tar.gz
@@ -63,8 +64,11 @@ Windows（PowerShell）拉回：`scp user2@192.168.0.15:orin_backup_<時間>.tar
 4. 重裝手動安裝的套件（排除 NVIDIA 的套件）：
 
 ```bash
-grep -vE '^(nvidia-|cuda|libnv|tensorrt)' apt_mark_showmanual.txt > to_install.txt
-sudo apt-get install --no-upgrade $(cat to_install.txt)
+grep -vE '^(nvidia|cuda|libcuda|cudnn|libcudnn|libnv|tensorrt|libnvinfer|l4t|jetson|vpi|libvpi|nsight|linux-)' apt_mark_showmanual.txt > to_install.txt
+apt-get -s install --no-upgrade $(cat to_install.txt) > sim.txt   # 先模擬，不需要 sudo
+grep -c '^Remv' sim.txt                                            # 必須是 0
+grep -E '^(Inst|Remv) (nvidia|cuda|tensorrt|libnv|linux-)' sim.txt # 必須沒有輸出
+sudo apt-get install --no-upgrade $(cat to_install.txt)            # 上面兩項都通過才執行
 ```
 
    裝完用 `apt list --installed` 和 `apt_list_installed.txt` 比對版本；apt 會裝**現在的**版本，不一定和備份當下相同。
@@ -74,7 +78,7 @@ sudo apt-get install --no-upgrade $(cat to_install.txt)
 
 ## 3. 完整 SD 卡映像（Ray 自己做；這裡只寫步驟，沒有執行過）
 
-需要：讀卡機、Windows 上至少 **60 GB** 可用空間（卡是 58 GB，要整張讀；如果工具支援壓縮可以小很多）、映像工具 [USBImager](https://gitlab.com/bztsrc/usbimager) 或 [Win32 Disk Imager](https://sourceforge.net/projects/win32diskimager/)。
+需要：讀卡機、Windows 上的可用空間至少要等於整張卡的位元組數（`lsblk` 顯示的 58 G 是 GiB，約 62.3 GB；建議預留 64 GB 以上；如果工具支援壓縮可以小很多）、映像工具 [USBImager](https://gitlab.com/bztsrc/usbimager) 或 [Win32 Disk Imager](https://sourceforge.net/projects/win32diskimager/)。
 
 ### 3.1 做映像
 

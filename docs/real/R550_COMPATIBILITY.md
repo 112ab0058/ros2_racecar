@@ -9,10 +9,10 @@
 |---|---|---|
 | WHEELTEC R550 的 ROS 2 程式公開在哪裡 | 沒找到 WHEELTEC 官方的公開 repo。經銷商頁面只寫「ROS 2」、Raspberry Pi 5 版本，沒寫 distro；資料要跟廠商 / 組員拿 | 第三方 |
 | WHEELTEC 的 ROS 2 程式能不能在 Jazzy 上跑 | 有第三方把 `turn_on_wheeltec_robot` 移植到 ROS 2 Jazzy 並在 WHEELTEC 阿克曼小車上使用，所以**很可能可以**；但那是別的車型、別人改過的版本 | 第三方 + 推測 |
-| STM32 序列協定 | 兩個獨立第三方程式一致：115200 baud、`0x7B` 開頭、`0x7D` 結尾、XOR checksum、指令 11 bytes、回授 24 bytes。已寫成 `src/wro2026_base_r550`（UNVERIFIED） | 第三方（源自廠商程式） |
+| STM32 序列協定 | 兩份第三方程式一致：115200 baud、`0x7B` 開頭、`0x7D` 結尾、XOR checksum、指令 11 bytes、回授 24 bytes。兩份都源自 WHEELTEC 原廠 driver（**同源，不算獨立驗證**），而且都不是 R550 / C30D 控制板的資料，一致只代表兩份副本彼此相符。已寫成 `src/wro2026_base_r550`（UNVERIFIED） | 第三方（源自廠商程式）+ 推測（套用到 R550） |
 | 阿克曼版收 (v, ω) 還是 (v, 轉向角) | 程式裡兩種都有：ROS 2 移植版預設送 (v, ω)，ROS 1 阿克曼版送 (v, 轉向角 × 1000 / 2)。我們的 R550 韌體用哪一種**未知** | 第三方 + 推測 |
 | M10P 的 ROS 2 driver | LeiShen 官方 `Lslidar_ROS2_driver` 分支 `LS-S1_V1.0` 支援 M10P，README 寫有在 Ubuntu 24.04 + Jazzy 測過 | 官方 |
-| M10P 在 Jetson 上 build | `lslidar_msgs` 成功；`lslidar_driver` 失敗：缺 Boost（之後還會缺 PCL、pcl_conversions、libpcap）。沒有裝，列在第 5 節 | 實測 |
+| M10P 在 Jetson 上 build | `lslidar_msgs` 成功；`lslidar_driver` 在 CMake 階段失敗：缺 Boost（本次 build 的實際結果）。依 `CMakeLists.txt` 推測之後還會缺 PCL、pcl_conversions、libpcap。沒有裝，列在第 5 節 | 官方程式的 build 結果 + 推測 |
 
 ## 2. WHEELTEC R550 的 ROS 2 程式
 
@@ -71,7 +71,7 @@ CMake Error ... Could NOT find Boost (missing: Boost_INCLUDE_DIR thread)
 Failed   <<< lslidar_driver
 ```
 
-沒有改任何 driver 的程式（失敗原因是缺套件，不是 Jazzy 不相容）。`CMakeLists.txt` 需要：Boost（thread）、yaml-cpp（已有）、PCL、pcl_conversions、Eigen3（已有）、libpcap。
+沒有改任何 driver 的程式。build 在 CMake 找套件的階段就停了，還沒編譯任何 C++，所以**能不能在 Jazzy 上編譯成功仍未知**（README 說有在 Jazzy 測過，這是官方說法，不是我們驗證的）。`CMakeLists.txt` 需要：Boost（thread）、yaml-cpp（已有）、PCL、pcl_conversions、Eigen3（已有）、libpcap。
 
 需要的 apt 套件（**沒有裝，不在這次核准的清單裡**）：`libboost-thread-dev`、`libpcap-dev`、`libpcl-dev`、`ros-jazzy-pcl-conversions`。在 Jetson 上模擬安裝（`apt-get -s`）：升級 25 個、新裝 312 個、**移除 0 個**、沒有 nvidia / cuda / linux- 開頭的套件、沒有 OpenCV；下載約 330 MB、安裝後約 1.4 GB（記錄在 Jetson `~/r550_prep_logs/apt_sim_lslidar_deps_20261013.txt`）。`libpcl-dev` 占大部分空間；如果只需要 LaserScan，之後可以考慮在 `~/vendor_ws` 裡把點雲部分拿掉，但這次沒有做。
 
@@ -97,3 +97,4 @@ Failed   <<< lslidar_driver
 7. 量測：軸距、前後輪距、輪徑、最大轉向角、光達 / IMU 相對 `base_link` 的位置，寫進 URDF。
 8. 供電：電池電壓與容量、Orin 從哪裡取電（R550 原本是給 Raspberry Pi 5）、急停方式。
 9. 確認完協定後，才寫 `wro2026_base_r550` 的 ROS node（沿用 `/cmd_vel` 逾時、限速、回授遺失、低電壓），先架空驗證 stop / timeout。
+10. 之後接 `wro2026_control` 時，`race_node` 一律加 `start:=false` 啟動（它的 `start` 預設是 true，有 `/scan` 和 `/odom` 就會開始動），見 [INTERFACES.md](INTERFACES.md) 第 3 節。

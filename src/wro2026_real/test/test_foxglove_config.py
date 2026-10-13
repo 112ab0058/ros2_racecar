@@ -12,11 +12,15 @@ def test_no_write_capability():
     assert caps  # still useful: connection graph, assets
 
 
-def test_client_topics_match_nothing():
+def test_whitelists_match_no_ros_name():
     params = foxglove_parameters()
-    for pattern in params['client_topic_whitelist']:
-        for topic in ('/cmd_vel', 'cmd_vel', '/anything', ''):
-            assert re.search(pattern, topic) is None
+    names = ('/cmd_vel', 'cmd_vel', '/anything', '/wave_rover_driver/max_speed',
+             '/rosapi/get_param', 'max_speed')
+    for key in ('client_topic_whitelist', 'service_whitelist', 'param_whitelist'):
+        for pattern in params[key]:
+            for name in names:  # full match (C++ regex_match) and search
+                assert re.fullmatch(pattern, name) is None
+                assert re.search(pattern, name) is None
 
 
 def test_port():

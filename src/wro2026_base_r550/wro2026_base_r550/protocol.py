@@ -79,7 +79,7 @@ def _command(x_bytes, y_bytes, z_bytes, byte1, byte2):
     return body + bytes([bcc(body), FRAME_TAIL])
 
 
-def encode_twist_command(vx, wz, vy=0.0, byte1=0, byte2=0):
+def encode_twist_command(vx, wz, *, vy=0.0, byte1=0, byte2=0):
     """
     Encode a Twist-mode command: vx, vy in m/s, wz in rad/s.
 
@@ -105,7 +105,7 @@ def encode_ackermann_command(speed, steering_angle, byte1=0, byte2=0):
 
 def stop_command(byte1=0, byte2=0):
     """Encode an all-zero command."""
-    return encode_twist_command(0.0, 0.0, 0.0, byte1, byte2)
+    return encode_twist_command(0.0, 0.0, vy=0.0, byte1=byte1, byte2=byte2)
 
 
 def _i16(frame, i):

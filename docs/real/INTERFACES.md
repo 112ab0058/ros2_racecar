@@ -46,6 +46,8 @@
 
 控制器的前提：掃描與 odom 都要在 `sensor_timeout`（0.5 s）內更新，否則它送零速；線偵測超過 `line_timeout`（0.3 s）視為沒有線；阿克曼車要設 `min_turn_radius`（每個前進指令都滿足 |ω| ≤ |v| / R）。
 
+**注意：`race_node` 的 `start` 參數預設是 `true`**——只要 `/scan` 和 `/odom` 都在更新，它一啟動就會開始送前進指令（node 的說明寫「start 為 true 前不會動」，但預設就是 true）。在實車（R550）上一律要用 `start:=false` 啟動，確認一切正常、車輪架空後再用 `ros2 param set /race_controller start true`。建議控制器的作者把預設改成 false（這次規定不能改控制器，所以沒改）。
+
 ## 4. WAVE ROVER 目前沒做到的項目
 
 | 項目 | 狀態 | 說明 |
@@ -63,6 +65,10 @@
 | 回授遺失 | 有 | pytest 驗證；沒有在實機上拔線測試 |
 | 低電壓 | 有 | pytest 驗證（11.0 V WARN、10.5 V 拒絕） |
 | 單一實例 | **部分** | 新 driver 會擋舊的；舊 driver 不會擋新的 |
+| 啟動只送停止、第一筆回授前不送非零指令 | 有 | pytest 驗證；2026-10-13 實機只讀驗證（170 筆全是停止） |
+| 非有限值當停止 | 有 | pytest 驗證（NaN / inf，pwm 與 mps 模式都是） |
+| 關閉送停止 | 有 | 實機多次確認 log `shutdown stop sent: ok` |
+| `mps` 模式的角速度換算 | **待校正** | 用 `track_width` 0.125 m（韌體常數，沒量過）；4WD 滑移轉向的有效輪距通常較大，要和 `pwm_to_mps` 一起實測 |
 | `/scan` | **沒有** | WAVE ROVER 沒有光達 |
 | `/line_detection` | **部分** | 節點有了，沒有相機 driver |
 | `min_turn_radius` | 不適用 | 差速車；R550 才需要 |

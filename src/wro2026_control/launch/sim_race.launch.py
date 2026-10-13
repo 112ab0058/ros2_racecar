@@ -104,8 +104,11 @@ def generate_launch_description():
                          parameters=[sim_time], output="screen")
 
     controller = Node(package="wro2026_control", executable="race_node",
+                      # imu_topic keeps the name the node used before it became a
+                      # parameter (the real car default is /imu/data); unused here
+                      # because use_imu_yaw is false
                       parameters=[params_file, sim_time, {"start": True},
-                    {"imu_topic": "/imu"}],  # Gazebo bridge name; real car uses /imu/data
+                                  {"imu_topic": "/imu"}],
                       output="screen")
 
     monitor = Node(package="wro2026_control", executable="race_monitor",

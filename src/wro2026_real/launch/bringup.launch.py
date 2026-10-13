@@ -36,6 +36,8 @@ FORWARDED = [
     ('max_speed', 'wheel command cap, PWM fraction (empty = YAML value, 0.05)'),
     ('cmd_timeout', 'stop if no /cmd_vel for this long, s (empty = YAML value, 0.3)'),
     ('publish_odom_tf', 'TF odom -> base_link true/false (empty = YAML value, true)'),
+    ('cmd_vel_units', 'pwm | mps (empty = YAML value, pwm; mps needs pwm_to_mps > 0)'),
+    ('pwm_to_mps', 'm/s per unit wheel command (empty = YAML value, 0 = UNKNOWN)'),
 ]
 
 

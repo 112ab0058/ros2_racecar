@@ -16,9 +16,10 @@ WRITE_CAPABILITIES = ('clientPublish', 'parameters', 'parametersSubscribe', 'ser
 
 READ_ONLY_CAPABILITIES = ['connectionGraph', 'assets']
 
-# ECMAScript regex that matches nothing: even if clientPublish were enabled,
-# no topic would be accepted from clients
-MATCH_NOTHING = '(?!)'
+# Regex that matches no ROS name (names are never empty). '^$' is plain
+# enough for every regex engine the bridge may use (std::regex, Rust regex);
+# even if clientPublish were enabled, no topic would be accepted from clients.
+MATCH_NOTHING = '^$'
 
 
 def foxglove_parameters(port=FOXGLOVE_PORT):
