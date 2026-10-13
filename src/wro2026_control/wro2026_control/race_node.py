@@ -48,7 +48,7 @@ class RaceNode(Node):
         defaults = Params()
         for name, value in vars(defaults).items():
             self.declare_parameter(name, value)
-        self.declare_parameter("start", True)
+        self.declare_parameter("start", False)       # never moves until set true
         self.declare_parameter("use_imu_yaw", False)
         self.declare_parameter("control_rate", 20.0)
         self.declare_parameter("sensor_timeout", 0.5)

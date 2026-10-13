@@ -100,17 +100,20 @@ SCENARIOS = {
     # Not required to finish; the car must stop without touching anything.
     "stress_slalom": [(-0.28, 0.42), (0.00, 0.58), (0.28, 0.42)],
     "stress_row": [(-0.20, 0.50), (0.05, 0.40), (0.30, 0.60)],
+    # obstacles inside the corner squares, on the turning line
+    "stress_corner": [(0.31, -0.53), (-0.53, -0.31), (-0.32, 0.52)],
 }
 
 
-def random_layout(seed: int, max_total: int = 4) -> list:
+def random_layout(seed: int, max_total: int = 4, along_max: float = 0.20) -> list:
     """A random but fair obstacle layout.
 
-    Each lane gets 0-2 obstacles (0.06 m boxes) placed along the straight
-    part (|along| <= 0.35 m from the lane middle), at most 0.12 m off the
-    lane centre, at least 0.45 m apart within a lane, and not within
-    0.25 m of the start pose.  Every obstacle leaves a passage of at least
-    0.25 m on either side (the car is 0.18 m wide).
+    Each lane gets 0-2 obstacles (0.06 m boxes) in its straight part
+    (|along| <= ``along_max`` from the lane middle; the corner squares start
+    at 0.215), at most 0.12 m off the lane centre, at least 0.40 m apart
+    within a lane, and not within 0.25 m of the start pose.  Every obstacle
+    leaves a passage of at least 0.25 m on either side (the car is 0.18 m
+    wide).  Obstacles inside the corner squares are in the stress set.
     """
     rng = random.Random(seed)
     lanes = [  # (centre x, centre y, along axis is x?)
@@ -121,8 +124,8 @@ def random_layout(seed: int, max_total: int = 4) -> list:
         alongs = []
         for _ in range(k):
             for _try in range(20):
-                a = rng.uniform(-0.35, 0.35)
-                if all(abs(a - b) >= 0.45 for b in alongs):
+                a = rng.uniform(-along_max, along_max)
+                if all(abs(a - b) >= 0.40 for b in alongs):
                     if cy < 0 and along_x and abs(a - (-0.05)) < 0.25:
                         continue                       # keep the start area free
                     alongs.append(a)
@@ -169,6 +172,7 @@ class Result:
     final_pose: tuple
     stop_offset: float              # distance between stop and start pose (m)
     backoffs: int
+    stop_along: float = 0.0         # same, along the start heading (m)
     trajectory: list = field(repr=False, default_factory=list)
     events: list = field(repr=False, default_factory=list)
 
@@ -285,6 +289,7 @@ def run(world: World, cfg: SimConfig, params: Optional[Params] = None,
                   corners=ctl.corners, time=round(t, 2), collided=collided,
                   min_clearance=round(min_clear, 4), final_pose=(round(x, 3), round(y, 3), round(yaw, 3)),
                   stop_offset=round(math.hypot(x - sx, y - sy), 3), backoffs=ctl.backoffs,
+                  stop_along=round(abs((x - sx) * math.cos(cfg.start[2]) + (y - sy) * math.sin(cfg.start[2])), 3),
                   trajectory=traj, events=events)
 
 
