@@ -25,7 +25,7 @@
 
 | 里程碑 | 狀態 | 說明 |
 |---|---|---|
-| H0 硬體盤點 | DONE（過渡車） | WAVE ROVER + Orin 已盤點；UNKNOWN 7 項（輪距/輪徑/速度比例、車上供電、相機、LiDAR、比賽車、急停、IMU 軸向） |
+| H0 硬體盤點 | DONE（過渡車） | WAVE ROVER + Orin 已盤點；UNKNOWN 7 項（輪距/輪徑/速度比例、車上供電、相機、LiDAR、比賽車、急停、IMU 軸向）。比賽車另有草稿 [real/FINAL_CAR_DRAFT.md](real/FINAL_CAR_DRAFT.md)（Ackermann、STM32、Orbbec 深度相機、LiDAR、encoder；型號大多 UNKNOWN） |
 | H1 Jetson / OS / ROS 2 | DONE | Ubuntu 24.04.4、L4T R39.2.1、ROS 2 Jazzy `ros-base` + `ros-dev-tools`；沒有 Gazebo / GUI |
 | H2 架空低速與停止 | PARTIAL | 舊 driver 2026-10-13 HTTP、max_speed 0.05、架空：啟動只送停止、前後左右、`/cmd_vel` 中斷 0.306 s 停車、關閉送停止全部 PASS。新 driver 加了回授遺失停車與低電壓拒絕（pytest 驗證），HTTP 只讀實機驗證通過（沒有送非零指令）。**輪子是否真的轉動待人工目視**；UART 接線預計 2026-10-14；新 driver 還沒跑過會動輪子的測試 |
 | H3 encoder odometry | BLOCKED（這台車） | WAVE ROVER 沒有 encoder。過渡用的 dead reckoning（送出的輪指令 × `pwm_to_mps` + IMU gz）已實作；`pwm_to_mps` UNKNOWN（預設 0，只轉向不位移）；低品質，不可作為 Nav2 主要 odom |
@@ -42,6 +42,7 @@
 2. 2026-10-14 接 UART（Orin pin 8/10/6 ↔ 車頂 RX/TX/GND，`/dev/ttyTHS1`），照 [RUNBOOK 第 4 節](real/RUNBOOK.md)用新 driver 重跑 H2 的 serial 版本。
 3. 量測輪距、輪徑、`pwm_to_mps`、IMU 方向，補上 UNKNOWN（[RUNBOOK 第 5 節](real/RUNBOOK.md)）。
 4. 決定相機型號並裝相機 driver，才能在實車上跑 line detector。
+5. 分支 `control/pose-free-race-controller`（2026-10-13，WIP）有不依賴座標的比賽控制器 `wro2026_control`。合併前要先解決：它訂閱 `/imu`，底盤 driver 發佈 `/imu/data`；它輸出 m/s 的 `/cmd_vel`，底盤 driver 目前把 `/cmd_vel` 當 PWM 比例（見已知問題）；它需要 `/scan`（LiDAR）和行駛距離（需要 `pwm_to_mps`）。
 
 ## 已知問題
 
@@ -52,6 +53,6 @@
 - 底盤 driver 把 `/cmd_vel` 的 `linear.x`、`angular.z` 直接當 PWM 比例（沿用舊 driver），但 `/odom` 的速度是 m/s；上層目前必須知道這個底盤的單位，違反「上層只靠 `/cmd_vel` 溝通、不依賴底盤」的原則。`pwm_to_mps` 量好後應改成 m/s → PWM 換算。
 - 新舊 driver 的互斥檢查只在新 driver 和 `test_motion` 裡；先開新 driver、再開舊 driver 時，舊的不會擋（舊 driver 不能改），要靠人確認。
 - Jetson 沒有 OpenCV / cv_bridge：line detector 只支援 rgb8 / bgr8 / rgba8 / bgra8 影像。
-- Ray 的 WSL `~/ros2_racecar` 有一份未追蹤的 H0 草稿（WSL repo 的 docs 底下的 HARDWARE_INVENTORY.md）、一個 stash、一個只在本機的 `backup/local-main-20261009` 分支（2026-10-13 唯讀檢查，未處理）。
+- Ray 的 WSL `~/ros2_racecar`（2026-10-13 檢查）：未追蹤的 HARDWARE_INVENTORY.md 已搬進 repo 成為 [real/FINAL_CAR_DRAFT.md](real/FINAL_CAR_DRAFT.md)；`backup/local-main-20261009` 的 2 個 commit 經 `git cherry` 確認在 main 上都有相同修改；stash 是 2026-07 的舊版控制器修改（main 已經更新過）。三者都已在 Ray 的 Windows 下載資料夾留有 patch 備份。
 - 封存文件的內文沒有改，裡面提到的 `docs/` 路徑（例如舊的 CURRENT_STATE 位置）指的是 2026-10-13 搬移前的位置。
 - `archive/handoff_2026-10-09/SHA256SUMS.txt` 是封存前內容的雜湊；每個 .md 去掉第一行封存標記與後面的空行（`tail -n +3`）後仍然相符。
