@@ -19,6 +19,7 @@
 | [real/ORIN_BACKUP.md](real/ORIN_BACKUP.md) | Orin 狀態備份（套件清單、apt 來源、原始碼）與完整 SD 卡映像的做法和還原步驟 |
 | [real/R550_COMPATIBILITY.md](real/R550_COMPATIBILITY.md) | WHEELTEC R550 / M10P 相容性調查：ROS 2 程式、STM32 協定、光達 driver、風險、到貨第一天清單 |
 | [real/NETWORK.md](real/NETWORK.md) | 實車網路：各裝置 IP / MAC、路由器 DHCP 綁定、NetBird 現況、Foxglove 連線、WSL 看不到 Orin 的原因、`ROS_DOMAIN_ID` 建議 |
+| [real/INTERFACES.md](real/INTERFACES.md) | 底盤 package 的介面合約：必須提供的 topic、單位、frame、頻率、安全行為；控制器用的 topic；WAVE ROVER 還沒做到的項目 |
 | [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) | R550 序列協定 module（UNVERIFIED，只有編碼 / 解碼，沒有 ROS node） |
 | [../src/wro2026_base_waverover/README.md](../src/wro2026_base_waverover/README.md) | 底盤 driver：結構、topic、安全行為、odometry 的限制 |
 | [../src/wro2026_real/README.md](../src/wro2026_real/README.md) | bringup、URDF、line detector 與 `/line_detection` 格式 |

@@ -72,6 +72,42 @@ def twist_to_wheels(v, w, track_width, max_speed):
     return left, right
 
 
+CMD_VEL_UNITS = ('pwm', 'mps')
+
+
+def check_cmd_vel_units(units, pwm_to_mps):
+    """
+    Raise ValueError unless the /cmd_vel unit setting can be used.
+
+    'pwm': linear.x / angular.z are taken as PWM fractions (original driver).
+    'mps': they are m/s and rad/s, converted with pwm_to_mps, which must
+    therefore be a measured value > 0.
+    """
+    if units not in CMD_VEL_UNITS:
+        raise ValueError(f"cmd_vel_units must be 'pwm' or 'mps', not {units!r}")
+    if units == 'mps' and not (math.isfinite(pwm_to_mps) and pwm_to_mps > 0.0):
+        raise ValueError(f"cmd_vel_units 'mps' needs a measured pwm_to_mps > 0 "
+                         f'(got {pwm_to_mps}); refusing to run')
+
+
+def twist_mps_to_wheels(v, w, track_width, max_speed, pwm_to_mps):
+    """
+    Convert a twist in m/s and rad/s to clamped PWM wheel commands.
+
+    Wheel speed (m/s) = v -+ w * track_width / 2, divided by pwm_to_mps (m/s
+    per unit command), then each wheel is clamped to max_speed like
+    twist_to_wheels. NaN / inf, or pwm_to_mps <= 0, gives a stop.
+    """
+    if not (math.isfinite(v) and math.isfinite(w)):
+        return 0.0, 0.0
+    if not (math.isfinite(pwm_to_mps) and pwm_to_mps > 0.0):
+        return 0.0, 0.0
+    limit = speed_limit(max_speed)
+    left = clamp((v - w * track_width / 2.0) / pwm_to_mps, limit)
+    right = clamp((v + w * track_width / 2.0) / pwm_to_mps, limit)
+    return left, right
+
+
 def wire_number(value):
     """Round to 3 decimals like the original driver; zero (and NaN / inf) becomes int 0."""
     value = float(value)
@@ -167,7 +203,10 @@ class BaseController:
 
     def __init__(self, track_width, max_speed, cmd_timeout, feedback_timeout=2.0,
                  low_battery_voltage=11.0, critical_battery_voltage=10.5,
-                 clock=time.monotonic):
+                 clock=time.monotonic, cmd_vel_units='pwm', pwm_to_mps=0.0):
+        check_cmd_vel_units(cmd_vel_units, pwm_to_mps)
+        self.cmd_vel_units = cmd_vel_units
+        self.pwm_to_mps = pwm_to_mps
         self.track_width = track_width
         self.max_speed = speed_limit(max_speed)
         self.cmd_timeout = cmd_timeout
@@ -188,10 +227,16 @@ class BaseController:
         """
         Store a /cmd_vel request (clamped to max_speed).
 
-        Returns False when v or w is NaN / inf: the request is stored as a stop.
+        v / w are PWM fractions (cmd_vel_units 'pwm') or m/s and rad/s
+        ('mps'). Returns False when v or w is NaN / inf: the request is
+        stored as a stop.
         """
         valid = math.isfinite(v) and math.isfinite(w)
-        left, right = twist_to_wheels(v, w, self.track_width, self.max_speed)
+        if self.cmd_vel_units == 'mps':
+            left, right = twist_mps_to_wheels(v, w, self.track_width, self.max_speed,
+                                              self.pwm_to_mps)
+        else:
+            left, right = twist_to_wheels(v, w, self.track_width, self.max_speed)
         with self.lock:
             self.left, self.right = left, right
             self.last_cmd = self.clock()

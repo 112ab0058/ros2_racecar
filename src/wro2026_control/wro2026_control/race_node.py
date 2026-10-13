@@ -2,8 +2,12 @@
 """ROS 2 wrapper for the pose-free race controller.
 
 Subscribes:  /scan (LaserScan), /odom (Odometry), /line_detection
-             (Float32MultiArray from line_detector.py), optional /imu (Imu)
+             (Float32MultiArray from line_detector.py), optional /imu/data (Imu)
 Publishes:   /cmd_vel (Twist), /race_status (String, JSON)
+
+Every topic name is a parameter: scan_topic, odom_topic, imu_topic
+(default /imu/data, the real car's IMU), line_detection_topic, cmd_vel_topic,
+status_topic.  The Gazebo launch sets imu_topic to /imu.
 
 The node only converts messages; every decision is in ``core.py``.
 
@@ -37,6 +41,16 @@ from wro2026_control.core import Params, RaceController, Scan, State
 LD_ORANGE_TRIG = 3
 LD_BLUE_TRIG = 7
 
+# topic name parameters and their defaults (the IMU default is the real car's)
+TOPIC_DEFAULTS = {
+    "scan_topic": "/scan",
+    "odom_topic": "/odom",
+    "imu_topic": "/imu/data",
+    "line_detection_topic": "/line_detection",
+    "cmd_vel_topic": "/cmd_vel",
+    "status_topic": "/race_status",
+}
+
 
 def yaw_from_quaternion(q) -> float:
     return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
@@ -55,16 +69,21 @@ class RaceNode(Node):
         self.declare_parameter("line_timeout", 0.3)
         self.declare_parameter("max_linear", 0.20)    # final clamp on /cmd_vel
         self.declare_parameter("max_angular_out", 1.0)
+        for name, default in TOPIC_DEFAULTS.items():
+            self.declare_parameter(name, default)
+        topic = {name: str(self.get_parameter(name).value) for name in TOPIC_DEFAULTS}
 
         self.ctl = RaceController(self._params())
         self.add_on_set_parameters_callback(self._on_params)
 
-        self.cmd_pub = self.create_publisher(Twist, "/cmd_vel", 10)
-        self.status_pub = self.create_publisher(String, "/race_status", 10)
-        self.create_subscription(LaserScan, "/scan", self._scan_cb, qos_profile_sensor_data)
-        self.create_subscription(Odometry, "/odom", self._odom_cb, 20)
-        self.create_subscription(Imu, "/imu", self._imu_cb, qos_profile_sensor_data)
-        self.create_subscription(Float32MultiArray, "/line_detection", self._line_cb, 10)
+        self.cmd_pub = self.create_publisher(Twist, topic["cmd_vel_topic"], 10)
+        self.status_pub = self.create_publisher(String, topic["status_topic"], 10)
+        self.create_subscription(LaserScan, topic["scan_topic"], self._scan_cb,
+                                 qos_profile_sensor_data)
+        self.create_subscription(Odometry, topic["odom_topic"], self._odom_cb, 20)
+        self.create_subscription(Imu, topic["imu_topic"], self._imu_cb, qos_profile_sensor_data)
+        self.create_subscription(Float32MultiArray, topic["line_detection_topic"],
+                                 self._line_cb, 10)
 
         self._scan: Scan | None = None
         self._scan_t = None

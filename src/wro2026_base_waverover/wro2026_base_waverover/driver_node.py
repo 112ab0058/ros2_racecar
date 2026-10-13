@@ -64,6 +64,8 @@ PARAMETERS = [
     ('baud', 115200, 'serial baud rate'),
     ('host', '192.168.4.1', 'ESP32 address for http transport'),
     ('track_width', 0.125, 'left/right wheel distance (m); firmware constant, NOT measured yet'),
+    ('cmd_vel_units', 'pwm',
+     "'pwm': /cmd_vel is PWM fractions; 'mps': m/s, rad/s (needs pwm_to_mps)"),
     ('max_speed', 0.05, 'wheel command cap, PWM fraction (0.5 = 100%)'),
     ('send_rate', 10.0, 'serial: T:1 resend rate (Hz)'),
     ('http_cmd_period', 0.5, 'http: resend unchanged T:1 every (s)'),
@@ -106,9 +108,11 @@ class WaveRoverDriver(Node):
         if p['transport'] not in ('serial', 'http'):
             raise ValueError("transport must be 'serial' or 'http'")
 
+        # raises ValueError (before any I/O) if cmd_vel_units cannot be used
         self.controller = BaseController(
             p['track_width'], p['max_speed'], p['cmd_timeout'], p['feedback_timeout'],
-            p['low_battery_voltage'], p['critical_battery_voltage'])
+            p['low_battery_voltage'], p['critical_battery_voltage'],
+            cmd_vel_units=p['cmd_vel_units'], pwm_to_mps=p['pwm_to_mps'])
         self.transport = make_transport(p['transport'], host=p['host'],
                                         http_timeout=p['http_timeout'],
                                         port=p['port'], baud=p['baud'])
@@ -143,7 +147,8 @@ class WaveRoverDriver(Node):
         self.get_logger().info(
             f"max_speed={self.controller.max_speed} cmd_timeout={p['cmd_timeout']}s "
             f"feedback_period={p['feedback_period']}s feedback_timeout={p['feedback_timeout']}s "
-            f"track_width={p['track_width']} (firmware constant, not measured)")
+            f"track_width={p['track_width']} (firmware constant, not measured) "
+            f"cmd_vel_units={p['cmd_vel_units']}")
         if p['feedback_timeout'] <= 0:
             self.get_logger().warn('feedback watchdog disabled (feedback_timeout <= 0)')
         elif not p['poll_base'] and not p['serial_continuous_feedback']:
@@ -361,7 +366,12 @@ def main():
               + '; '.join(f'pid {pid}: {cmd}' for pid, cmd in others), file=sys.stderr, flush=True)
         return 1
     rclpy.init()
-    node = WaveRoverDriver()
+    try:
+        node = WaveRoverDriver()
+    except ValueError as e:  # bad configuration: nothing has been sent yet
+        print(f'wave_rover_driver: {e}', file=sys.stderr, flush=True)
+        rclpy.try_shutdown()
+        return 1
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):

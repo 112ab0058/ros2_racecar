@@ -28,6 +28,7 @@ OVERRIDES = [
     ('host', str, 'ESP32 address for http transport'),
     ('max_speed', float, 'wheel command cap, PWM fraction (0.5 = 100%)'),
     ('track_width', float, 'left/right wheel distance (m), used for cmd_vel -> L/R'),
+    ('cmd_vel_units', str, 'pwm | mps (mps needs pwm_to_mps > 0)'),
     ('cmd_timeout', float, 'send stop if no /cmd_vel for this long (s)'),
     ('send_rate', float, 'serial: T:1 resend rate (Hz)'),
     ('http_cmd_period', float, 'http: resend unchanged T:1 every (s)'),

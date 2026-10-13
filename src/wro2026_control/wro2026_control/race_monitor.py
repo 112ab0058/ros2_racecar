@@ -32,9 +32,15 @@ class RaceMonitor(Node):
         self.declare_parameter("time_limit", 300.0)
         self.declare_parameter("start_x", -0.05)
         self.declare_parameter("start_y", -0.50)
-        self.create_subscription(String, "/race_status", self._status_cb, 10)
-        self.create_subscription(Odometry, "/odom", self._odom_cb, 20)
-        self.create_subscription(LaserScan, "/scan", self._scan_cb, qos_profile_sensor_data)
+        self.declare_parameter("status_topic", "/race_status")
+        self.declare_parameter("odom_topic", "/odom")
+        self.declare_parameter("scan_topic", "/scan")
+        self.create_subscription(String, str(self.get_parameter("status_topic").value),
+                                 self._status_cb, 10)
+        self.create_subscription(Odometry, str(self.get_parameter("odom_topic").value),
+                                 self._odom_cb, 20)
+        self.create_subscription(LaserScan, str(self.get_parameter("scan_topic").value),
+                                 self._scan_cb, qos_profile_sensor_data)
         self.t0 = None
         self.status = {}
         self.pose = None

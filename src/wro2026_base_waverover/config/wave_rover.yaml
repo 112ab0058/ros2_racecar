@@ -17,6 +17,9 @@ wave_rover_driver:
     # L/R wheel commands are PWM fractions (0.5 = 100 %), NOT m/s.
     max_speed: 0.05              # wheel command cap (~10 % PWM)
     track_width: 0.125           # m; firmware constant, NOT measured yet (待實測)
+    cmd_vel_units: pwm           # 'pwm': /cmd_vel linear.x / angular.z are PWM fractions (original
+                                 # behaviour); 'mps': m/s and rad/s, converted with pwm_to_mps,
+                                 # which must be measured (> 0) or the driver refuses to start
     cmd_timeout: 0.3             # stop if no /cmd_vel for this long (s)
     feedback_timeout: 2.0        # stop + /diagnostics ERROR if no T:130 reply for this long (s); 0 disables
     low_battery_voltage: 11.0    # /diagnostics WARN below this (3S Li-ion, full 12.6 V)

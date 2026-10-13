@@ -27,7 +27,7 @@ ros2 launch wro2026_base_waverover bringup.launch.py
 
 | Topic | 型別 | 說明 |
 |---|---|---|
-| `/cmd_vel`（訂閱） | `geometry_msgs/Twist` | `linear.x`、`angular.z` 直接當 PWM 比例做差速換算（**不是 m/s**），每輪限制在 `max_speed`；NaN / inf 當成停止 |
+| `/cmd_vel`（訂閱） | `geometry_msgs/Twist` | 預設 `cmd_vel_units: pwm`：`linear.x`、`angular.z` 直接當 PWM 比例做差速換算（**不是 m/s**）。`cmd_vel_units: mps`：當成 m/s、rad/s，用 `pwm_to_mps` 換算成 PWM；`pwm_to_mps` 不是正數時 driver 拒絕啟動。兩種都限制在 `max_speed`；NaN / inf 當成停止 |
 | `/battery` | `sensor_msgs/BatteryState` | T:130 → T:1001 的 `v`，只有電壓 |
 | `/imu/data` | `sensor_msgs/Imu` | T:126 → T:1002，covariance 全 0（未知） |
 | `/odom`、TF `odom → base_link` | `nav_msgs/Odometry` | **低品質 dead reckoning**，見下 |

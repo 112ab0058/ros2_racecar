@@ -192,6 +192,7 @@ class MotionTest:
                '-p', f'transport:={self.a.transport}', '-p', f'host:={self.a.host}',
                '-p', f'port:={self.a.port}', '-p', f'max_speed:={max_speed}',
                '-p', f'track_width:={self.a.track_width}',
+               '-p', 'cmd_vel_units:=pwm',  # --speed is a PWM fraction
                '-p', f'cmd_timeout:={self.a.cmd_timeout}']
         self.driver_log = open(self.driver_log_path, 'w')
         self.n.step = 'B1_startup'
