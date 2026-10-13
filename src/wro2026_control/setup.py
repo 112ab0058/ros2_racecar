@@ -24,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "race_node = wro2026_control.race_node:main",
+            "race_monitor = wro2026_control.race_monitor:main",
         ],
     },
 )

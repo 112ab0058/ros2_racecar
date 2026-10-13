@@ -1,51 +1,56 @@
-"""Pose-free race controller core for the WRO-style loop course.
+"""Pose-free race controller for the WRO-style loop course.
 
-This module has no ROS imports so it can be unit tested and run in the
-offline 2D simulator (`tools/sim2d.py`).  The ROS 2 node in `race_node.py`
-only converts messages into the plain inputs below.
+No ROS imports: this module is unit tested and driven by the offline 2D
+simulator (``tools/sim2d.py``).  ``race_node.py`` only converts messages.
 
-What the controller uses
-------------------------
+Inputs per control tick
+-----------------------
 * yaw (rad, any fixed frame: Gazebo odom, IMU, wheel odom ...)
 * signed travelled path length ``s`` (m, forward positive)
-* one LiDAR scan (robot frame, angles CCW positive, 0 = forward)
-* the orange / blue line trigger flags from ``line_detector.py``
+* the latest LiDAR scan (robot frame, CCW angles, 0 = forward)
+* orange / blue line flags from ``line_detector.py``
 
-What it deliberately does NOT use
----------------------------------
-* absolute x / y position, map coordinates or field-specific zones
-* ground truth
-* in-place rotation (every forward state keeps linear > 0, so the same
-  logic works on the final steering-wheel car; set ``min_turn_radius``)
+Not used: absolute x / y, maps, field-specific coordinates, ground truth.
 
-Behaviour
----------
-WAIT -> FOLLOW -> APPROACH -> TURN -> FOLLOW ... -> FINISH -> DONE
+How it works
+------------
+1. A local odometric frame is dead-reckoned from yaw and path length.  It
+   only has to be good over a few metres; everything that matters is
+   re-measured from the walls every scan.
+2. Lane geometry is measured from the LiDAR: the lane centre line from the
+   side walls, the lane direction from a line fit to the side walls (this
+   also removes slow yaw drift), and the wall ahead.
+3. The first line seen gives the driving direction (orange first =
+   clockwise, blue first = counter-clockwise).  If no line is seen, the side
+   that opens up at the first corner decides.
+4. A reference path is built: the lane centre line, a quarter circle at the
+   corner (placed from the measured wall ahead), and the next lane's centre
+   line.  Corners therefore need no separate turn manoeuvre.
+5. Scan points (plus recent points that are now inside the LiDAR's blind
+   zone) are rasterised into a local grid and a distance transform gives
+   the clearance of any point.  A dynamic-programming planner chooses
+   lateral offsets from the reference at stations every few centimetres,
+   checking the real footprint at every pose: it passes obstacles, walls
+   and corners with the same rule.
+6. Pure pursuit follows the planned path; a short-horizon collision check
+   can only make the command safer.  If no forward motion is safe the car
+   backs off a little and replans; repeated failure stops it (DONE,
+   "blocked").
+7. Corners are counted on the reference path.  After ``laps`` laps the car
+   stops where it started, measured from the wall ahead of the start lane.
 
-* Direction (CW / CCW) is locked from the colour of the first line seen:
-  orange first -> clockwise (right turns), blue first -> counter-clockwise.
-  After that only the leading colour starts a corner, so the second line of
-  the same corner never triggers a wrong turn.
-* A corner is also detected without a line (front wall close and the turn
-  side open), so one missed line does not end the run.
-* Turns start at a wall distance computed from the measured lane width and
-  the turn radius, not from field coordinates.
-* Obstacles are LiDAR clusters inside the lane that are not connected to a
-  wall.  The car shifts its lateral target to the side with the larger gap,
-  keeps that side until the obstacle is behind it, then returns to centre.
-* After ``laps * corners_per_lap`` corners the car drives back to the start
-  distance and stops (DONE).
-* Every state has a bounded exit.  The only stopped state is DONE: laps
-  complete, or boxed in after repeated back-offs (reported as "blocked").
+Every forward command has linear > 0 and respects ``min_turn_radius``, so
+the same logic runs on a steering-wheel (Ackermann) car.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Optional, Sequence
 
+import cv2
 import numpy as np
 
 
@@ -61,84 +66,73 @@ def clamp(value: float, low: float, high: float) -> float:
 class Params:
     # speeds (m/s, rad/s)
     cruise_speed: float = 0.12
-    avoid_speed: float = 0.09
-    min_avoid_speed: float = 0.03
-    approach_speed: float = 0.08
-    turn_speed: float = 0.06
-    turn_rate: float = 0.55          # nominal |angular| while turning
-    max_angular: float = 0.60
+    avoid_speed: float = 0.07
+    min_speed: float = 0.03
     backoff_speed: float = -0.05
-    min_turn_radius: float = 0.0     # >0 for Ackermann: |w| <= |v| / R
+    max_angular: float = 0.9
+    lateral_accel: float = 0.06       # m/s^2 allowed on curves (v^2 * kappa)
+    min_turn_radius: float = 0.0      # > 0 for Ackermann: |w| <= |v| / R
 
-    # lane keeping
-    heading_kp: float = 1.6
-    lateral_kp: float = 4.0          # rad of heading offset per metre
-    lateral_max_angle: float = 0.80  # rad
-    avoid_max_angle: float = 1.10    # rad, steepest approach angle when avoiding
-    max_side_range: float = 1.0      # side wall readings beyond this are ignored
-    side_window: float = 0.12        # +- along-track window for side walls (m)
+    # robot geometry, base_link frame (x forward, y left)
+    lidar_x: float = -0.032           # LiDAR position
+    body_front: float = 0.07          # body front ahead of the LiDAR
+    body_rear: float = 0.07           # body rear behind the LiDAR
+    half_width: float = 0.09
+
+    # lane measurement
     default_lane_width: float = 0.57
     lane_width_min: float = 0.35
     lane_width_max: float = 0.95
-    lateral_dead_reckon_max: float = 0.6   # m of travel without a wall reading
+    side_window: float = 0.12         # +- along the lane for side-wall readings
+    max_side_range: float = 1.0
+    centre_gain: float = 0.3          # filter gain for the lane centre line
+    yaw_fit_gain: float = 0.05        # filter gain for the wall-direction fit
+    yaw_fit_window: float = 0.35
 
-    # robot geometry (relative to the LiDAR)
-    lidar_x: float = -0.032          # LiDAR position in base frame (m)
-    body_front: float = 0.07         # body front ahead of the LiDAR (m)
-    body_rear: float = 0.07          # body rear behind the LiDAR (m)
-    half_width: float = 0.09
-    wall_margin: float = 0.035
-
-    # corners
+    # course
+    corner_radius: float = 0.22       # reference arc radius (<= half lane width)
     corners_per_lap: int = 4
     laps: int = 3
-    line_lockout: float = 0.35       # m after a turn during which lines are ignored
-    approach_max_dist: float = 0.55  # turn anyway after this much travel past the line
-    approach_timeout: float = 8.0
-    fallback_margin: float = 0.03    # fallback corner if front < turn distance - margin
-    open_side_factor: float = 1.35   # turn side counts as open beyond lane_width * factor
-    turn_tolerance: float = math.radians(4.0)
-    turn_timeout: float = 12.0
-    min_turn_angular: float = 0.18
+    direction_decide_dist: float = 0.25  # decide by open side this far before the corner
 
-    # finish
-    finish_min_dist: float = 0.05
-    finish_extra: float = 0.0
+    # planner
+    plan_horizon: float = 1.0
+    plan_ds: float = 0.05
+    plan_dq: float = 0.01
+    plan_max_angle: float = 1.0       # rad, path angle to the reference
+    plan_min_radius: float = 0.12     # m, tightest planned curve (diff drive)
+    hard_clearance: float = 0.025
+    soft_clearance: float = 0.07
+    w_offset: float = 20.0
+    w_slope: float = 10.0
+    w_bend: float = 0.3
+    w_soft: float = 2.0
+    grid_res: float = 0.01
+    grid_half: float = 1.3            # grid covers +- this around the robot
+    replan_period: float = 0.1        # s
+
+    # tracking
+    stop_margin: float = 0.10         # m of free path kept in reserve ...
+    stop_time: float = 2.0            # ... v <= (free path - margin) / stop_time
+    pursuit_min: float = 0.10
+    pursuit_gain: float = 0.6         # lookahead += gain * speed
 
     # safety
-    safety_horizon: float = 0.20     # m of each candidate arc checked for collision
-    safety_margin: float = 0.015     # footprint inflation for the check (m)
-    plan_horizon: float = 0.25       # m rolled out by the lane planner
-    plan_clearance: float = 0.06     # clearance below this is penalised
-    plan_lateral_scale: float = 0.04
-    plan_heading_scale: float = 0.35
-    backoff_dist: float = 0.08
+    safety_time: float = 1.0          # s of travel checked for collision ...
+    safety_min_horizon: float = 0.04  # ... at least / at most this far
+    safety_max_horizon: float = 0.15
+    safety_margin: float = 0.008
+    backoff_dist: float = 0.07
     backoff_timeout: float = 2.5
-    backoff_check: float = 0.10      # m of reverse arc checked for collision
-    backoff_turn_rate: float = 0.5
-    backoff_max_angle: float = 0.9
-    max_backoffs_per_state: int = 6
-
-    # obstacles
-    obstacle_lookahead: float = 0.70
-    obstacle_edge_reject: float = 0.05   # points this close to a wall are walls
-    obstacle_max_size: float = 0.20
-    obstacle_cluster_gap: float = 0.05
-    obstacle_min_points: int = 2
-    obstacle_clearance: float = 0.05     # body-to-obstacle lateral clearance
-    obstacle_pass_after: float = 0.12    # keep the offset this far past the obstacle
-    obstacle_merge_dist: float = 0.12
-
-    @property
-    def turn_radius(self) -> float:
-        return self.turn_speed / max(self.turn_rate, 1e-3)
+    backoff_turn_rate: float = 0.6
+    max_backoffs_per_lane: int = 6
+    stall_time: float = 6.0           # s without progress counts as blocked
+    stall_dist: float = 0.03
 
 
 class State(str, Enum):
     WAIT = "WAIT"
-    FOLLOW = "FOLLOW"
-    APPROACH = "APPROACH"
-    TURN = "TURN"
+    RUN = "RUN"
     FINISH = "FINISH"
     BACKOFF = "BACKOFF"
     DONE = "DONE"
@@ -155,22 +149,13 @@ class Scan:
     ranges: Sequence[float]
     range_min: float = 0.05
     range_max: float = 10.0
-
-
-@dataclass
-class Obstacle:
-    along: float        # segment progress of the near face (m)
-    lateral: float      # lane-centred lateral position, left positive (m)
-    half_size: float
-    side: int = 0       # pass side chosen once: +1 left, -1 right
-    hits: int = 1
+    stamp: Optional[float] = None     # acquisition time (same clock as step's t)
 
 
 @dataclass
 class Command:
     linear: float = 0.0
     angular: float = 0.0
-    checked: bool = False   # already verified collision-free by the planner
 
 
 @dataclass
@@ -185,551 +170,260 @@ class Status:
     lane_width: float
     front: Optional[float]
     seg_along: float
-    obstacles: int
+    clearance: Optional[float]
     backoffs: int
 
     def as_dict(self) -> dict:
         return asdict(self)
 
 
-@dataclass
-class _Geometry:
-    """Per-tick scan interpretation in the corridor frame."""
-
-    along: np.ndarray       # forward along the current segment heading (m)
-    lat: np.ndarray         # left of the robot, segment-aligned (m)
-    x: np.ndarray           # robot frame forward (m, from LiDAR)
-    y: np.ndarray           # robot frame left (m)
-    left: Optional[float]
-    right: Optional[float]
-    front: Optional[float]
-
-
 class RaceController:
     def __init__(self, params: Optional[Params] = None):
         self.p = params or Params()
+        self._body = self._body_samples()
         self.reset()
 
-    # ------------------------------------------------------------------ setup
+    # ================================================================ setup
     def reset(self) -> None:
         self.state = State.WAIT
         self.reason = "reset"
         self.direction = 0
         self.corners = 0
-        self.seg_yaw: Optional[float] = None
-        self.lane_width = self.p.default_lane_width
-        self._lane_width_samples = 0
-        self.lateral: Optional[float] = None
-        self.lateral_ref = 0.0
-        self.obstacles: list[Obstacle] = []
         self.backoffs = 0
         self._started = False
         self._t = 0.0
         self._s_prev: Optional[float] = None
-        self._along = 0.0              # progress along current segment
-        self._total_along = 0.0
-        self._state_t = 0.0
-        self._state_along = 0.0
-        self._seg_start_along = 0.0    # along at which this segment started
-        self._start_to_first_turn: Optional[float] = None
-        self._segment_lengths: list[float] = []
-        self._turn_target: Optional[float] = None
-        self._resume_state = State.FOLLOW
-        self._resume_clock = (0.0, 0.0)
-        self._prev_lines = (False, False)
-        self._first_line: Optional[str] = None   # colour that appeared first
-        self._turn_clusters: list = []
-        self._next_lateral: Optional[float] = None
-        self._ox = 0.0                 # local dead-reckoned pose, only used to
-        self._oy = 0.0                 # carry recent scan points into the
-        self._mem = np.zeros((0, 2))   # LiDAR's blind zone (< range_min)
-        self._lat_unmeasured = 0.0     # travel since the last wall measurement
+        self._s = 0.0
+        self._x = self._y = 0.0           # local odometric pose of base_link
+        self._yaw = 0.0
+        self._hist: list[tuple] = []      # (t, x, y, yaw) for scan time alignment
+        self.seg_yaw: Optional[float] = None
+        self.lane_width = self.p.default_lane_width
+        self._width_samples = 0
+        self._centre_n: Optional[float] = None
+        self._wall_u: Optional[float] = None
+        self._wall_hist: list[float] = []
+        self._mem = np.zeros((0, 2))
+        self._pts = np.zeros((0, 2))
+        self._grid = None                 # (distance image, x0, y0)
         self._last_scan: Optional[Scan] = None
-        self._backoff_from_along = 0.0
-        self._backoffs_in_state = 0
-        self._front: Optional[float] = None
+        self._path: Optional[np.ndarray] = None   # (k, 2) planned path, odom frame
+        self._path_ok = True
+        self._path_len = 0.0
+        self._path_clear: Optional[float] = None
+        self._plan_t = -1e9
+        self._q0: Optional[float] = None
+        self.lateral_ref = 0.0
+        self._prev_lines = (False, False)
+        self._first_line: Optional[str] = None
+        self._start_xy: Optional[tuple] = None
+        self._start_wall_dist: Optional[float] = None
+        self._lane_backoffs = 0
+        self._resume = State.RUN
+        self._backoff_t = 0.0
+        self._backoff_xy = (0.0, 0.0)
+        self._backoff_heading: Optional[float] = None
+        self._progress_t = 0.0
+        self._progress_s = 0.0
 
     def start(self) -> None:
         self._started = True
 
-    # --------------------------------------------------------------- helpers
-    def _enter(self, state: State, reason: str) -> None:
-        if state is not State.BACKOFF and state is not self.state:
-            self._backoffs_in_state = 0
+    def _set(self, state: State, reason: str) -> None:
         self.state = state
         self.reason = reason
-        self._state_t = self._t
-        self._state_along = self._along
 
-    def _elapsed(self) -> float:
-        return self._t - self._state_t
+    # ============================================================ geometry
+    def _axes(self) -> tuple[np.ndarray, np.ndarray]:
+        a = np.array([math.cos(self.seg_yaw), math.sin(self.seg_yaw)])
+        b = np.array([-a[1], a[0]])
+        return a, b
 
-    def _travel(self) -> float:
-        return self._along - self._state_along
+    def _robot_un(self) -> tuple[float, float]:
+        a, b = self._axes()
+        r = np.array([self._x, self._y])
+        return float(r @ a), float(r @ b)
 
-    def status(self) -> Status:
-        return Status(
-            state=self.state.value, reason=self.reason, direction=self.direction,
-            corners=self.corners,
-            laps_done=self.corners // max(self.p.corners_per_lap, 1),
-            lateral=self.lateral, lateral_ref=self.lateral_ref,
-            lane_width=self.lane_width, front=self._front,
-            seg_along=self._along - self._seg_start_along,
-            obstacles=len(self.obstacles), backoffs=self.backoffs)
+    def _pose_at(self, t: Optional[float]) -> tuple[float, float, float]:
+        """Pose at time ``t`` from the recent pose history (latest if unknown)."""
+        if t is None or len(self._hist) < 2 or t >= self._hist[-1][0]:
+            return self._x, self._y, self._yaw
+        h = self._hist
+        if t <= h[0][0]:
+            return h[0][1], h[0][2], h[0][3]
+        for (t0, x0, y0, a0), (t1, x1, y1, a1) in zip(reversed(h[:-1]), reversed(h[1:])):
+            if t0 <= t <= t1:
+                f = (t - t0) / max(t1 - t0, 1e-9)
+                return (x0 + f * (x1 - x0), y0 + f * (y1 - y0), wrap(a0 + f * wrap(a1 - a0)))
+        return self._x, self._y, self._yaw
 
-    def _geometry(self, scan: Scan, yaw: float) -> _Geometry:
+    def _scan_points(self, scan: Scan) -> np.ndarray:
+        # Points are placed with the pose at the scan's acquisition time: the
+        # car may have moved and turned since, which would shift every wall.
         r = np.asarray(scan.ranges, dtype=float)
-        a = scan.angle_min + scan.angle_increment * np.arange(r.size)
+        ang = scan.angle_min + scan.angle_increment * np.arange(r.size)
         ok = np.isfinite(r) & (r > scan.range_min) & (r < scan.range_max)
-        r, a = r[ok], a[ok]
-        x, y = r * np.cos(a), r * np.sin(a)
-        e = wrap(yaw - self.seg_yaw) if self.seg_yaw is not None else 0.0
-        along = r * np.cos(a + e)
-        lat = r * np.sin(a + e)
+        r, ang = r[ok], ang[ok]
+        x, y, yaw = self._pose_at(scan.stamp)
+        c, s_ = math.cos(yaw), math.sin(yaw)
+        lx = x + self.p.lidar_x * c
+        ly = y + self.p.lidar_x * s_
+        th = ang + yaw
+        return np.stack([lx + r * np.cos(th), ly + r * np.sin(th)], axis=1)
 
-        beside = np.abs(along) < self.p.side_window
-        left = self._wall_distance(lat[beside & (lat > 0) & (lat < self.p.max_side_range)])
-        right = self._wall_distance(-lat[beside & (lat < 0) & (lat > -self.p.max_side_range)])
-
-        ahead = (along > 0.0) & (np.abs(lat) < 0.10)
-        front = float(np.min(along[ahead])) if np.any(ahead) else None
-        return _Geometry(along, lat, x, y, left, right, front)
-
-    def _lidar_origin(self) -> tuple[float, float]:
+    def _update_memory(self, pts: np.ndarray, range_min: float) -> np.ndarray:
+        # Points closer than the LiDAR's minimum range vanish from the scan.
+        # Keep recent nearby points so the planner still sees them.
         c, s_ = math.cos(self._yaw), math.sin(self._yaw)
-        return self._ox + self.p.lidar_x * c, self._oy + self.p.lidar_x * s_
-
-    def _update_memory(self, g: _Geometry, range_min: float) -> None:
-        # Keep nearby points from recent scans in a local frame.  When the car
-        # gets closer than the LiDAR's minimum range they vanish from the
-        # live scan; the collision check still sees them through this memory.
-        ox, oy = self._lidar_origin()
-        c, s_ = math.cos(self._yaw), math.sin(self._yaw)
-        near = np.hypot(g.x, g.y) < 0.45
-        pts = np.stack([ox + c * g.x[near] - s_ * g.y[near],
-                        oy + s_ * g.x[near] + c * g.y[near]], axis=1)
+        lx, ly = self._x + self.p.lidar_x * c, self._y + self.p.lidar_x * s_
+        near = np.hypot(pts[:, 0] - lx, pts[:, 1] - ly) < 0.4
+        keep = np.zeros((0, 2))
         if self._mem.size:
-            d = np.hypot(self._mem[:, 0] - ox, self._mem[:, 1] - oy)
-            keep = d < range_min + 0.04          # only what is now in the blind zone
-            pts = np.vstack([self._mem[keep], pts])
-        self._mem = pts[-3000:]
+            d = np.hypot(self._mem[:, 0] - lx, self._mem[:, 1] - ly)
+            keep = self._mem[d < range_min + 0.03]
+        self._mem = np.vstack([keep, pts[near]])[-2000:]
+        return np.vstack([pts, keep]) if keep.size else pts
 
-    def _memory_points(self) -> tuple[np.ndarray, np.ndarray]:
-        if not self._mem.size:
-            return np.zeros(0), np.zeros(0)
-        ox, oy = self._lidar_origin()
-        c, s_ = math.cos(self._yaw), math.sin(self._yaw)
-        dx, dy = self._mem[:, 0] - ox, self._mem[:, 1] - oy
-        return c * dx + s_ * dy, -s_ * dx + c * dy
+    def _build_grid(self, pts: np.ndarray) -> None:
+        p = self.p
+        n = int(round(2 * p.grid_half / p.grid_res))
+        x0, y0 = self._x - p.grid_half, self._y - p.grid_half
+        img = np.full((n, n), 255, dtype=np.uint8)
+        j = np.floor((pts[:, 0] - x0) / p.grid_res).astype(int)
+        i = np.floor((pts[:, 1] - y0) / p.grid_res).astype(int)
+        ok = (i >= 0) & (i < n) & (j >= 0) & (j < n)
+        img[i[ok], j[ok]] = 0
+        if np.any(ok):
+            dist = cv2.distanceTransform(img, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
+            dist = dist.astype(np.float32) * p.grid_res
+        else:
+            dist = np.full((n, n), 5.0, dtype=np.float32)
+        self._grid = (dist, x0, y0)
 
+    def _clearance_at(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+        dist, x0, y0 = self._grid
+        n = dist.shape[0]
+        j = np.floor((xs - x0) / self.p.grid_res).astype(int)
+        i = np.floor((ys - y0) / self.p.grid_res).astype(int)
+        inside = (i >= 0) & (i < n) & (j >= 0) & (j < n)
+        out = np.full(np.shape(xs), 5.0, dtype=float)
+        out[inside] = dist[i[inside], j[inside]]
+        return out - 0.5 * self.p.grid_res
+
+    def _body_samples(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Footprint samples (x, y) and each sample's depth inside the body."""
+        p = self.p
+        x0, x1 = p.lidar_x - p.body_rear, p.lidar_x + p.body_front
+        hw = p.half_width
+        xs, ys, depth = [], [], []
+        for x in np.linspace(x0, x1, 5):
+            for y in (-hw, hw):
+                xs.append(x)
+                ys.append(y)
+                depth.append(0.0)
+        for y in np.linspace(-hw, hw, 5)[1:-1]:
+            for x in (x0, x1):
+                xs.append(x)
+                ys.append(y)
+                depth.append(0.0)
+        for x in np.linspace(x0, x1, 5)[1:-1]:
+            for y in np.linspace(-hw, hw, 5)[1:-1]:
+                xs.append(x)
+                ys.append(y)
+                depth.append(min(x - x0, x1 - x, hw - abs(y)))
+        return np.array(xs), np.array(ys), np.array(depth)
+
+    def _pose_clearance(self, px, py, th) -> np.ndarray:
+        """Clearance of the footprint at poses (any shape), metres."""
+        bx, by, depth = self._body
+        px, py, th = np.asarray(px, float), np.asarray(py, float), np.asarray(th, float)
+        c, s_ = np.cos(th)[..., None], np.sin(th)[..., None]
+        wx = px[..., None] + c * bx - s_ * by
+        wy = py[..., None] + s_ * bx + c * by
+        return (self._clearance_at(wx, wy) - depth).min(axis=-1)
+
+    # ===================================================== lane measurement
     @staticmethod
     def _wall_distance(values: np.ndarray) -> Optional[float]:
-        # A lane wall beside the car gives many readings at one distance.
-        # Wall ends, gaps and far structures give a spread -> rejected.
         if values.size < 3:
             return None
         q25, q50, q75 = np.percentile(values, [25, 50, 75])
-        if q75 - q25 > 0.02:
-            return None
-        return float(q50)
+        return float(q50) if q75 - q25 <= 0.02 else None
 
-    def _update_lateral(self, g: _Geometry) -> None:
-        """Lateral position in the lane, left of centre positive."""
+    def _measure_lane(self, pts: np.ndarray) -> None:
         p = self.p
-        aligned = (self.state in (State.FOLLOW, State.APPROACH, State.FINISH)
-                   and abs(wrap(self._yaw - self.seg_yaw)) < 0.15)
+        a, b = self._axes()
+        ur, nr = self._robot_un()
+        rel_u = pts @ a - ur
+        rel_n = pts @ b - nr
         half = self.lane_width / 2.0
-        if g.left is not None and g.right is not None:
-            width = g.left + g.right
-            # first trusted measurements may move the estimate freely inside
-            # the limits; afterwards only consistent readings update it
-            gate = 0.05 if self._lane_width_samples >= 5 else p.lane_width_max
-            if (p.lane_width_min <= width <= p.lane_width_max
-                    and abs(width - self.lane_width) < gate):
-                if aligned:
+
+        if abs(wrap(self._yaw - self.seg_yaw)) < 0.3:
+            # --- side walls -> centre line and lane width
+            beside = np.abs(rel_u) < p.side_window
+            left = self._wall_distance(rel_n[beside & (rel_n > 0) & (rel_n < p.max_side_range)])
+            right = self._wall_distance(-rel_n[beside & (rel_n < 0) & (rel_n > -p.max_side_range)])
+            cands = []
+            if left is not None and right is not None:
+                width = left + right
+                gate = 0.06 if self._width_samples >= 5 else 1.0
+                if p.lane_width_min <= width <= p.lane_width_max and abs(width - self.lane_width) < gate:
                     self.lane_width += 0.15 * (width - self.lane_width)
-                    self._lane_width_samples += 1
-                self.lateral = (g.right - g.left) / 2.0
-                self._lat_unmeasured = 0.0
-                return
-        candidates = []
-        if g.right is not None and g.right < self.lane_width:
-            candidates.append(g.right - half)
-        if g.left is not None and g.left < self.lane_width:
-            candidates.append(half - g.left)
-        if not candidates:
-            if self._lat_unmeasured > p.lateral_dead_reckon_max:
-                self.lateral = None
-            return
-        ref = self.lateral if self.lateral is not None else 0.0
-        self.lateral = min(candidates, key=lambda c: abs(c - ref))
-        self._lat_unmeasured = 0.0
+                    self._width_samples += 1
+                    half = self.lane_width / 2.0
+                    cands.append(nr + (left - right) / 2.0)
+            if not cands:
+                if left is not None and left < self.lane_width:
+                    cands.append(nr + left - half)
+                if right is not None and right < self.lane_width:
+                    cands.append(nr - right + half)
+            if cands:
+                ref = self._centre_n if self._centre_n is not None else nr
+                c = min(cands, key=lambda v: abs(v - ref))
+                if self._centre_n is None:
+                    self._centre_n = c
+                elif abs(c - self._centre_n) < 0.08:
+                    self._centre_n += p.centre_gain * (c - self._centre_n)
 
-    def _turn_front_dist(self) -> float:
-        # LiDAR range to the wall ahead at which a turn of radius R ends on
-        # the next lane's centre line.
-        return self.p.turn_radius + self.lane_width / 2.0 - self.p.lidar_x
+            # --- wall direction fit (removes slow yaw drift)
+            if self._centre_n is not None and self.state is State.RUN:
+                for sign in (1, -1):
+                    wall_n = self._centre_n + sign * half
+                    sel = (np.abs(rel_u) < p.yaw_fit_window) & (np.abs(rel_n + nr - wall_n) < 0.04)
+                    if np.count_nonzero(sel) < 15:
+                        continue
+                    u, n = rel_u[sel], rel_n[sel]
+                    if np.ptp(u) < 0.4:
+                        continue
+                    k, c0 = np.polyfit(u, n, 1)
+                    good = np.abs(n - (k * u + c0)) < 0.008
+                    if np.count_nonzero(good) < 12:
+                        continue
+                    k, _ = np.polyfit(u[good], n[good], 1)
+                    if abs(k) < 0.15:
+                        self.seg_yaw = wrap(self.seg_yaw + p.yaw_fit_gain * math.atan(k))
 
-    def _side_open(self, g: _Geometry, side: int) -> bool:
-        dist = g.left if side > 0 else g.right
-        return dist is None or dist > self.lane_width * self.p.open_side_factor
+        # --- wall ahead (places the corner)
+        if self._centre_n is not None:
+            band = (np.abs(rel_n + nr - self._centre_n) < half - 0.06) & (rel_u > 0.15)
+            u = rel_u[band] + ur
+            nn = rel_n[band] + nr
+            if u.size >= 5:
+                bins = np.floor(u / 0.02).astype(int)
+                vals, counts = np.unique(bins, return_counts=True)
+                for idx in np.argsort(-counts)[:4]:
+                    if counts[idx] < 5:
+                        break
+                    centre = (vals[idx] + 0.5) * 0.02
+                    sel = np.abs(u - centre) < 0.03
+                    if np.ptp(nn[sel]) >= 0.25:          # wide: a wall, not an obstacle
+                        w = float(np.median(u[sel]))
+                        self._wall_hist = (self._wall_hist + [w])[-7:]
+                        self._wall_u = float(np.median(self._wall_hist))
+                        break
 
-    # ------------------------------------------------------------- obstacles
-    def _obstacle_clusters(self, g: _Geometry) -> tuple[list, np.ndarray]:
-        """Find in-lane clusters that are not connected to a wall.
-
-        Returns ``(clusters, mask)`` where each cluster is
-        ``(near_along, lateral, half_size)`` relative to the robot and
-        ``mask`` marks the scan points that belong to accepted clusters.
-        """
-        p = self.p
-        mask = np.zeros(g.along.size, dtype=bool)
-        if self.lateral is None or self.seg_yaw is None:
-            return [], mask
-        half_lane = self.lane_width / 2.0
-        abs_lat = self.lateral + g.lat
-        inside = ((g.along > 0.02) & (g.along < p.obstacle_lookahead)
-                  & (np.abs(abs_lat) < half_lane - p.obstacle_edge_reject))
-        n = inside.size
-        clusters = []
-        if n == 0 or not np.any(inside):
-            return clusters, mask
-        pts = np.stack([g.along, abs_lat], axis=1)
-        i = 0
-        while i < n:
-            if not inside[i]:
-                i += 1
-                continue
-            j = i
-            while (j + 1 < n and inside[j + 1]
-                   and np.hypot(*(pts[j + 1] - pts[j])) < p.obstacle_cluster_gap):
-                j += 1
-            found = self._accept_cluster(pts, inside, i, j, n)
-            if found is not None:
-                clusters.append(found)
-                mask[i:j + 1] = True
-            i = j + 1
-        # a cluster that wraps around index 0 is split; that only happens
-        # directly behind the robot, which is outside the lookahead anyway.
-        return clusters, mask
-
-    def _accept_cluster(self, pts, inside, i, j, n):
-        p = self.p
-        if j - i + 1 < p.obstacle_min_points:
-            return None
-        # connected to a non-lane structure (wall) on either end -> not an obstacle
-        for k, end in ((i - 1, i), (j + 1, j)):
-            if 0 <= k < n and not inside[k]:
-                if np.hypot(*(pts[k] - pts[end])) < p.obstacle_cluster_gap:
-                    return None
-        seg = pts[i:j + 1]
-        size_along = float(np.ptp(seg[:, 0]))
-        size_lat = float(np.ptp(seg[:, 1]))
-        if size_along > p.obstacle_max_size or size_lat > p.obstacle_max_size:
-            return None
-        return (float(np.min(seg[:, 0])), float(np.mean(seg[:, 1])),
-                max(size_lat / 2.0, 0.03))
-
-    def _remember_obstacles(self, clusters: list) -> None:
-        p = self.p
-        for near, lat, half in clusters:
-            along = self._along + near
-            for ob in self.obstacles:
-                if (abs(ob.along - along) < p.obstacle_merge_dist
-                        and abs(ob.lateral - lat) < p.obstacle_merge_dist):
-                    w = 1.0 / (ob.hits + 1)
-                    ob.along += w * (along - ob.along)
-                    ob.lateral += w * (lat - ob.lateral)
-                    ob.half_size = max(ob.half_size, half)
-                    ob.hits += 1
-                    break
-            else:
-                self.obstacles.append(Obstacle(along=along, lateral=lat, half_size=half))
-
-    def _look_into_next_lane(self, scan: Scan, yaw: float) -> None:
-        # Late in a turn, look for obstacles in the lane we are turning into
-        # so the lateral shift can start as soon as the turn ends.
-        saved = (self.seg_yaw, self.lateral, self._lat_unmeasured)
-        self.seg_yaw = self._turn_target
-        self.lateral = self._next_lateral
-        g = self._geometry(scan, yaw)
-        self._update_lateral(g)
-        self._turn_clusters, _ = self._obstacle_clusters(g)
-        self._next_lateral = self.lateral
-        self.seg_yaw, self.lateral, self._lat_unmeasured = saved
-
-    def _obstacle_from_blockage(self, g: _Geometry) -> None:
-        # Something unplanned is in front of the body (e.g. a wall end seen
-        # through a gap).  Treat it as an obstacle and pass on the freer side.
-        p = self.p
-        band = (g.x > 0) & (np.abs(g.y) < p.half_width + 0.01) & (g.x < p.body_front + 0.15)
-        if not np.any(band) or self.seg_yaw is None:
-            return
-        if self.lateral is None:
-            self.lateral = 0.0
-        near = float(np.min(g.along[band]))
-        lat = float(np.mean(g.lat[band])) + self.lateral
-        def free(sign):
-            sel = (g.x > 0) & (g.y * sign > 0) & (np.abs(np.arctan2(g.y, g.x)) < 1.2)
-            return float(np.min(np.hypot(g.x[sel], g.y[sel]))) if np.any(sel) else 9.0
-        side = 1 if free(1) > free(-1) else -1
-        self.obstacles.append(Obstacle(along=self._along + near, lateral=lat,
-                                       half_size=0.04, side=side, hits=2))
-
-    def _known_obstacle_mask(self, g: _Geometry) -> np.ndarray:
-        mask = np.zeros(g.along.size, dtype=bool)
-        if self.lateral is None:
-            return mask
-        abs_lat = self.lateral + g.lat
-        for ob in self.obstacles:
-            rel = ob.along - self._along
-            mask |= ((g.along > rel - 0.03) & (g.along < rel + 2 * ob.half_size + 0.05)
-                     & (np.abs(abs_lat - ob.lateral) < ob.half_size + 0.05))
-        return mask
-
-    def _flip_nearest_obstacle_side(self) -> None:
-        pending = [ob for ob in self.obstacles if ob.side != 0
-                   and ob.along + 2 * ob.half_size + self.p.obstacle_pass_after > self._along]
-        if pending:
-            ob = min(pending, key=lambda o: o.along)
-            ob.side = -ob.side
-
-    def _next_obstacle(self) -> Optional[Obstacle]:
-        p = self.p
-        pending = [ob for ob in self.obstacles
-                   if ob.hits >= 2
-                   and ob.along + 2 * ob.half_size + p.obstacle_pass_after > self._along]
-        return min(pending, key=lambda o: o.along) if pending else None
-
-    def _plan_lateral_ref(self) -> float:
-        p = self.p
-        limit = max(self.lane_width / 2.0 - p.half_width - p.wall_margin, 0.0)
-        ob = self._next_obstacle()
-        if ob is None:
-            return 0.0
-        if ob.side == 0:
-            half_lane = self.lane_width / 2.0
-            gap_left = half_lane - (ob.lateral + ob.half_size)
-            gap_right = (ob.lateral - ob.half_size) + half_lane
-            ob.side = 1 if gap_left > gap_right else -1
-        need = ob.lateral + ob.side * (ob.half_size + p.half_width + p.obstacle_clearance)
-        return clamp(need, -limit, limit)
-
-    # ---------------------------------------------------------------- motion
-    def _lane_command(self, speed: float, g: _Geometry) -> Command:
-        """Lane following + obstacle passing as a small local planner.
-
-        A proportional heading/lateral law gives the preferred command.  A
-        set of (v, w) arcs is then scored by where each arc ends (lateral
-        error to ``lateral_ref`` and heading error in the lane frame), by
-        clearance and by speed; only collision-free arcs are eligible.
-        """
-        p = self.p
-        offset = 0.0
-        if self.lateral is not None:
-            err = self.lateral - self.lateral_ref
-            offset = clamp(-p.lateral_kp * err, -p.lateral_max_angle, p.lateral_max_angle)
-        preferred = self._heading_command(speed, wrap(self.seg_yaw + offset))
-        V, W = self._candidates([preferred.linear, 0.6 * speed, p.min_avoid_speed],
-                                [preferred.angular])
-        V[0], W[0] = preferred.linear, preferred.angular
-        ok, clear, xe, ye, the = self._rollout(V, W, g, p.plan_horizon)
-        if not np.any(ok):
-            return preferred                      # the safety filter decides
-        e = wrap(self._yaw - self.seg_yaw)
-        head_end = np.arctan2(np.sin(e + the), np.cos(e + the))
-        cost = (head_end / p.plan_heading_scale) ** 2
-        cost += 0.5 * ((V - speed) / 0.04) ** 2
-        cost += 0.3 * ((W - preferred.angular) / p.max_angular) ** 2
-        cost += np.where(clear < p.plan_clearance,
-                         ((p.plan_clearance - clear) / 0.015) ** 2, 0.0)
-        if self.lateral is not None:
-            lat_end = self.lateral + xe * np.sin(e) + ye * np.cos(e)
-            cost += ((lat_end - self.lateral_ref) / p.plan_lateral_scale) ** 2
-        i = int(np.argmin(np.where(ok, cost, np.inf)))
-        return self._limit(Command(float(V[i]), float(W[i]), checked=True))
-
-    def _heading_command(self, speed: float, target: float) -> Command:
-        p = self.p
-        err = wrap(target - self._yaw)
-        w = clamp(p.heading_kp * err, -p.max_angular, p.max_angular)
-        if abs(w) > 0.75 * p.max_angular:
-            speed *= 0.7
-        return self._limit(Command(speed, w))
-
-    def _limit(self, cmd: Command) -> Command:
-        if self.p.min_turn_radius > 0.0:
-            w_max = abs(cmd.linear) / self.p.min_turn_radius
-            cmd.angular = clamp(cmd.angular, -w_max, w_max)
-        return cmd
-
-    # ------------------------------------------------------------------ step
-    def step(self, t: float, yaw: float, s: float, scan: Optional[Scan],
-             orange: bool = False, blue: bool = False) -> Command:
-        """Advance one control tick and return the velocity command."""
-        self._t = t
-        self._yaw = yaw
-        if self.seg_yaw is None:
-            self.seg_yaw = yaw
-        if self._s_prev is not None:
-            ds = s - self._s_prev
-            self._ox += ds * math.cos(yaw)
-            self._oy += ds * math.sin(yaw)
-            e = wrap(yaw - self.seg_yaw)
-            self._along += ds * math.cos(e)
-            if self.lateral is not None:
-                # dead-reckon the lateral position through wall gaps
-                self.lateral += ds * math.sin(e)
-                self._lat_unmeasured += abs(ds)
-        self._s_prev = s
-
-        if self.state is State.DONE:
-            return Command()
-        if scan is None:
-            return Command()
-        g = self._geometry(scan, yaw)
-        self._front = g.front
-        self._update_lateral(g)
-        if scan is not self._last_scan:
-            self._update_memory(g, scan.range_min)
-
-        if self.state is State.WAIT:
-            if not self._started:
-                return Command()
-            self._enter(State.FOLLOW, "start")
-
-        if self.state is State.BACKOFF:
-            return self._backoff(g)
-
-        new_scan = scan is not self._last_scan
-        self._last_scan = scan
-        if self.state in (State.FOLLOW, State.APPROACH, State.FINISH):
-            if abs(wrap(yaw - self.seg_yaw)) < 0.5:
-                clusters, mask = self._obstacle_clusters(g)
-                if new_scan:
-                    self._remember_obstacles(clusters)
-                # corner timing must see the wall, not an obstacle in front of it
-                mask |= self._known_obstacle_mask(g)
-                ahead = (g.along > 0.0) & (np.abs(g.lat) < 0.10) & ~mask
-                g.front = float(np.min(g.along[ahead])) if np.any(ahead) else None
-                self._front = g.front
-            self.lateral_ref = self._plan_lateral_ref()
-
-        if (self.state is State.TURN and new_scan
-                and abs(wrap(yaw - self._turn_target)) < 0.5):
-            self._look_into_next_lane(scan, yaw)
-        self._track_line_order(orange, blue)
-        if self.state is State.FOLLOW:
-            cmd = self._follow(g, orange, blue)
-        elif self.state is State.APPROACH:
-            cmd = self._approach(g)
-        elif self.state is State.TURN:
-            cmd = self._turn()
-        elif self.state is State.FINISH:
-            cmd = self._finish(g)
-        else:
-            return Command()
-        if self.state in (State.DONE, State.BACKOFF) or cmd.linear <= 0.0:
-            return cmd
-        safe = self._collision_filter(cmd, g)
-        if safe is not None:
-            return safe
-        return self._blocked(g)
-
-    # -------------------------------------------------------- collision check
-    def _candidates(self, speeds, w_extra=()) -> tuple[np.ndarray, np.ndarray]:
-        p = self.p
-        ws = np.concatenate([list(w_extra), np.linspace(-p.max_angular, p.max_angular, 21)])
-        V, W = np.meshgrid(np.asarray(speeds, dtype=float), ws, indexing="ij")
-        V, W = V.ravel(), W.ravel()
-        if p.min_turn_radius > 0.0:
-            W = np.clip(W, -np.abs(V) / p.min_turn_radius, np.abs(V) / p.min_turn_radius)
-        return V, W
-
-    def _rollout(self, V: np.ndarray, W: np.ndarray, g: _Geometry, horizon: float):
-        """Roll constant (v, w) arcs out ``horizon`` metres.
-
-        Returns ``(ok, clearance, x_end, y_end, th_end)``: ``ok`` marks arcs
-        that keep the footprint clear of every scan / memory point.
-        """
-        p = self.p
-        mx, my = self._memory_points()
-        px = np.concatenate([g.x, mx]) + p.lidar_x   # points in the base frame
-        py = np.concatenate([g.y, my])
-        sel = np.hypot(px, py) < horizon + 0.25
-        px, py = px[sel], py[sel]
-        steps = np.linspace(0.0, horizon, 10)
-        sgn = np.where(V < 0, -1.0, 1.0)[:, None]            # reverse arcs too
-        k = (W / np.maximum(np.abs(V), 1e-6))[:, None]      # yaw change per metre
-        th = k * steps[None, :]
-        small = np.abs(k) < 1e-6
-        safe_k = np.where(small, 1.0, k)
-        X = sgn * np.where(small, steps[None, :], np.sin(th) / safe_k)
-        Y = sgn * np.where(small, 0.0, (1.0 - np.cos(th)) / safe_k)
-        if px.size == 0:
-            return (np.ones(V.size, bool), np.full(V.size, 9.0), X[:, -1], Y[:, -1], th[:, -1])
-        dx = px[None, None, :] - X[:, :, None]
-        dy = py[None, None, :] - Y[:, :, None]
-        c, s_ = np.cos(th)[:, :, None], np.sin(th)[:, :, None]
-        lx = c * dx + s_ * dy
-        ly = -s_ * dx + c * dy
-        x0 = p.lidar_x - p.body_rear
-        x1 = p.lidar_x + p.body_front
-        # distance from every point to the footprint rectangle at every step
-        ddx = np.maximum(np.maximum(x0 - lx, lx - x1), 0.0)
-        ddy = np.maximum(np.abs(ly) - p.half_width, 0.0)
-        clear = np.hypot(ddx, ddy).min(axis=2)              # (candidates, steps)
-        now = float(clear[0, 0])
-        path_clear = clear[:, 1:].min(axis=1)
-        # Required clearance: the margin, or (if already closer than the
-        # margin) "do not get closer than now", so the car can always move
-        # away from something it is touching.
-        need = min(p.safety_margin, now - 0.002)
-        ok = (path_clear >= need) & (path_clear > 0.003)
-        return ok, path_clear, X[:, -1], Y[:, -1], th[:, -1]
-
-    def _collision_filter(self, cmd: Command, g: _Geometry) -> Optional[Command]:
-        """Return the command closest to ``cmd`` whose short arc is free.
-
-        ``None`` means no forward motion is safe.
-        """
-        p = self.p
-        if cmd.checked:
-            return cmd
-        speeds = [cmd.linear, max(min(cmd.linear, p.min_avoid_speed), 0.01)]
-        V, W = self._candidates(speeds, [cmd.angular])
-        V[0], W[0] = cmd.linear, cmd.angular
-        ok, _, _, _, _ = self._rollout(V, W, g, p.safety_horizon)
-        if ok[0]:
-            return cmd
-        if np.any(ok):
-            cost = (W - cmd.angular) ** 2 + 2.0 * (V - cmd.linear) ** 2
-            i = int(np.argmin(np.where(ok, cost, np.inf)))
-            return self._limit(Command(float(V[i]), float(W[i])))
-        return None
-
-    def _blocked(self, g: _Geometry) -> Command:
-        # No safe forward arc: back off.  Repeated blocks in the same state
-        # flip the pass side of the nearest obstacle; if the car is still
-        # boxed in after max_backoffs_per_state it stops (DONE, "blocked").
-        if self._backoffs_in_state >= self.p.max_backoffs_per_state:
-            self._enter(State.DONE, f"blocked in {self.state.value}")
-            return Command()
-        self._backoffs_in_state += 1
-        self.backoffs += 1
-        if self.state is not State.TURN and self._next_obstacle() is None:
-            self._obstacle_from_blockage(g)
-        elif self._backoffs_in_state >= 2:
-            self._flip_nearest_obstacle_side()
-        self._resume_state = self.state
-        self._resume_clock = (self._state_t, self._state_along)
-        self._backoff_from_along = self._along
-        self._enter(State.BACKOFF, f"no safe forward arc in {self.state.value}")
-        return self._backoff(g)
-
-    def _track_line_order(self, orange: bool, blue: bool) -> None:
-        # Near the inner corner both lines can be in view.  The colour that
-        # appeared first is the leading one; equal onset stays undecided.
+    # ============================================================ direction
+    def _track_lines(self, orange: bool, blue: bool) -> None:
         prev_o, prev_b = self._prev_lines
         if not orange and not blue:
             self._first_line = None
@@ -742,146 +436,465 @@ class RaceController:
             elif blue and not orange:
                 self._first_line = "blue"
         self._prev_lines = (orange, blue)
+        if self.direction == 0 and self._first_line in ("orange", "blue"):
+            self.direction = CW if self._first_line == "orange" else CCW
+            self.reason = "direction from first line: " + ("CW" if self.direction == CW else "CCW")
 
-    def _follow(self, g: _Geometry, orange: bool, blue: bool) -> Command:
+    def _side_open(self, pts: np.ndarray, side: int) -> bool:
+        """Is the lane open to ``side`` just before the wall ahead?"""
+        a, b = self._axes()
+        u, n = pts @ a, (pts @ b - self._centre_n) * side
+        half = self.lane_width / 2.0
+        region = ((u > self._wall_u - self.lane_width + 0.05) & (u < self._wall_u - 0.05)
+                  & (n > half - 0.05) & (n < half + 0.35))
+        return np.count_nonzero(region) < 3
+
+    def _check_direction(self, pts: np.ndarray) -> None:
+        if self._wall_u is None or self.corners > 0:
+            return
+        ur, _ = self._robot_un()
+        corner_start = self._wall_u - self.lane_width / 2.0 - self.p.corner_radius
+        if ur < corner_start - self.p.direction_decide_dist:
+            return
+        left, right = self._side_open(pts, CCW), self._side_open(pts, CW)
+        if left == right:
+            return
+        opened = CCW if left else CW
+        if self.direction != opened:
+            self.reason = ("direction from open side" if self.direction == 0
+                           else "direction corrected by open side")
+            self.direction = opened
+
+    # ============================================================ reference
+    def _reference(self):
+        """Reference polyline in the odom frame.
+
+        Returns ``(points (k, 2), headings (k,), arc length (k,), corner_end)``
+        where ``corner_end`` is the arc length at the end of the corner arc,
+        or None while no corner is known.
+        """
         p = self.p
-        since_turn = self._along - self._seg_start_along
-        line_ok = self.corners == 0 or since_turn > p.line_lockout
-        trigger = None
-        if line_ok and (orange or blue):
-            if self.direction == 0:
-                if self._first_line in ("orange", "blue"):
-                    self.direction = CW if self._first_line == "orange" else CCW
-                    trigger = "first line sets " + ("CW" if self.direction == CW else "CCW")
-            elif (self.direction == CW and orange) or (self.direction == CCW and blue):
-                trigger = "line"
-        if trigger is None and g.front is not None and line_ok:
-            # missed-line fallback: wall ahead and the turn side opens up
-            if g.front < self._turn_front_dist() - p.fallback_margin:
-                if self.direction != 0 and self._side_open(g, self.direction):
-                    trigger = "fallback wall ahead"
-                elif self.direction == 0:
-                    left_open, right_open = self._side_open(g, CCW), self._side_open(g, CW)
-                    if left_open != right_open:
-                        self.direction = CCW if left_open else CW
-                        trigger = "fallback sets direction"
-        if trigger is not None:
-            self._enter(State.APPROACH, trigger)
-            return self._approach(g)
-
-        speed = p.cruise_speed
-        ob = self._next_obstacle()
-        if ob is not None and ob.along - self._along < 0.6:
-            speed = p.avoid_speed
-            if self.lateral is not None and abs(self.lateral - self.lateral_ref) > 0.03:
-                # not shifted yet: slow down so the heading change happens
-                # in less distance (sharper path, also valid for Ackermann)
-                gap = ob.along - self._along
-                speed = clamp(0.3 * (gap - 0.10), p.min_avoid_speed, p.approach_speed)
-        if g.front is not None and g.front < self._turn_front_dist() + 0.25:
-            speed = min(speed, p.approach_speed)
-        return self._lane_command(speed, g)
-
-    def _approach(self, g: _Geometry) -> Command:
-        p = self.p
-        ready = (g.front is not None and g.front <= self._turn_front_dist())
-        ob = self._next_obstacle()
-        blocking = (ob is not None and g.front is not None
-                    and ob.along - self._along < g.front)
-        if blocking and self._elapsed() <= p.approach_timeout:
-            # pass the obstacle first, then turn
-            return self._lane_command(p.approach_speed, g)
-        if ready or self._travel() >= p.approach_max_dist or self._elapsed() > p.approach_timeout:
-            why = "front distance" if ready else "approach limit"
-            if (self.corners == 0 and not self._side_open(g, self.direction)
-                    and self._side_open(g, -self.direction)):
-                # the corner opens to the other side: the line was misread
-                self.direction = -self.direction
-                why += "; direction corrected by open side"
-            return self._start_turn(why)
-        return self._lane_command(p.approach_speed, g)
-
-    def _start_turn(self, why: str) -> Command:
-        if self._start_to_first_turn is None:
-            self._start_to_first_turn = self._along
+        a, b = self._axes()
+        ur, _ = self._robot_un()
+        cn = self._centre_n
+        step = 0.02
+        u_start = ur - 0.3
+        half = self.lane_width / 2.0
+        corner_index = None
+        if self.direction != 0 and self._wall_u is not None:
+            d = self.direction
+            rc = min(max(p.corner_radius, p.min_turn_radius), half)
+            u_next = self._wall_u - half             # next lane's centre line
+            u_c = u_next - rc
+            us, ns = [], []
+            if u_c > u_start:
+                k = int(math.ceil((u_c - u_start) / step))
+                us += list(np.linspace(u_start, u_c, k + 1))
+                ns += [cn] * (k + 1)
+            th = np.linspace(-d * math.pi / 2, 0.0, 24)
+            us += list(u_c + rc * np.cos(th))
+            ns += list(cn + d * rc + rc * np.sin(th))
+            corner_index = len(us) - 1
+            extra = p.plan_horizon + 0.6
+            k = int(math.ceil(extra / step))
+            tail = np.linspace(0.0, extra, k + 1)[1:]
+            us += [u_next] * k
+            ns += list(cn + d * rc + d * tail)
         else:
-            self._segment_lengths.append(self._along - self._seg_start_along)
-        self._turn_target = wrap(self.seg_yaw + self.direction * math.pi / 2.0)
-        self._enter(State.TURN, why)
-        return self._turn()
+            extra = p.plan_horizon + 0.9
+            k = int(math.ceil(extra / step))
+            us = list(np.linspace(u_start, u_start + extra, k + 1))
+            ns = [cn] * (k + 1)
+        us, ns = np.asarray(us), np.asarray(ns)
+        pts = us[:, None] * a + ns[:, None] * b
+        seg = np.diff(pts, axis=0)
+        keep = np.concatenate([[True], np.hypot(seg[:, 0], seg[:, 1]) > 1e-6])
+        pts = pts[keep]
+        seg = np.diff(pts, axis=0)
+        s = np.concatenate([[0.0], np.cumsum(np.hypot(seg[:, 0], seg[:, 1]))])
+        head = np.arctan2(seg[:, 1], seg[:, 0])
+        head = np.concatenate([head, head[-1:]])
+        corner_end = None
+        if corner_index is not None:
+            corner_end = float(s[int(np.count_nonzero(keep[:corner_index + 1])) - 1])
+        return pts, head, s, corner_end
 
-    def _turn(self) -> Command:
+    @staticmethod
+    def _project(pts, s, x, y) -> tuple[float, float]:
+        """Arc length of the nearest reference point and signed offset (left +)."""
+        seg = np.diff(pts, axis=0)
+        l2 = np.maximum((seg ** 2).sum(axis=1), 1e-12)
+        t = np.clip(((x - pts[:-1, 0]) * seg[:, 0] + (y - pts[:-1, 1]) * seg[:, 1]) / l2, 0, 1)
+        cx = pts[:-1, 0] + t * seg[:, 0]
+        cy = pts[:-1, 1] + t * seg[:, 1]
+        d2 = (cx - x) ** 2 + (cy - y) ** 2
+        i = int(np.argmin(d2))
+        s0 = s[i] + t[i] * math.sqrt(l2[i])
+        cross = seg[i, 0] * (y - cy[i]) - seg[i, 1] * (x - cx[i])
+        q = math.copysign(math.sqrt(d2[i]), cross) if d2[i] > 1e-16 else 0.0
+        return float(s0), q
+
+    # ============================================================== planner
+    def _plan(self, ref, free_start: bool = False) -> Optional[float]:
+        """Second-order dynamic programming over lateral offsets.
+
+        Stations every ``plan_ds`` along the reference; at each station the
+        lateral offset is one of a fixed grid.  The state is the pair of
+        offsets at two consecutive stations, so every transition knows the
+        pose heading (first difference) and the path curvature (second
+        difference plus the reference's own curvature).  Poses are checked
+        with the real footprint against the distance transform; curvature
+        above ``1 / plan_min_radius`` (or the Ackermann limit) is forbidden,
+        so the path is drivable from the current heading.
+
+        With ``free_start`` the initial heading is not fixed; the return
+        value is then the heading the best path starts with (used to steer
+        while backing off).  Otherwise the result is stored in ``_path``.
+        """
         p = self.p
-        err = wrap(self._turn_target - self._yaw)
-        if abs(err) <= p.turn_tolerance:
-            return self._finish_turn("yaw reached")
-        if self._elapsed() > p.turn_timeout:
-            return self._finish_turn("turn timeout")
-        w = clamp(p.heading_kp * err, -p.turn_rate, p.turn_rate)
-        if abs(w) < p.min_turn_angular:
-            w = math.copysign(p.min_turn_angular, err)
-        return self._limit(Command(p.turn_speed, w))
+        pts, head, s, _ = ref
+        s0, q0 = self._project(pts, s, self._x, self._y)
+        self._q0 = q0
+        ds = p.plan_ds
+        n = int(round(p.plan_horizon / ds))
+        sk = s0 + ds * np.arange(n + 1)
+        hu = np.unwrap(head)
+        px = np.interp(sk, s, pts[:, 0])
+        py = np.interp(sk, s, pts[:, 1])
+        hk = np.interp(sk, s, hu)
+        kref = np.gradient(hk, ds)                            # reference curvature
+        nx, ny = -np.sin(hk), np.cos(hk)
+        qmax = max(self.lane_width / 2.0 - p.half_width, 0.02)
+        grid = np.arange(-qmax, qmax + 1e-9, p.plan_dq)
+        m = grid.size
+        kmax = 1.0 / max(p.min_turn_radius, p.plan_min_radius)
+        big = 1e6
+        now = float(self._pose_clearance(self._x, self._y, self._yaw))
+        hard_lim = min(p.hard_clearance, now - 0.004)
 
-    def _finish_turn(self, why: str) -> Command:
-        self.corners += 1
-        self.seg_yaw = self._turn_target
-        self._turn_target = None
-        self._along = 0.0
-        self._seg_start_along = 0.0
-        self.obstacles.clear()
-        for _ in range(2):          # seen during the turn: count as confirmed
-            self._remember_obstacles(self._turn_clusters)
-        self._turn_clusters = []
-        self.lateral = self._next_lateral
-        self._next_lateral = None
-        self._lat_unmeasured = 0.0
-        self.lateral_ref = 0.0
-        if self.corners >= self.p.laps * self.p.corners_per_lap:
-            self._enter(State.FINISH, why + "; final corner")
-        else:
-            self._enter(State.FOLLOW, why)
-        return Command(self.p.turn_speed, 0.0)
+        def pose_terms(k, slope):
+            """Cost and feasibility of poses at station k for given slopes."""
+            ang = np.arctan(slope)
+            X = px[k] + grid * nx[k]
+            Y = py[k] + grid * ny[k]
+            X, Y = np.broadcast_to(X, slope.shape), np.broadcast_to(Y, slope.shape)
+            clear = self._pose_clearance(X, Y, hk[k] + ang)
+            c = (p.w_offset * (grid / qmax) ** 2 + p.w_slope * slope ** 2) * ds
+            c = c + np.where(clear < p.soft_clearance,
+                             p.w_soft * ((p.soft_clearance - clear) / 0.02) ** 2 * ds * 20, 0.0)
+            c = c + np.where((clear < hard_lim) | (np.abs(ang) > p.plan_max_angle), big, 0.0)
+            return c, clear
 
-    def _finish_dist(self) -> float:
+        head_err = clamp(wrap(self._yaw - hk[0]), -1.3, 1.3)
+        s_init = math.tan(head_err)
+        # station 1: state = offset at station 1 (station 0 is the robot)
+        slope1 = (grid - q0) / ds
+        c1, clear1 = pose_terms(1, slope1)
+        if not free_start:
+            curv = (slope1 - s_init) / ds + kref[1]
+            c1 = c1 + p.w_bend * ((slope1 - s_init) / ds) ** 2 * ds
+            c1 = c1 + np.where(np.abs(curv) > kmax * 1.5, big, 0.0)
+        if free_start:
+            j = int(np.argmin(c1))
+            if c1[j] >= big / 2:
+                return None
+            # look one step further so the start heading is not myopic
+            return float(hk[0] + math.atan(slope1[j]))
+        dq = grid[None, :] - grid[:, None]                     # (i, j): q_j - q_i
+        slope = dq / ds
+        d2 = grid[None, None, :] - 2 * grid[None, :, None] + grid[:, None, None]   # (i, j, l)
+        bend_extra = d2 / ds ** 2
+        bend_cost = p.w_bend * bend_extra ** 2 * ds
+        # station 2
+        C = c1[:, None] + p.w_bend * ((slope - slope1[:, None]) / ds) ** 2 * ds
+        C = C + np.where(np.abs((slope - slope1[:, None]) / ds + kref[2]) > kmax, big, 0.0)
+        e2, clr = pose_terms(2, slope)
+        C = C + e2
+        clears = {1: np.broadcast_to(clear1, (m,)), 2: clr}
+        backs = []
+        reach, endC = (2, C) if C.min() < big / 2 else (1, None)
+        if reach == 1 and c1.min() >= big / 2:
+            reach = 0
+        for k in range(3, n + 1):
+            if reach < k - 1:
+                break
+            curv_bad = np.abs(bend_extra + kref[k]) > kmax
+            total = C[:, :, None] + bend_cost + np.where(curv_bad, big, 0.0)   # (i, j, l)
+            bp = np.argmin(total, axis=0)                                       # (j, l)
+            best = np.take_along_axis(total, bp[None], axis=0)[0]
+            ek, clr = pose_terms(k, slope)
+            C = best + ek
+            backs.append(bp)
+            clears[k] = clr
+            if C.min() < big / 2:
+                reach, endC = k, C
+            else:
+                break
+        # backtrack from the last reachable station
+        idx = [0] * (reach + 1)
+        if reach >= 2:
+            j, l = np.unravel_index(int(np.argmin(endC)), endC.shape)
+            idx[reach], idx[reach - 1] = int(l), int(j)
+            for k in range(reach, 2, -1):
+                i = int(backs[k - 3][idx[k - 1], idx[k]])
+                idx[k - 2] = i
+        elif reach == 1:
+            idx[1] = int(np.argmin(c1))
+        q = np.array([q0] + [grid[t] for t in idx[1:]], dtype=float)
+        K = reach + 1
+        self._path = np.stack([px[:K] + q * nx[:K], py[:K] + q * ny[:K]], axis=1)
+        self._path_len = reach * ds
+        self._path_ok = reach >= 2
+        cl = []
+        for k in range(1, min(reach, 8) + 1):
+            c_k = clears[k]
+            cl.append(float(c_k[idx[k]] if k == 1 else c_k[idx[k - 1], idx[k]]))
+        self._path_clear = min(cl) if cl else 0.0
+        self.lateral_ref = float(q[min(int(round(0.25 / ds)), reach)])
+        self._plan_t = self._t
+        return None
+
+    # ============================================================= tracking
+    def _track(self) -> Command:
+        """Pure pursuit on the planned path with a curvature speed limit."""
         p = self.p
-        if self._segment_lengths:
-            seg = float(np.median(self._segment_lengths))
-        else:
-            seg = self._start_to_first_turn or 0.0
-        start = self._start_to_first_turn or 0.0
-        return max(seg - start + p.finish_extra, p.finish_min_dist)
+        path = self._path
+        c, s_ = math.cos(self._yaw), math.sin(self._yaw)
+        rel = path - np.array([self._x, self._y])
+        fwd = rel[:, 0] * c + rel[:, 1] * s_
+        lat = -rel[:, 0] * s_ + rel[:, 1] * c
+        dist = np.hypot(rel[:, 0], rel[:, 1])
+        v = p.cruise_speed
+        seg = np.diff(path[:10], axis=0)
+        if seg.shape[0] >= 2:
+            hd = np.unwrap(np.arctan2(seg[:, 1], seg[:, 0]))
+            ln = np.maximum(np.hypot(seg[:, 0], seg[:, 1]), 1e-6)
+            kappa = float((np.abs(np.diff(hd)) / ln[1:]).max())
+            v = min(v, math.sqrt(p.lateral_accel / max(kappa, 1e-6)))
+        if self._path_clear is not None and self._path_clear < p.soft_clearance:
+            v = min(v, p.avoid_speed)
+        free = self._path_len - p.stop_margin
+        v = min(v, max(free, 0.0) / p.stop_time)
+        if not self._path_ok:
+            v = p.min_speed
+        v = max(v, p.min_speed)
+        look = p.pursuit_min + p.pursuit_gain * v
+        ahead = np.nonzero((fwd > 0.02) & (dist >= look))[0]
+        i = int(ahead[0]) if ahead.size else path.shape[0] - 1
+        tx, ty = fwd[i], lat[i]
+        kappa = 2.0 * ty / max(tx * tx + ty * ty, 1e-6)
+        if abs(math.atan2(ty, tx)) > 0.9:
+            v = p.min_speed
+        w = clamp(v * kappa, -p.max_angular, p.max_angular)
+        return self._limit(Command(v, w))
 
-    def _finish(self, g: _Geometry) -> Command:
-        if self._travel() >= self._finish_dist():
-            self._enter(State.DONE, "laps complete")
-            return Command()
-        return self._lane_command(self.p.approach_speed, g)
+    def _limit(self, cmd: Command) -> Command:
+        if self.p.min_turn_radius > 0.0:
+            w_max = abs(cmd.linear) / self.p.min_turn_radius
+            cmd.angular = clamp(cmd.angular, -w_max, w_max)
+        return cmd
 
-    def _backoff(self, g: _Geometry) -> Command:
+    def _arc_clearance(self, V: np.ndarray, W: np.ndarray, horizon: float) -> np.ndarray:
+        """Minimum footprint clearance along constant (v, w) arcs."""
+        steps = np.linspace(0.0, horizon, 8)[1:]
+        sgn = np.where(V < 0, -1.0, 1.0)[:, None]
+        k = (W / np.maximum(np.abs(V), 1e-6))[:, None]     # yaw change per metre
+        dist = sgn * steps[None, :] * np.ones_like(k)
+        th = k * steps[None, :]
+        small = np.abs(k) < 1e-6
+        sk = np.where(small, 1.0, k)
+        lx = np.where(small, dist, sgn * np.sin(th) / sk)
+        ly = np.where(small, 0.0, sgn * (1.0 - np.cos(th)) / sk)
+        c, s_ = math.cos(self._yaw), math.sin(self._yaw)
+        X = self._x + c * lx - s_ * ly
+        Y = self._y + s_ * lx + c * ly
+        # x = sgn*sin(k d)/k, y = sgn*(1-cos(k d))/k, yaw change = k d for
+        # both driving directions (k = w / |v|)
+        return self._pose_clearance(X, Y, self._yaw + th).min(axis=1)
+
+    def _safety(self, cmd: Command) -> Optional[Command]:
+        """Closest safe command to ``cmd``; None if no forward motion is safe."""
         p = self.p
-        backed = self._backoff_from_along - self._along
-        cmd = None
-        if backed < p.backoff_dist and self._elapsed() <= p.backoff_timeout:
-            # Reverse while turning the nose further toward the planned side,
-            # so the next forward attempt starts at a steeper angle.
-            w_des = 0.0
-            ob = self._next_obstacle()
-            e = wrap(self._yaw - self.seg_yaw)
-            if ob is not None and ob.side != 0 and self._resume_state is not State.TURN:
-                if abs(e) < p.backoff_max_angle or e * ob.side < 0:
-                    w_des = ob.side * p.backoff_turn_rate
-            V, W = self._candidates([p.backoff_speed], [w_des])
-            V[0], W[0] = p.backoff_speed, w_des
-            ok, _, _, _, _ = self._rollout(V, W, g, p.backoff_check)
-            if np.any(ok):
-                i = int(np.argmin(np.where(ok, (W - w_des) ** 2, np.inf)))
-                cmd = self._limit(Command(float(V[i]), float(W[i]), checked=True))
-        if cmd is not None:
+        now = float(self._pose_clearance(self._x, self._y, self._yaw))
+        need = min(p.safety_margin, now - 0.003)
+        ws = np.concatenate([[cmd.angular], np.linspace(-p.max_angular, p.max_angular, 19)])
+        speeds = [cmd.linear, max(min(cmd.linear, p.min_speed), 0.01)]
+        V = np.repeat(speeds, ws.size)
+        W = np.tile(ws, len(speeds))
+        if p.min_turn_radius > 0:
+            W = np.clip(W, -np.abs(V) / p.min_turn_radius, np.abs(V) / p.min_turn_radius)
+        horizon = clamp(abs(cmd.linear) * p.safety_time + 0.02,
+                        p.safety_min_horizon, p.safety_max_horizon)
+        clear = self._arc_clearance(V, W, horizon)
+        ok = (clear >= need) & (clear > 0.002)
+        if ok[0]:
             return cmd
-        # done, timed out, or reversing is not safe: resume the interrupted
-        # state with its original clock so its own limits still apply
-        resume = self._resume_state
-        self.state = resume
-        self.reason = "resume after backoff"
-        self._state_t, self._state_along = self._resume_clock
+        if not np.any(ok):
+            return None
+        cost = (W - cmd.angular) ** 2 + 4.0 * (V - cmd.linear) ** 2
+        i = int(np.argmin(np.where(ok, cost, np.inf)))
+        return self._limit(Command(float(V[i]), float(W[i])))
+
+    # ================================================================ step
+    def status(self) -> Status:
+        front = None
+        along = 0.0
+        if self.seg_yaw is not None:
+            along, _ = self._robot_un()
+            if self._wall_u is not None:
+                front = self._wall_u - along
+        return Status(state=self.state.value, reason=self.reason, direction=self.direction,
+                      corners=self.corners,
+                      laps_done=self.corners // max(self.p.corners_per_lap, 1),
+                      lateral=self._q0, lateral_ref=self.lateral_ref,
+                      lane_width=self.lane_width, front=front, seg_along=along,
+                      clearance=self._path_clear, backoffs=self.backoffs)
+
+    def step(self, t: float, yaw: float, s: float, scan: Optional[Scan],
+             orange: bool = False, blue: bool = False) -> Command:
+        """Advance one control tick and return the velocity command."""
+        self._t = t
+        if self._s_prev is not None:
+            ds = s - self._s_prev
+            mid = wrap(self._yaw + 0.5 * wrap(yaw - self._yaw))
+            self._x += ds * math.cos(mid)
+            self._y += ds * math.sin(mid)
+            self._s += ds
+        self._s_prev = s
+        self._yaw = yaw
+        self._hist.append((t, self._x, self._y, yaw))
+        if len(self._hist) > 40:
+            del self._hist[:-40]
+        if self.seg_yaw is None:
+            self.seg_yaw = yaw
+            self._progress_t = t
+        if self.state is State.DONE or scan is None:
+            return Command()
+
+        new_scan = scan is not self._last_scan
+        self._last_scan = scan
+        if new_scan:
+            pts = self._scan_points(scan)
+            self._build_grid(self._update_memory(pts, scan.range_min))
+            self._measure_lane(pts)
+            self._pts = pts
+        if self._grid is None or self._centre_n is None:
+            return Command()
+
+        if self.state is State.WAIT:
+            if not self._started:
+                return Command()
+            self._start_xy = (self._x, self._y)
+            self._progress_t = t
+            self._set(State.RUN, "start")
+
+        self._track_lines(orange, blue)
+        if new_scan:
+            self._check_direction(self._pts)
+        if self.state is State.BACKOFF:
+            return self._backoff()
+
+        if self._start_wall_dist is None and self._wall_u is not None and self.corners == 0:
+            a, _ = self._axes()
+            self._start_wall_dist = self._wall_u - float(np.array(self._start_xy) @ a)
+
+        ref = self._reference()
+        self._corner_progress(ref)
+        if self.state is State.FINISH and self._finished():
+            self._set(State.DONE, "laps complete")
+        if self.state is State.DONE:
+            return Command()
+
+        if self._path is None or new_scan or self._t - self._plan_t > self.p.replan_period:
+            self._plan(self._reference())
+        if not self._path_ok:
+            return self._start_backoff("no collision-free path")
+        if self._path.shape[0] < 2:
+            return self._start_backoff("no path")
+        cmd = self._track()
+        safe = self._safety(cmd)
+        stalled = self._stalled()
+        if safe is None or stalled:
+            return self._start_backoff("stalled" if stalled else "no safe forward motion")
+        return safe
+
+    # ======================================================= laps / corners
+    def _corner_progress(self, ref) -> None:
+        pts, _, s, corner_end = ref
+        if corner_end is None:
+            return
+        s0, _ = self._project(pts, s, self._x, self._y)
+        if s0 < corner_end:
+            return
+        # passed the corner arc: switch to the next lane's frame
+        d = self.direction
+        u_next = self._wall_u - self.lane_width / 2.0
+        self.seg_yaw = wrap(self.seg_yaw + d * math.pi / 2.0)
+        self._centre_n = -d * u_next
+        self._wall_u = None
+        self._wall_hist = []
+        self._path = None
+        self.corners += 1
+        self._lane_backoffs = 0
+        if self.corners >= self.p.laps * self.p.corners_per_lap:
+            self._set(State.FINISH, "final corner")
+        else:
+            self.reason = f"corner {self.corners}"
+
+    def _finished(self) -> bool:
+        if self._wall_u is None or self._start_wall_dist is None:
+            return False
+        ur, _ = self._robot_un()
+        return self._wall_u - ur <= self._start_wall_dist
+
+    # ============================================================ recovery
+    def _stalled(self) -> bool:
+        if abs(self._s - self._progress_s) > self.p.stall_dist:
+            self._progress_s = self._s
+            self._progress_t = self._t
+            return False
+        if self._t - self._progress_t > self.p.stall_time:
+            self._progress_t = self._t
+            return True
+        return False
+
+    def _start_backoff(self, why: str) -> Command:
+        if self._lane_backoffs >= self.p.max_backoffs_per_lane:
+            self._set(State.DONE, f"blocked: {why}")
+            return Command()
+        self._lane_backoffs += 1
+        self.backoffs += 1
+        self._resume = self.state
+        self._backoff_t = self._t
+        self._backoff_xy = (self._x, self._y)
+        # heading a free path would start with: reversing while turning the
+        # nose toward it makes the next forward attempt drivable
+        self._backoff_heading = self._plan(self._reference(), free_start=True)
+        self._path = None
+        self._set(State.BACKOFF, why)
+        return self._backoff()
+
+    def _backoff(self) -> Command:
+        p = self.p
+        moved = math.hypot(self._x - self._backoff_xy[0], self._y - self._backoff_xy[1])
+        if moved < p.backoff_dist and self._t - self._backoff_t < p.backoff_timeout:
+            # reverse; turn the nose toward the heading a free path needs
+            w_des = 0.0
+            if self._backoff_heading is not None:
+                err = wrap(self._backoff_heading - self._yaw)
+                if abs(err) > 0.08:
+                    w_des = math.copysign(p.backoff_turn_rate, err)
+            ws = np.concatenate([[w_des], np.linspace(-0.6, 0.6, 13)])
+            if p.min_turn_radius > 0:
+                lim = abs(p.backoff_speed) / p.min_turn_radius
+                ws = np.clip(ws, -lim, lim)
+            V = np.full(ws.size, p.backoff_speed)
+            clear = self._arc_clearance(V, ws, 0.08)
+            ok = clear > 0.006
+            if np.any(ok):
+                i = int(np.argmin(np.where(ok, (ws - w_des) ** 2, np.inf)))
+                return Command(float(V[i]), float(ws[i]))
+        self._set(self._resume, "resume after backoff")
+        self._progress_t = self._t
+        self._progress_s = self._s
         return Command()

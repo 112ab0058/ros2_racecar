@@ -101,10 +101,14 @@ class RaceNode(Node):
         return self.get_clock().now().nanoseconds * 1e-9
 
     def _scan_cb(self, msg: LaserScan):
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        now = self._now()
+        if stamp <= 0.0 or abs(now - stamp) > 1.0:
+            stamp = now                       # missing or foreign clock: use arrival time
         self._scan = Scan(angle_min=msg.angle_min, angle_increment=msg.angle_increment,
                           ranges=list(msg.ranges), range_min=msg.range_min,
-                          range_max=msg.range_max)
-        self._scan_t = self._now()
+                          range_max=msg.range_max, stamp=stamp)
+        self._scan_t = now
 
     def _odom_cb(self, msg: Odometry):
         yaw = yaw_from_quaternion(msg.pose.pose.orientation)

@@ -93,6 +93,9 @@ SCENARIOS = {
     "north_outer": [(0.05, 0.60)],
     "three": [(0.00, 0.42), (-0.52, -0.05), (0.30, -0.58)],
     "four_lanes": [(0.05, 0.56), (-0.45, 0.10), (-0.35, -0.58), (0.55, -0.05)],
+    # the field plan's continuous obstacle section: slalom in the north lane
+    "north_slalom": [(-0.28, 0.42), (0.00, 0.58), (0.28, 0.42)],
+    "north_row": [(-0.20, 0.50), (0.05, 0.40), (0.30, 0.60)],
 }
 
 
@@ -203,6 +206,7 @@ def run(world: World, cfg: SimConfig, params: Optional[Params] = None,
     while t < cfg.max_time:
         if t >= next_scan:
             scan = lidar_scan(world, cfg, x, y, yaw, rng)
+            scan.stamp = t
             next_scan += 1.0 / cfg.scan_hz
         if t >= next_cam:
             o, b = camera_lines(world, cfg, x, y, yaw)

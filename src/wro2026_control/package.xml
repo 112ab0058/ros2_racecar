@@ -18,6 +18,11 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <!-- launch/sim_race.launch.py additionally needs wro2026_sim, ros_gz_bridge
+       and turtlebot3_gazebo (simulation machine only, not the car) -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 
