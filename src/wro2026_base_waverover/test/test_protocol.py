@@ -13,6 +13,7 @@ def test_stop_is_exactly_the_allowed_literal():
     assert encode_command(wheel_command(0, 0)) == '{"T":1,"L":0,"R":0}'
     assert encode_command(wheel_command(0.0, -0.0)) == '{"T":1,"L":0,"R":0}'
     assert encode_command(wheel_command(0.0001, -0.0004)) == '{"T":1,"L":0,"R":0}'
+    assert encode_command(wheel_command(math.nan, math.inf)) == '{"T":1,"L":0,"R":0}'
 
 
 def test_wheel_command_encoding_and_rounding():

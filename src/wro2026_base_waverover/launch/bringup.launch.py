@@ -51,6 +51,10 @@ OVERRIDES = [
     ('imu_timeout', float, 'max IMU age for odom yaw rate (s)'),
     ('imu_yaw_rate_sign', float, 'sign applied to IMU gz for odom'),
     ('odom_hold_when_stopped', bool, 'zero wheel command -> odom does not move'),
+    ('odom_pose_covariance_xy', float, 'x/y variance (m^2)'),
+    ('odom_pose_covariance_yaw', float, 'yaw variance (rad^2)'),
+    ('odom_twist_covariance_vx', float, 'vx variance ((m/s)^2)'),
+    ('odom_twist_covariance_wz', float, 'wz variance ((rad/s)^2)'),
 ]
 
 

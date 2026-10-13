@@ -38,15 +38,21 @@ LEVEL_OK = 0
 LEVEL_WARN = 1
 LEVEL_ERROR = 2
 
+RETRY_PERIOD = 0.1  # resend a T:1 the transport rejected after this long (s)
+
 
 # ------------------------------------------------------------- kinematics
 def clamp(value, limit):
-    """Clamp value to [-limit, limit]."""
+    """Clamp value to [-limit, limit]; NaN / inf become 0 (stop)."""
+    if not math.isfinite(value):
+        return 0.0
     return max(-limit, min(limit, value))
 
 
 def speed_limit(max_speed):
-    """Return the effective wheel cap: |max_speed| but never above MAX_WHEEL."""
+    """Return the effective wheel cap: |max_speed| but never above MAX_WHEEL (NaN -> 0)."""
+    if not math.isfinite(max_speed):
+        return 0.0 if math.isnan(max_speed) else MAX_WHEEL
     return min(abs(max_speed), MAX_WHEEL)
 
 
@@ -56,7 +62,10 @@ def twist_to_wheels(v, w, track_width, max_speed):
 
     Same math as the tested driver: each wheel is clamped on its own, so a
     command beyond the cap changes the turn radius rather than being scaled.
+    A non-finite v or w (NaN / inf) gives a stop.
     """
+    if not (math.isfinite(v) and math.isfinite(w)):
+        return 0.0, 0.0
     limit = speed_limit(max_speed)
     left = clamp(v - w * track_width / 2.0, limit)
     right = clamp(v + w * track_width / 2.0, limit)
@@ -64,8 +73,11 @@ def twist_to_wheels(v, w, track_width, max_speed):
 
 
 def wire_number(value):
-    """Round to 3 decimals like the original driver; any zero becomes int 0."""
-    value = round(float(value), 3)
+    """Round to 3 decimals like the original driver; zero (and NaN / inf) becomes int 0."""
+    value = float(value)
+    if not math.isfinite(value):
+        return 0
+    value = round(value, 3)
     if value == 0:
         return 0
     return value
@@ -173,11 +185,17 @@ class BaseController:
 
     # inputs
     def set_cmd_vel(self, v, w):
-        """Store a /cmd_vel request (already clamped to max_speed)."""
+        """
+        Store a /cmd_vel request (clamped to max_speed).
+
+        Returns False when v or w is NaN / inf: the request is stored as a stop.
+        """
+        valid = math.isfinite(v) and math.isfinite(w)
         left, right = twist_to_wheels(v, w, self.track_width, self.max_speed)
         with self.lock:
             self.left, self.right = left, right
             self.last_cmd = self.clock()
+        return valid
 
     def on_base_feedback(self, voltage=None):
         """Record a T:1001 reply (voltage may be None if the field is missing)."""
@@ -278,7 +296,14 @@ class BaseController:
 # -------------------------------------------------------------- I/O loop
 class DriverLoop:
     """
-    Single I/O loop: wheel commands first, then T:130 / T:126 polling.
+    Single I/O loop for wheel commands and T:130 / T:126 polling.
+
+    Scheduling: a new stop (or the stop forced by feedback loss) is sent at
+    once. Any other wheel command yields one slot to a due poll right after
+    a wheel send, so a /cmd_vel that changes every cycle cannot starve the
+    T:130 replies the feedback watchdog needs (an HTTP request blocks for
+    about 0.1 s). A T:1 the transport rejected is retried after
+    RETRY_PERIOD instead of cmd_period.
 
     The transport does the actual I/O. ``step()`` does at most one send and
     returns True when it did something, so tests can drive it with a fake
@@ -308,6 +333,8 @@ class DriverLoop:
         self.next_poll = [0.0] * len(self.polls)
         self.last_sent = None
         self.last_sent_time = -math.inf
+        self.last_send_failed = False
+        self.last_action = None
         self.last_reason = 'idle'
         self.prev_feedback = None
         self.send_failures = 0
@@ -375,15 +402,23 @@ class DriverLoop:
             self.log('error', 'battery critical, refusing non-zero wheel commands')
         self.last_reason = reason
         desired = (left, right)
-        if force or desired != self.last_sent or now - self.last_sent_time >= self.cmd_period:
-            self.send_wheels(left, right, reason)
-            self.last_sent, self.last_sent_time = desired, now
-            return True
+        period = RETRY_PERIOD if self.last_send_failed else self.cmd_period
+        wheels_due = (force or desired != self.last_sent
+                      or now - self.last_sent_time >= period)
+        new_stop = desired == (0, 0) and desired != self.last_sent
         due = [i for i, t in enumerate(self.next_poll) if t <= now]
+        yield_to_poll = bool(due) and self.last_action == 'wheels'
+        if wheels_due and (force or new_stop or not yield_to_poll):
+            ok = self.send_wheels(left, right, reason)
+            self.last_sent, self.last_sent_time = desired, now
+            self.last_send_failed = not ok
+            self.last_action = 'wheels'
+            return True
         if due:
             i = min(due, key=lambda k: self.next_poll[k])
             self.next_poll[i] = now + self.feedback_period
             self.poll(self.polls[i])
+            self.last_action = 'poll'
             return True
         return False
 

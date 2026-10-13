@@ -183,7 +183,9 @@ class WaveRoverDriver(Node):
             print(f'[{level}] {text}', flush=True)
 
     def _on_cmd_vel(self, msg):
-        self.controller.set_cmd_vel(msg.linear.x, msg.angular.z)
+        if not self.controller.set_cmd_vel(msg.linear.x, msg.angular.z):
+            self.get_logger().warn('/cmd_vel with NaN or inf: treated as stop',
+                                   throttle_duration_sec=2.0)
 
     def _on_sent(self, rec):
         try:

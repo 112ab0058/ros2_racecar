@@ -186,9 +186,11 @@ class MotionTest:
         pkg = 'wro2026_base_waverover'
         exe = os.path.join(get_package_prefix(pkg), 'lib', pkg, 'driver')
         config = os.path.join(get_package_share_directory(pkg), 'config', 'wave_rover.yaml')
+        # --startup-only never moves the wheels, even if something else publishes /cmd_vel
+        max_speed = 0.0 if self.a.startup_only else self.a.speed
         cmd = [exe, '--ros-args', '--params-file', config,
                '-p', f'transport:={self.a.transport}', '-p', f'host:={self.a.host}',
-               '-p', f'port:={self.a.port}', '-p', f'max_speed:={self.a.speed}',
+               '-p', f'port:={self.a.port}', '-p', f'max_speed:={max_speed}',
                '-p', f'track_width:={self.a.track_width}',
                '-p', f'cmd_timeout:={self.a.cmd_timeout}']
         self.driver_log = open(self.driver_log_path, 'w')

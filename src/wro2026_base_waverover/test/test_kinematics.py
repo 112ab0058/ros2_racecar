@@ -1,7 +1,9 @@
 """Differential kinematics and the wheel speed cap."""
+import math
+
 import pytest
 
-from wro2026_base_waverover.core import MAX_WHEEL, speed_limit, twist_to_wheels
+from wro2026_base_waverover.core import clamp, MAX_WHEEL, speed_limit, twist_to_wheels
 
 TRACK = 0.125
 
@@ -39,3 +41,11 @@ def test_zero_max_speed_only_ever_produces_stop():
     for v, w in [(0.5, 0.0), (-0.5, 0.0), (0.0, 5.0), (0.3, -2.0)]:
         left, right = twist_to_wheels(v, w, TRACK, 0.0)
         assert left == 0 and right == 0
+
+
+def test_nan_or_inf_twist_is_a_stop():
+    # max(-0.05, min(0.05, nan)) would be 0.05 (full forward) without the guard
+    for v, w in [(math.nan, 0.0), (0.0, math.nan), (math.inf, 0.0), (0.0, -math.inf)]:
+        assert twist_to_wheels(v, w, TRACK, 0.05) == (0.0, 0.0)
+    assert clamp(math.nan, 0.05) == 0.0
+    assert speed_limit(math.nan) == 0.0

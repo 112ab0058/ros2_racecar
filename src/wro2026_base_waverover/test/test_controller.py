@@ -1,8 +1,10 @@
 """Safety behaviour of BaseController + DriverLoop, recorded through FakeTransport."""
 import json
+import math
 
 from wro2026_base_waverover.core import (BaseController, DriverLoop, FEEDBACK_LOST, FEEDBACK_OK,
-                                         FEEDBACK_WAITING, LEVEL_ERROR, LEVEL_OK, LEVEL_WARN)
+                                         FEEDBACK_WAITING, LEVEL_ERROR, LEVEL_OK, LEVEL_WARN,
+                                         RETRY_PERIOD)
 from wro2026_base_waverover.transport import FakeTransport
 
 STOP = '{"T":1,"L":0,"R":0}'
@@ -193,3 +195,64 @@ def test_feedback_watchdog_can_be_disabled(clock):
     h.controller.feedback_timeout = 0.0
     h.run(0.5, cmd=(0.05, 0.0))
     assert (0.05, 0.05) in [(left, right) for _, left, right in h.wheels()]
+
+
+def test_nan_cmd_vel_sends_stop(clock):
+    h = Harness(clock)
+    h.run(0.5)
+    h.run(0.5, cmd=(0.05, 0.0))
+    t0 = clock.t
+    assert h.controller.set_cmd_vel(math.nan, 0.0) is False
+    h.run(0.5)
+    assert h.wheels(t0)[0][1:] == (0, 0)
+    assert h.controller.set_cmd_vel(0.05, 0.0) is True
+
+
+def test_changing_cmd_vel_does_not_starve_feedback_polls(clock):
+    # every HTTP request blocks ~0.09 s; /cmd_vel changes on every loop cycle
+    h = Harness(clock)
+    polls = []
+    scripted = h.fake.reply
+
+    def slow_reply(cmd):
+        if cmd == {'T': 130}:
+            polls.append(clock.t)
+        clock.advance(0.09)
+        return scripted(cmd)
+
+    h.fake.reply = slow_reply
+    k = 0
+    end = clock.t + 6.0
+    while clock.t < end:
+        k += 1
+        h.controller.set_cmd_vel(0.01 + 0.001 * (k % 30), 0.0)
+        if not h.loop.step():
+            clock.advance(0.005)
+    assert not any('feedback lost' in text for _, text in h.logs)
+    assert h.controller.feedback_state() == FEEDBACK_OK
+    assert max(b - a for a, b in zip(polls, polls[1:])) < 1.0
+    moving = {(left, right) for _, left, right in h.wheels() if (left, right) != (0, 0)}
+    assert len(moving) > 10  # the changing command still gets through
+
+
+def test_new_stop_is_not_delayed_by_polls(clock):
+    h = Harness(clock)
+    h.run(0.5)
+    h.run(0.3, cmd=(0.05, 0.0))
+    h.loop.next_poll = [0.0] * len(h.loop.next_poll)  # every poll is due
+    h.loop.last_action = 'wheels'
+    h.controller.last_cmd = clock.t - 1.0  # /cmd_vel timed out -> stop
+    t0 = clock.t
+    assert h.loop.step()
+    assert h.wheels(t0)[0][1:] == (0, 0)
+
+
+def test_failed_send_is_retried_quickly(clock):
+    h = Harness(clock)
+    h.run(0.5)
+    h.fake.fail = True
+    t0 = clock.t
+    h.run(0.35)
+    attempts = [r['t'] for r in h.records if r['t'] >= t0]
+    assert len(attempts) >= 3  # every RETRY_PERIOD, not every cmd_period (0.5 s)
+    assert all(b - a <= RETRY_PERIOD + 0.02 for a, b in zip(attempts, attempts[1:]))

@@ -12,6 +12,7 @@ All transports implement:
 hardware.
 """
 import threading
+import time
 import urllib.parse
 import urllib.request
 
@@ -74,6 +75,7 @@ class SerialTransport(Transport):
         self.ser = None
         self.running = False
         self.reader = None
+        self.read_errors = 0
         self.write_lock = threading.Lock()
 
     def start(self, on_line):
@@ -94,6 +96,8 @@ class SerialTransport(Transport):
             except Exception:
                 if not self.running:
                     return
+                self.read_errors += 1
+                time.sleep(0.1)  # e.g. device unplugged: do not spin at 100 % CPU
                 continue
             if line:
                 on_line(line)
