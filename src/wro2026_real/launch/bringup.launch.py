@@ -12,6 +12,11 @@ launch that drives the car autonomously on the ground.
 Arguments transport / host / port / max_speed / cmd_timeout / config are
 passed to wro2026_base_waverover's bringup.launch.py (empty = YAML value).
 robot_state_publisher is skipped (with a message) if it is not installed.
+
+foxglove:=true also starts foxglove_bridge on port 8765, read-only: no
+clientPublish / parameters / services capability (see foxglove_config.py),
+so the Foxglove UI cannot publish /cmd_vel. Skipped with a message if
+foxglove_bridge is not installed.
 """
 import os
 
@@ -22,6 +27,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from wro2026_real.foxglove_config import foxglove_parameters
 
 FORWARDED = [
     ('transport', 'serial | http (empty = YAML value, serial)'),
@@ -55,6 +61,9 @@ def generate_launch_description():
     decls.append(DeclareLaunchArgument(
         'use_robot_state_publisher', default_value='true',
         description='start robot_state_publisher with urdf/wave_rover.urdf'))
+    decls.append(DeclareLaunchArgument(
+        'foxglove', default_value='false',
+        description='start a read-only foxglove_bridge on port 8765 (true/false)'))
 
     base = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(base_share, 'launch', 'bringup.launch.py')),
@@ -74,4 +83,18 @@ def generate_launch_description():
     else:
         actions.append(LogInfo(msg='robot_state_publisher is not installed: skipping it '
                                    '(only odom -> base_link TF will exist)'))
+    foxglove = IfCondition(LaunchConfiguration('foxglove'))
+    if _has_package('foxglove_bridge'):
+        actions.append(Node(
+            package='foxglove_bridge',
+            executable='foxglove_bridge',
+            name='foxglove_bridge',
+            output='screen',
+            parameters=[foxglove_parameters()],
+            condition=foxglove,
+        ))
+    else:
+        actions.append(LogInfo(msg='foxglove:=true but foxglove_bridge is not installed: '
+                                   'skipping it (ros-jazzy-foxglove-bridge)',
+                               condition=foxglove))
     return LaunchDescription(actions)

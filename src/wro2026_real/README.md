@@ -7,12 +7,13 @@
 
 | 檔案 | 用途 |
 |---|---|
-| `launch/bringup.launch.py` | 底盤 driver（include `wro2026_base_waverover`）+ robot_state_publisher。`transport`、`host`、`port`、`max_speed`、`cmd_timeout`、`publish_odom_tf`、`config` 轉給底盤 |
+| `launch/bringup.launch.py` | 底盤 driver（include `wro2026_base_waverover`）+ robot_state_publisher。`transport`、`host`、`port`、`max_speed`、`cmd_timeout`、`publish_odom_tf`、`config` 轉給底盤。`foxglove:=true` 另外啟動**唯讀**的 foxglove_bridge（port 8765，沒有 `clientPublish` / `parameters` / `services`；沒裝就略過） |
 | `launch/line_detector.launch.py` | 只啟動 line detector（需要相機 driver，目前沒有） |
 | `urdf/wave_rover.urdf` | 最小模型：`base_link`、`imu_link`、`camera_link`（placeholder）。尺寸全部 UNKNOWN，是暫定值 |
 | `config/line_detector.yaml` | HSV 閾值、面積、ROI、影像 topic |
 | `wro2026_real/line_detection.py` | 純函式「影像 → 偵測結果」，只用 numpy |
 | `wro2026_real/line_detector_node.py` | ROS 節點，只做接線 |
+| `wro2026_real/foxglove_config.py` | foxglove_bridge 的唯讀參數（有 pytest 檢查不含寫入能力） |
 
 **這裡沒有任何會讓車自主行駛的 launch**（CLAUDE.md：stop 與 timeout 在架空狀態驗證前不寫）。bringup 不發佈 `/cmd_vel`。
 
