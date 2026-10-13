@@ -47,11 +47,12 @@
 4. 暫停：`pwm_to_mps` 地面校正、IMU 濾波（R550 有 encoder，到時候直接做真正的里程計）。
 
 ### B. 到貨前在 Orin 上準備（不需要 R550）
-1. 列出要裝的 apt 套件給 Ray 確認後再裝（候選：`robot_localization`、`slam_toolbox`、`nav2_bringup`、`rosbag2-storage-mcap`、`foxglove_bridge`、`tf2_tools`）。
-2. 裝大量套件前，先備份 Orin 的 microSD 映像檔。
-3. 查 M10P 光達和 WHEELTEC 底盤的 ROS 2 程式能不能在 Jazzy / Ubuntu 24.04 上 build（WHEELTEC 的程式可能是為其他版本寫的，這是主要風險）。
-4. 網路：路由器綁固定 IP；NetBird 讓 Ray 的電腦加入；確認 WSL 的 RViz / Foxglove 能看到 Orin 的 topic。
-5. 控制器整合準備：`wro2026_control` 的 `/imu` 改成可設定的參數，並以 m/s 的 `/cmd_vel` 為準（R550 原生就是 m/s）。
+2026-10-13～14 的結果見 [R550 準備報告](reports/2026-10-13_r550_prep.md)。
+1. **B1 Orin 備份：DONE（狀態備份）**。套件清單、apt 來源、原始碼已備份到 Orin 與 Ray 的 Windows（[real/ORIN_BACKUP.md](real/ORIN_BACKUP.md)）；完整 SD 卡映像要 Ray 關機拔卡自己做（步驟在同一份文件）。
+2. **B2 ROS 2 套件：BLOCKED**。模擬安裝顯示 `ros-jazzy-nav2-bringup` 會把 Ubuntu 的 OpenCV 4.6 開發套件換成 NVIDIA 的 4.8（移除 10 個套件），依規則沒有安裝。`rosbag2-storage-mcap`、`tf2-tools` 本來就有；其餘 3 個（robot-localization、slam-toolbox、foxglove-bridge）單獨裝不會移除任何套件，要不要裝由 Ray 決定。
+3. **B3 R550 / M10P 相容性：DONE（調查）**。WHEELTEC 沒有公開的 R550 官方程式；STM32 協定由兩個第三方程式交叉確認，寫成 `src/wro2026_base_r550`（UNVERIFIED，沒有 ROS node）。M10P 官方 driver 支援 Jazzy，但 build 缺 Boost / PCL / pcap（沒裝）。見 [real/R550_COMPATIBILITY.md](real/R550_COMPATIBILITY.md)。
+4. **B4 網路：PARTIAL**。IP / MAC、DHCP 綁定步驟、NetBird 現況、WSL 看不到 Orin 的原因寫在 [real/NETWORK.md](real/NETWORK.md)；bringup 的唯讀 Foxglove（`foxglove:=true`）已加，但 `foxglove_bridge` 還沒裝，沒能實際連線。路由器綁定、NetBird 邀請要 Ray / 組員處理。
+5. **B5 控制器整合：PARTIAL**。`wro2026_control` 已 merge，topic 名稱改成參數（IMU 預設 `/imu/data`），離線測試與 sim2d 結果修改前後完全相同；WAVE ROVER driver 加了 `cmd_vel_units`（`pwm` / `mps`）；介面合約在 [real/INTERFACES.md](real/INTERFACES.md)。Jetson 沒有 OpenCV，所以控制器的測試在 Jetson 上跑不了（需要 `python3-opencv`）；WAVE ROVER 沒有位移 odom 和光達，不能跑控制器。
 
 ### C. R550 到貨後
 1. H0：拍照、記錄版本、電池與給 Orin 的供電方式、STM32 韌體與通訊協定。
@@ -67,7 +68,7 @@
 - `src/wro2026_sim/config/phase7/localization_validation_route.yaml` 的 `source_evidence` 只是紀錄欄位，不影響執行；它指向的證據檔案（`~/ros2_evidence/...`）只存在 Ray 的 WSL 電腦上，不在 repo 裡。歷史 Phase 的 evidence 也都在那台電腦。
 - 模擬 package 沒有任何自動測試（實車的兩個 package 有）。
 - `/line_detection` 的 Float32MultiArray 格式只靠位置表示意義，很脆弱，之後應改成自訂 message。
-- 底盤 driver 把 `/cmd_vel` 的 `linear.x`、`angular.z` 直接當 PWM 比例（沿用舊 driver），但 `/odom` 的速度是 m/s；上層目前必須知道這個底盤的單位，違反「上層只靠 `/cmd_vel` 溝通、不依賴底盤」的原則。`pwm_to_mps` 量好後應改成 m/s → PWM 換算。
+- 底盤 driver 預設把 `/cmd_vel` 的 `linear.x`、`angular.z` 直接當 PWM 比例（`cmd_vel_units: pwm`，沿用舊 driver），但 `/odom` 的速度是 m/s。2026-10-14 已加 `cmd_vel_units: mps`，要等 `pwm_to_mps` 實測後才能用（是 0 時 driver 拒絕啟動）。
 - 新舊 driver 的互斥檢查只在新 driver 和 `test_motion` 裡；先開新 driver、再開舊 driver 時，舊的不會擋（舊 driver 不能改），要靠人確認。
 - Jetson 沒有 OpenCV / cv_bridge：line detector 只支援 rgb8 / bgr8 / rgba8 / bgra8 影像。
 - Ray 的 WSL `~/ros2_racecar`（2026-10-13 檢查）：未追蹤的 HARDWARE_INVENTORY.md 已搬進 repo 成為 [real/FINAL_CAR_DRAFT.md](real/FINAL_CAR_DRAFT.md)；`backup/local-main-20261009` 的 2 個 commit 經 `git cherry` 確認在 main 上都有相同修改；stash 是 2026-07 的舊版控制器修改（main 已經更新過）。三者都已在 Ray 的 Windows 下載資料夾留有 patch 備份。

@@ -1,7 +1,7 @@
 """foxglove_bridge must be read-only: nobody may publish /cmd_vel from Foxglove."""
 import re
 
-from wro2026_real.foxglove_config import (FOXGLOVE_PORT, foxglove_parameters,
+from wro2026_real.foxglove_config import (foxglove_parameters, FOXGLOVE_PORT,
                                           WRITE_CAPABILITIES)
 
 
