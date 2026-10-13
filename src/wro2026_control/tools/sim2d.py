@@ -93,10 +93,45 @@ SCENARIOS = {
     "north_outer": [(0.05, 0.60)],
     "three": [(0.00, 0.42), (-0.52, -0.05), (0.30, -0.58)],
     "four_lanes": [(0.05, 0.56), (-0.45, 0.10), (-0.35, -0.58), (0.55, -0.05)],
-    # the field plan's continuous obstacle section: slalom in the north lane
-    "north_slalom": [(-0.28, 0.42), (0.00, 0.58), (0.28, 0.42)],
-    "north_row": [(-0.20, 0.50), (0.05, 0.40), (0.30, 0.60)],
+    # continuous obstacle section in the north lane (field plan)
+    "north_slalom": [(-0.30, 0.40), (0.15, 0.60)],              # alternate sides, 0.45 m apart
+    "north_row": [(-0.25, 0.40), (0.0, 0.40), (0.25, 0.40)],   # three on the inner side
+    # stress layouts: passages narrower than the car needs to drive smoothly.
+    # Not required to finish; the car must stop without touching anything.
+    "stress_slalom": [(-0.28, 0.42), (0.00, 0.58), (0.28, 0.42)],
+    "stress_row": [(-0.20, 0.50), (0.05, 0.40), (0.30, 0.60)],
 }
+
+
+def random_layout(seed: int, max_total: int = 4) -> list:
+    """A random but fair obstacle layout.
+
+    Each lane gets 0-2 obstacles (0.06 m boxes) placed along the straight
+    part (|along| <= 0.35 m from the lane middle), at most 0.12 m off the
+    lane centre, at least 0.45 m apart within a lane, and not within
+    0.25 m of the start pose.  Every obstacle leaves a passage of at least
+    0.25 m on either side (the car is 0.18 m wide).
+    """
+    rng = random.Random(seed)
+    lanes = [  # (centre x, centre y, along axis is x?)
+        (0.0, -0.5, True), (0.0, 0.5, True), (-0.5, 0.0, False), (0.5, 0.0, False)]
+    out = []
+    for cx, cy, along_x in lanes:
+        k = rng.choice([0, 1, 1, 2])
+        alongs = []
+        for _ in range(k):
+            for _try in range(20):
+                a = rng.uniform(-0.35, 0.35)
+                if all(abs(a - b) >= 0.45 for b in alongs):
+                    if cy < 0 and along_x and abs(a - (-0.05)) < 0.25:
+                        continue                       # keep the start area free
+                    alongs.append(a)
+                    break
+        for a in alongs:
+            off = rng.uniform(-0.12, 0.12)
+            out.append((a, cy + off) if along_x else (cx + off, a))
+    rng.shuffle(out)
+    return out[:max_total]
 
 
 # ----------------------------------------------------------------- robot

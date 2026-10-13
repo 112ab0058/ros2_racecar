@@ -90,7 +90,7 @@ class Params:
     yaw_fit_window: float = 0.35
 
     # course
-    corner_radius: float = 0.22       # reference arc radius (<= half lane width)
+    corner_radius: float = 0.30       # reference arc radius (capped at half the lane width)
     corners_per_lap: int = 4
     laps: int = 3
     direction_decide_dist: float = 0.25  # decide by open side this far before the corner
@@ -98,31 +98,36 @@ class Params:
     # planner
     plan_horizon: float = 1.0
     plan_ds: float = 0.05
-    plan_dq: float = 0.01
+    plan_dq: float = 0.015
     plan_max_angle: float = 1.0       # rad, path angle to the reference
     plan_min_radius: float = 0.12     # m, tightest planned curve (diff drive)
-    hard_clearance: float = 0.025
+    plan_heading_bins: int = 13       # footprint clearance precomputed at these headings
+    plan_arcs: int = 15               # first move: arcs of this many curvatures
+    hard_clearance: float = 0.018
     soft_clearance: float = 0.07
     w_offset: float = 20.0
-    w_slope: float = 10.0
+    w_slope: float = 4.0
     w_bend: float = 0.3
     w_soft: float = 2.0
-    grid_res: float = 0.01
+    grid_res: float = 0.01            # m; clearances are exact, not quantised
     grid_half: float = 1.3            # grid covers +- this around the robot
     replan_period: float = 0.1        # s
 
     # tracking
     stop_margin: float = 0.10         # m of free path kept in reserve ...
     stop_time: float = 2.0            # ... v <= (free path - margin) / stop_time
-    pursuit_min: float = 0.10
-    pursuit_gain: float = 0.6         # lookahead += gain * speed
+    pursuit_min: float = 0.07
+    pursuit_gain: float = 0.4         # lookahead += gain * speed
 
     # safety
     safety_time: float = 1.0          # s of travel checked for collision ...
     safety_min_horizon: float = 0.04  # ... at least / at most this far
     safety_max_horizon: float = 0.15
     safety_margin: float = 0.008
-    backoff_dist: float = 0.07
+    backoff_dist: float = 0.07        # first back-off; later ones go further
+    backoff_dist_max: float = 0.25
+    trap_weight: float = 3.0          # planner penalty near poses where the car got stuck
+    trap_radius: float = 0.08
     backoff_timeout: float = 2.5
     backoff_turn_rate: float = 0.6
     max_backoffs_per_lane: int = 6
@@ -205,7 +210,7 @@ class RaceController:
         self._wall_hist: list[float] = []
         self._mem = np.zeros((0, 2))
         self._pts = np.zeros((0, 2))
-        self._grid = None                 # (distance image, x0, y0)
+        self._grid = None                 # (labels, label points, x0, y0)
         self._last_scan: Optional[Scan] = None
         self._path: Optional[np.ndarray] = None   # (k, 2) planned path, odom frame
         self._path_ok = True
@@ -223,6 +228,9 @@ class RaceController:
         self._backoff_t = 0.0
         self._backoff_xy = (0.0, 0.0)
         self._backoff_heading: Optional[float] = None
+        self._backoff_len = 0.0
+        self._trail: list[tuple] = []     # (x, y) driven in this lane, for backing off
+        self._traps: list[tuple] = []     # (x, y) where the car got stuck in this lane
         self._progress_t = 0.0
         self._progress_s = 0.0
 
@@ -262,6 +270,14 @@ class RaceController:
         # car may have moved and turned since, which would shift every wall.
         r = np.asarray(scan.ranges, dtype=float)
         ang = scan.angle_min + scan.angle_increment * np.arange(r.size)
+        if r.size >= 3:
+            # 3-beam median where the neighbours lie on the same surface:
+            # removes range noise without rounding off edges
+            stack = np.stack([np.roll(r, 1), r, np.roll(r, -1)])
+            med = np.median(stack, axis=0)
+            with np.errstate(invalid="ignore"):
+                same = np.all(np.abs(stack - r) < 0.03, axis=0)
+            r = np.where(same & np.isfinite(med), med, r)
         ok = np.isfinite(r) & (r > scan.range_min) & (r < scan.range_max)
         r, ang = r[ok], ang[ok]
         x, y, yaw = self._pose_at(scan.stamp)
@@ -285,62 +301,84 @@ class RaceController:
         return np.vstack([pts, keep]) if keep.size else pts
 
     def _build_grid(self, pts: np.ndarray) -> None:
+        """Nearest-obstacle lookup for the planner and the safety check.
+
+        Points are rasterised into a local grid and OpenCV's distance
+        transform labels every cell with its nearest occupied cell.  The
+        clearance of a query is then the exact distance to the point stored
+        in that cell, so it is not quantised to the grid resolution.
+        """
         p = self.p
         n = int(round(2 * p.grid_half / p.grid_res))
         x0, y0 = self._x - p.grid_half, self._y - p.grid_half
-        img = np.full((n, n), 255, dtype=np.uint8)
         j = np.floor((pts[:, 0] - x0) / p.grid_res).astype(int)
         i = np.floor((pts[:, 1] - y0) / p.grid_res).astype(int)
         ok = (i >= 0) & (i < n) & (j >= 0) & (j < n)
+        if not np.any(ok):
+            self._grid = None
+            self._grid_empty = True
+            return
+        img = np.full((n, n), 255, dtype=np.uint8)
         img[i[ok], j[ok]] = 0
-        if np.any(ok):
-            dist = cv2.distanceTransform(img, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
-            dist = dist.astype(np.float32) * p.grid_res
-        else:
-            dist = np.full((n, n), 5.0, dtype=np.float32)
-        self._grid = (dist, x0, y0)
+        _, labels = cv2.distanceTransformWithLabels(
+            img, cv2.DIST_L2, cv2.DIST_MASK_5, labelType=cv2.DIST_LABEL_PIXEL)
+        lab_pts = np.zeros((int(labels.max()) + 1, 2))
+        lab_pts[labels[i[ok], j[ok]]] = pts[ok]
+        self._grid = (labels, lab_pts, x0, y0)
+        self._grid_empty = False
 
-    def _clearance_at(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
-        dist, x0, y0 = self._grid
-        n = dist.shape[0]
+    def _nearest(self, xs: np.ndarray, ys: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Nearest obstacle point to each query (far away if none known)."""
+        xs, ys = np.asarray(xs, float), np.asarray(ys, float)
+        qx = xs + 5.0
+        qy = ys.copy()
+        if self._grid is None:
+            return qx, qy
+        labels, lab_pts, x0, y0 = self._grid
+        n = labels.shape[0]
         j = np.floor((xs - x0) / self.p.grid_res).astype(int)
         i = np.floor((ys - y0) / self.p.grid_res).astype(int)
         inside = (i >= 0) & (i < n) & (j >= 0) & (j < n)
-        out = np.full(np.shape(xs), 5.0, dtype=float)
-        out[inside] = dist[i[inside], j[inside]]
-        return out - 0.5 * self.p.grid_res
+        near = lab_pts[labels[i[inside], j[inside]]]
+        qx[inside], qy[inside] = near[:, 0], near[:, 1]
+        return qx, qy
+
+    def _clearance_at(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+        qx, qy = self._nearest(xs, ys)
+        return np.hypot(np.asarray(xs) - qx, np.asarray(ys) - qy)
 
     def _body_samples(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Footprint samples (x, y) and each sample's depth inside the body."""
+        """Footprint sample points (base frame) used to find nearby obstacles."""
         p = self.p
         x0, x1 = p.lidar_x - p.body_rear, p.lidar_x + p.body_front
-        hw = p.half_width
-        xs, ys, depth = [], [], []
-        for x in np.linspace(x0, x1, 5):
-            for y in (-hw, hw):
-                xs.append(x)
-                ys.append(y)
-                depth.append(0.0)
-        for y in np.linspace(-hw, hw, 5)[1:-1]:
-            for x in (x0, x1):
-                xs.append(x)
-                ys.append(y)
-                depth.append(0.0)
-        for x in np.linspace(x0, x1, 5)[1:-1]:
-            for y in np.linspace(-hw, hw, 5)[1:-1]:
-                xs.append(x)
-                ys.append(y)
-                depth.append(min(x - x0, x1 - x, hw - abs(y)))
-        return np.array(xs), np.array(ys), np.array(depth)
+        xs, ys = np.meshgrid(np.linspace(x0, x1, 4),
+                             np.linspace(-p.half_width, p.half_width, 4), indexing="ij")
+        return xs.ravel(), ys.ravel(), np.zeros(xs.size)
 
     def _pose_clearance(self, px, py, th) -> np.ndarray:
-        """Clearance of the footprint at poses (any shape), metres."""
-        bx, by, depth = self._body
+        """Exact footprint clearance at poses (any shape), metres.
+
+        Each footprint sample looks up its nearest obstacle point; the
+        distance from those candidate points to the footprint rectangle is
+        computed exactly (negative = inside the body).
+        """
+        bx, by, _ = self._body
+        p = self.p
         px, py, th = np.asarray(px, float), np.asarray(py, float), np.asarray(th, float)
         c, s_ = np.cos(th)[..., None], np.sin(th)[..., None]
         wx = px[..., None] + c * bx - s_ * by
         wy = py[..., None] + s_ * bx + c * by
-        return (self._clearance_at(wx, wy) - depth).min(axis=-1)
+        qx, qy = self._nearest(wx, wy)
+        dx, dy = qx - px[..., None], qy - py[..., None]
+        lx = c * dx + s_ * dy
+        ly = -s_ * dx + c * dy
+        x0, x1, hw = p.lidar_x - p.body_rear, p.lidar_x + p.body_front, p.half_width
+        ddx = np.maximum(np.maximum(x0 - lx, lx - x1), 0.0)
+        ddy = np.maximum(np.abs(ly) - hw, 0.0)
+        outside = np.hypot(ddx, ddy)
+        inside = -np.minimum(np.minimum(lx - x0, x1 - lx), hw - np.abs(ly))
+        d = np.where((ddx > 0) | (ddy > 0), outside, inside)
+        return d.min(axis=-1)
 
     # ===================================================== lane measurement
     @staticmethod
@@ -539,17 +577,21 @@ class RaceController:
         """Second-order dynamic programming over lateral offsets.
 
         Stations every ``plan_ds`` along the reference; at each station the
-        lateral offset is one of a fixed grid.  The state is the pair of
-        offsets at two consecutive stations, so every transition knows the
-        pose heading (first difference) and the path curvature (second
-        difference plus the reference's own curvature).  Poses are checked
-        with the real footprint against the distance transform; curvature
-        above ``1 / plan_min_radius`` (or the Ackermann limit) is forbidden,
-        so the path is drivable from the current heading.
+        lateral offset is one of a fixed grid.  All geometry is Cartesian:
+        a move between two stations is a straight chord, the pose heading is
+        the chord direction, and the curvature is the turn between two
+        chords divided by their mean length.  The state is the pair of
+        offsets at two consecutive stations, so every transition knows its
+        heading and curvature.  Each pose's footprint clearance comes from
+        the obstacle map; curvature above ``1 / plan_min_radius`` (or the
+        Ackermann limit) is forbidden, so the path is drivable from the
+        current heading.  Cost: offset from the reference, heading away from
+        the reference, curvature, low clearance, places where the car got
+        stuck before.  The path ends where free space ends.
 
-        With ``free_start`` the initial heading is not fixed; the return
-        value is then the heading the best path starts with (used to steer
-        while backing off).  Otherwise the result is stored in ``_path``.
+        With ``free_start`` the initial heading is not fixed and the return
+        value is the heading the best first move takes (used to steer while
+        backing off).  Otherwise the result is stored in ``_path``.
         """
         p = self.p
         pts, head, s, _ = ref
@@ -558,71 +600,103 @@ class RaceController:
         ds = p.plan_ds
         n = int(round(p.plan_horizon / ds))
         sk = s0 + ds * np.arange(n + 1)
-        hu = np.unwrap(head)
         px = np.interp(sk, s, pts[:, 0])
         py = np.interp(sk, s, pts[:, 1])
-        hk = np.interp(sk, s, hu)
-        kref = np.gradient(hk, ds)                            # reference curvature
+        hk = np.interp(sk, s, np.unwrap(head))
         nx, ny = -np.sin(hk), np.cos(hk)
         qmax = max(self.lane_width / 2.0 - p.half_width, 0.02)
         grid = np.arange(-qmax, qmax + 1e-9, p.plan_dq)
         m = grid.size
+        PX = px[:, None] + grid[None, :] * nx[:, None]          # (station, offset)
+        PY = py[:, None] + grid[None, :] * ny[:, None]
         kmax = 1.0 / max(p.min_turn_radius, p.plan_min_radius)
         big = 1e6
         now = float(self._pose_clearance(self._x, self._y, self._yaw))
         hard_lim = min(p.hard_clearance, now - 0.004)
+        cols = np.arange(m)
 
-        def pose_terms(k, slope):
-            """Cost and feasibility of poses at station k for given slopes."""
-            ang = np.arctan(slope)
-            X = px[k] + grid * nx[k]
-            Y = py[k] + grid * ny[k]
-            X, Y = np.broadcast_to(X, slope.shape), np.broadcast_to(Y, slope.shape)
-            clear = self._pose_clearance(X, Y, hk[k] + ang)
-            c = (p.w_offset * (grid / qmax) ** 2 + p.w_slope * slope ** 2) * ds
+        # footprint clearance for every station, offset and a set of headings
+        # around the reference (one vectorised lookup per plan)
+        hb = np.linspace(-p.plan_max_angle, p.plan_max_angle, p.plan_heading_bins)
+        hstep = hb[1] - hb[0]
+        table = self._pose_clearance(
+            np.broadcast_to(PX[:, :, None], (n + 1, m, hb.size)),
+            np.broadcast_to(PY[:, :, None], (n + 1, m, hb.size)),
+            hk[:, None, None] + hb[None, None, :])           # (station, offset, heading)
+
+        def pose_terms(k, theta, X, Y):
+            """Cost of poses at station k (positions X, Y, headings theta)."""
+            dev = np.arctan2(np.sin(theta - hk[k]), np.cos(theta - hk[k]))
+            b = np.clip(np.rint((dev + p.plan_max_angle) / hstep).astype(int), 0, hb.size - 1)
+            clear = table[k, np.broadcast_to(cols, dev.shape), b]
+            c = (p.w_offset * (grid / qmax) ** 2 + p.w_slope * dev ** 2) * ds
             c = c + np.where(clear < p.soft_clearance,
-                             p.w_soft * ((p.soft_clearance - clear) / 0.02) ** 2 * ds * 20, 0.0)
-            c = c + np.where((clear < hard_lim) | (np.abs(ang) > p.plan_max_angle), big, 0.0)
+                             p.w_soft * ((p.soft_clearance - clear) / 0.02) ** 2, 0.0)
+            c = c + np.where((clear < hard_lim) | (np.abs(dev) > p.plan_max_angle), big, 0.0)
+            for tx, ty in self._traps:
+                c = c + p.trap_weight * np.exp(-((X - tx) ** 2 + (Y - ty) ** 2) / p.trap_radius ** 2)
             return c, clear
 
-        head_err = clamp(wrap(self._yaw - hk[0]), -1.3, 1.3)
-        s_init = math.tan(head_err)
-        # station 1: state = offset at station 1 (station 0 is the robot)
-        slope1 = (grid - q0) / ds
-        c1, clear1 = pose_terms(1, slope1)
-        if not free_start:
-            curv = (slope1 - s_init) / ds + kref[1]
-            c1 = c1 + p.w_bend * ((slope1 - s_init) / ds) ** 2 * ds
-            c1 = c1 + np.where(np.abs(curv) > kmax * 1.5, big, 0.0)
         if free_start:
+            # any heading allowed: which first move is cheapest?
+            dx1, dy1 = PX[1] - self._x, PY[1] - self._y
+            th1 = np.arctan2(dy1, dx1)
+            c1, _ = pose_terms(1, th1, PX[1], PY[1])
             j = int(np.argmin(c1))
-            if c1[j] >= big / 2:
-                return None
-            # look one step further so the start heading is not myopic
-            return float(hk[0] + math.atan(slope1[j]))
-        dq = grid[None, :] - grid[:, None]                     # (i, j): q_j - q_i
-        slope = dq / ds
-        d2 = grid[None, None, :] - 2 * grid[None, :, None] + grid[:, None, None]   # (i, j, l)
-        bend_extra = d2 / ds ** 2
-        bend_cost = p.w_bend * bend_extra ** 2 * ds
-        # station 2
-        C = c1[:, None] + p.w_bend * ((slope - slope1[:, None]) / ds) ** 2 * ds
-        C = C + np.where(np.abs((slope - slope1[:, None]) / ds + kref[2]) > kmax, big, 0.0)
-        e2, clr = pose_terms(2, slope)
-        C = C + e2
-        clears = {1: np.broadcast_to(clear1, (m,)), 2: clr}
+            return None if c1[j] >= big / 2 else float(th1[j])
+
+        # station 1: circular arcs from the robot's pose (curvature samples),
+        # so the first move always matches the current heading exactly
+        yaw = self._yaw
+        K1 = np.linspace(-kmax, kmax, p.plan_arcs)
+        the = yaw + K1 * ds
+        safe_k = np.where(np.abs(K1) < 1e-9, 1.0, K1)
+        X1 = self._x + np.where(np.abs(K1) < 1e-9, ds * math.cos(yaw), (np.sin(the) - math.sin(yaw)) / safe_k)
+        Y1 = self._y + np.where(np.abs(K1) < 1e-9, ds * math.sin(yaw), (math.cos(yaw) - np.cos(the)) / safe_k)
+        q1 = (X1 - px[1]) * nx[1] + (Y1 - py[1]) * ny[1]
+        clear1 = self._pose_clearance(X1, Y1, the)
+        dev1 = np.arctan2(np.sin(the - hk[1]), np.cos(the - hk[1]))
+        c1 = ((p.w_offset * (q1 / qmax) ** 2 + p.w_slope * dev1 ** 2 + p.w_bend * K1 ** 2) * ds
+              + np.where(clear1 < p.soft_clearance,
+                         p.w_soft * ((p.soft_clearance - clear1) / 0.02) ** 2, 0.0)
+              + np.where((clear1 < hard_lim) | (np.abs(dev1) > p.plan_max_angle), big, 0.0))
+        for tx, ty in self._traps:
+            c1 = c1 + p.trap_weight * np.exp(-((X1 - tx) ** 2 + (Y1 - ty) ** 2) / p.trap_radius ** 2)
+
+        # chords between grid stations: TH[k-1] is the chord into station k
+        DX = PX[1:, None, :] - PX[:-1, :, None]
+        DY = PY[1:, None, :] - PY[:-1, :, None]
+        TH = np.arctan2(DY, DX)
+        LEN = np.maximum(np.hypot(DX, DY), 1e-6)
+        # station 2: chords from the arc ends to the grid
+        DX12, DY12 = PX[2][None, :] - X1[:, None], PY[2][None, :] - Y1[:, None]
+        TH12 = np.arctan2(DY12, DX12)                             # (arc, j)
+        LEN12 = np.maximum(np.hypot(DX12, DY12), 1e-6)
+        turn = np.arctan2(np.sin(TH12 - the[:, None]), np.cos(TH12 - the[:, None]))
+        kap = 2.0 * np.sin(turn) / LEN12
+        e2, clr2 = pose_terms(2, TH12, PX[2][None, :], PY[2][None, :])
+        C = (c1[:, None] + e2 + p.w_bend * kap ** 2 * ds
+             + np.where(np.abs(kap) > kmax, big, 0.0))
+        clears = {1: clear1, 2: clr2}
         backs = []
-        reach, endC = (2, C) if C.min() < big / 2 else (1, None)
-        if reach == 1 and c1.min() >= big / 2:
-            reach = 0
+        if C.min() < big / 2:
+            reach, endC = 2, C
+        else:
+            reach, endC = (1 if c1.min() < big / 2 else 0), None
         for k in range(3, n + 1):
             if reach < k - 1:
                 break
-            curv_bad = np.abs(bend_extra + kref[k]) > kmax
-            total = C[:, :, None] + bend_cost + np.where(curv_bad, big, 0.0)   # (i, j, l)
-            bp = np.argmin(total, axis=0)                                       # (j, l)
+            tin = TH12 if k == 3 else TH[k - 2]                   # chord into station k-1
+            lin = LEN12 if k == 3 else LEN[k - 2]
+            tout = TH[k - 1]                                      # (i, j) chord into station k
+            turn = np.arctan2(np.sin(tout[None, :, :] - tin[:, :, None]),
+                              np.cos(tout[None, :, :] - tin[:, :, None]))   # (h, i, j)
+            kap = turn / (0.5 * (lin[:, :, None] + LEN[k - 1][None, :, :]))
+            total = (C[:, :, None] + p.w_bend * kap ** 2 * ds
+                     + np.where(np.abs(kap) > kmax, big, 0.0))
+            bp = np.argmin(total, axis=0)                         # (i, j)
             best = np.take_along_axis(total, bp[None], axis=0)[0]
-            ek, clr = pose_terms(k, slope)
+            ek, clr = pose_terms(k, tout, PX[k][None, :], PY[k][None, :])
             C = best + ek
             backs.append(bp)
             clears[k] = clr
@@ -630,26 +704,26 @@ class RaceController:
                 reach, endC = k, C
             else:
                 break
-        # backtrack from the last reachable station
-        idx = [0] * (reach + 1)
+        idx = [0] * (reach + 1)                                   # idx[1] is an arc index
         if reach >= 2:
-            j, l = np.unravel_index(int(np.argmin(endC)), endC.shape)
-            idx[reach], idx[reach - 1] = int(l), int(j)
+            i, j = np.unravel_index(int(np.argmin(endC)), endC.shape)
+            idx[reach], idx[reach - 1] = int(j), int(i)
             for k in range(reach, 2, -1):
-                i = int(backs[k - 3][idx[k - 1], idx[k]])
-                idx[k - 2] = i
+                idx[k - 2] = int(backs[k - 3][idx[k - 1], idx[k]])
         elif reach == 1:
             idx[1] = int(np.argmin(c1))
-        q = np.array([q0] + [grid[t] for t in idx[1:]], dtype=float)
-        K = reach + 1
-        self._path = np.stack([px[:K] + q * nx[:K], py[:K] + q * ny[:K]], axis=1)
+        path = [(self._x, self._y)]
+        if reach >= 1:
+            path.append((X1[idx[1]], Y1[idx[1]]))
+        path += [(PX[k, idx[k]], PY[k, idx[k]]) for k in range(2, reach + 1)]
+        self._path = np.array(path, dtype=float)
         self._path_len = reach * ds
         self._path_ok = reach >= 2
-        cl = []
-        for k in range(1, min(reach, 8) + 1):
-            c_k = clears[k]
-            cl.append(float(c_k[idx[k]] if k == 1 else c_k[idx[k - 1], idx[k]]))
+        cl = [float(clear1[idx[1]])] if reach >= 1 else []
+        for k in range(2, min(reach, 8) + 1):
+            cl.append(float(clears[k][idx[k - 1], idx[k]]))
         self._path_clear = min(cl) if cl else 0.0
+        q = [q0] + ([float(q1[idx[1]])] if reach >= 1 else []) + [grid[idx[k]] for k in range(2, reach + 1)]
         self.lateral_ref = float(q[min(int(round(0.25 / ds)), reach)])
         self._plan_t = self._t
         return None
@@ -763,6 +837,12 @@ class RaceController:
         self._s_prev = s
         self._yaw = yaw
         self._hist.append((t, self._x, self._y, yaw))
+        if self.state in (State.RUN, State.FINISH) and (
+                not self._trail or math.hypot(self._x - self._trail[-1][0],
+                                              self._y - self._trail[-1][1]) > 0.01):
+            self._trail.append((self._x, self._y))
+            if len(self._trail) > 300:
+                del self._trail[:-300]
         if len(self._hist) > 40:
             del self._hist[:-40]
         if self.seg_yaw is None:
@@ -778,7 +858,7 @@ class RaceController:
             self._build_grid(self._update_memory(pts, scan.range_min))
             self._measure_lane(pts)
             self._pts = pts
-        if self._grid is None or self._centre_n is None:
+        if self._centre_n is None or not hasattr(self, "_grid_empty"):
             return Command()
 
         if self.state is State.WAIT:
@@ -836,6 +916,7 @@ class RaceController:
         self._path = None
         self.corners += 1
         self._lane_backoffs = 0
+        self._traps = []
         if self.corners >= self.p.laps * self.p.corners_per_lap:
             self._set(State.FINISH, "final corner")
         else:
@@ -867,23 +948,39 @@ class RaceController:
         self._resume = self.state
         self._backoff_t = self._t
         self._backoff_xy = (self._x, self._y)
-        # heading a free path would start with: reversing while turning the
-        # nose toward it makes the next forward attempt drivable
+        self._backoff_len = min(self.p.backoff_dist * self._lane_backoffs, self.p.backoff_dist_max)
+        c, s_ = math.cos(self._yaw), math.sin(self._yaw)
+        # remember where it got stuck (a little ahead of the base): the next
+        # plans avoid this spot and so try a different way through
+        self._traps.append((self._x + 0.05 * c, self._y + 0.05 * s_))
         self._backoff_heading = self._plan(self._reference(), free_start=True)
         self._path = None
         self._set(State.BACKOFF, why)
         return self._backoff()
 
     def _backoff(self) -> Command:
+        """Reverse along the trail just driven (known to be free), then resume."""
         p = self.p
         moved = math.hypot(self._x - self._backoff_xy[0], self._y - self._backoff_xy[1])
-        if moved < p.backoff_dist and self._t - self._backoff_t < p.backoff_timeout:
-            # reverse; turn the nose toward the heading a free path needs
+        if moved < self._backoff_len and self._t - self._backoff_t < p.backoff_timeout + self._backoff_len / 0.05:
             w_des = 0.0
-            if self._backoff_heading is not None:
+            c, s_ = math.cos(self._yaw), math.sin(self._yaw)
+            target = None
+            for tx, ty in reversed(self._trail):
+                dx, dy = tx - self._x, ty - self._y
+                if dx * c + dy * s_ < -0.02 and math.hypot(dx, dy) > 0.08:
+                    target = (dx, dy)
+                    break
+            if target is not None:
+                fx = target[0] * c + target[1] * s_
+                ly = -target[0] * s_ + target[1] * c
+                # pure pursuit for reverse driving (mirror the robot frame)
+                w_des = abs(p.backoff_speed) * 2.0 * (-ly) / max(fx * fx + ly * ly, 1e-6)
+                w_des = clamp(w_des, -0.8, 0.8)
+            elif self._backoff_heading is not None:
                 err = wrap(self._backoff_heading - self._yaw)
                 if abs(err) > 0.08:
-                    w_des = math.copysign(p.backoff_turn_rate, err)
+                    w_des = math.copysign(0.6, err)
             ws = np.concatenate([[w_des], np.linspace(-0.6, 0.6, 13)])
             if p.min_turn_radius > 0:
                 lim = abs(p.backoff_speed) / p.min_turn_radius
@@ -894,6 +991,10 @@ class RaceController:
             if np.any(ok):
                 i = int(np.argmin(np.where(ok, (ws - w_des) ** 2, np.inf)))
                 return Command(float(V[i]), float(ws[i]))
+        # drop the trail part that was reversed over
+        while self._trail and math.hypot(self._trail[-1][0] - self._x,
+                                         self._trail[-1][1] - self._y) < 0.03:
+            self._trail.pop()
         self._set(self._resume, "resume after backoff")
         self._progress_t = self._t
         self._progress_s = self._s

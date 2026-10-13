@@ -19,8 +19,10 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 import sim2d  # noqa: E402
 
 
-def cases(quick: bool):
-    scen = ["none", "sdf"] if quick else sorted(sim2d.SCENARIOS)
+def cases(quick: bool, stress: bool = False):
+    scen = ["none", "sdf"] if quick else sorted(k for k in sim2d.SCENARIOS if not k.startswith("stress"))
+    if stress:
+        scen = sorted(k for k in sim2d.SCENARIOS if k.startswith("stress"))
     out = []
     for d in ("ccw", "cw"):
         for sc in scen:
@@ -31,7 +33,10 @@ def cases(quick: bool):
 def run_case(case: dict, plot_dir: str | None = None) -> dict:
     d = case["direction"]
     start = case.get("start") or ((-0.05, -0.50, 0.0) if d == "ccw" else (-0.05, -0.50, math.pi))
-    world = sim2d.load_world(obstacles=sim2d.SCENARIOS[case["scenario"]])
+    sc = case["scenario"]
+    layout = (sim2d.random_layout(int(sc[6:])) if sc.startswith("random")
+              else sim2d.SCENARIOS[sc])
+    world = sim2d.load_world(obstacles=layout)
     cfg = sim2d.SimConfig(start=start, yaw_drift=case.get("yaw_drift", 0.0),
                           odom_scale=case.get("odom_scale", 1.0),
                           ackermann_min_radius=case.get("ackermann", 0.0),
@@ -56,17 +61,25 @@ def run_case(case: dict, plot_dir: str | None = None) -> dict:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument("--stress", action="store_true", help="stress layouts: only 'no collision' is required")
     ap.add_argument("--plots", default=None)
+    ap.add_argument("--random", type=int, default=0, help="N random fair layouts per direction")
+    ap.add_argument("--seed0", type=int, default=1)
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
     args = ap.parse_args()
     if args.plots:
         os.makedirs(args.plots, exist_ok=True)
-    cs = cases(args.quick)
+    cs = cases(args.quick, args.stress)
+    if args.random:
+        cs = [dict(direction=d, scenario=f"random{seed}")
+              for seed in range(args.seed0, args.seed0 + args.random) for d in ("ccw", "cw")]
     with ProcessPoolExecutor(max_workers=args.jobs) as ex:
         results = list(ex.map(run_case, cs, [args.plots] * len(cs)))
     passed = 0
     for r in results:
         c = r["case"]
+        if args.stress:
+            r["ok"] = not r["collided"]
         passed += r["ok"]
         print(f"{'PASS' if r['ok'] else 'FAIL'} {c['direction']:3s} {c['scenario']:13s} "
               f"corners={r['corners']:2d} t={r['time']:6.1f}s min_clear={r['min_clear']*1000:5.1f}mm "
