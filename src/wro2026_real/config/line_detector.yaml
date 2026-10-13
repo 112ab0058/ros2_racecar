@@ -1,0 +1,25 @@
+# Real-car line detector (wro2026_real/line_detector_node.py).
+# Defaults copied from the simulation's line_detector.py; the HSV ranges and
+# areas have NOT been tuned on the real camera / tape yet (camera UNKNOWN).
+line_detector:
+  ros__parameters:
+    image_topic: /camera/image_raw     # camera driver UNKNOWN / not installed yet
+    output_topic: /line_detection      # 9-float layout, same as the simulation
+    debug: false                       # publish <output_topic>/debug_image (rgb8)
+
+    # OpenCV 8-bit HSV: H 0..179, S 0..255, V 0..255
+    orange_lower: [8, 150, 150]
+    orange_upper: [30, 255, 255]
+    blue_lower: [100, 150, 50]
+    blue_upper: [130, 255, 255]
+
+    area_threshold: 200                # blob smaller than this (pixels) = not detected
+    trigger_area: 1000                 # blob at least this big = trigger
+
+    # Region of interest as fractions of the image (0 = top/left, 1 = bottom/right)
+    roi_top_ratio: 0.0
+    roi_bottom_ratio: 1.0
+    roi_left_ratio: 0.0
+    roi_right_ratio: 1.0
+
+    morph_kernel: 5                    # open/close kernel size (pixels), 1 = off

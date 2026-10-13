@@ -1,6 +1,9 @@
 map_server:
   ros__parameters:
     use_sim_time: true
-    yaml_filename: /home/ray/ros2_racecar/src/wro2026_sim/maps/candidates/phase7_nav2_field_map_7dr_candidate.yaml
+    # yaml_filename is set by phase7_saved_map_localization.launch.py
+    # (launch argument `map`, default:
+    # <wro2026_sim share>/maps/candidates/phase7_nav2_field_map_7dr_candidate.yaml).
+    # It used to be the absolute path of that file in Ray's WSL checkout.
     topic_name: map
     frame_id: map

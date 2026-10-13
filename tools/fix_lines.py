@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
-import math, re
+"""Rewrite the orange/blue line models in a Gazebo field SDF (in place).
 
-SDF_PATH = '/home/ray/ros2_ws/src/wro2026_sim/worlds/wro2026_field.sdf'
+  python3 tools/fix_lines.py [--sdf PATH]
+
+Default SDF: src/wro2026_sim/worlds/wro2026_field.sdf relative to the repo
+root. (It used to be hard-coded to Ray's WSL workspace copy.)
+"""
+import argparse
+import math, os, re
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_SDF_PATH = os.path.join(REPO_ROOT, 'src', 'wro2026_sim', 'worlds', 'wro2026_field.sdf')
 LINE_W = 0.02
 LINE_H = 0.001
 Z      = 0.006
@@ -54,18 +63,30 @@ new_models = [
     make_model("blue_line_sw",   -OUTER, -D,    -INNER,-INNER, BL),
 ]
 
-with open(SDF_PATH, 'r') as f:
-    content = f.read()
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--sdf', default=DEFAULT_SDF_PATH,
+                    help='SDF file to rewrite in place (default: %(default)s)')
+    args = ap.parse_args()
+    sdf_path = args.sdf
 
-content = re.sub(
-    r'\s*<model name="(?:orange|blue)_line_[^"]*">.*?</model>',
-    '', content, flags=re.DOTALL
-)
+    with open(sdf_path, 'r') as f:
+        content = f.read()
 
-new_block = '\n'.join(new_models)
-content = content.replace('</world>', new_block + '\n  </world>')
+    content = re.sub(
+        r'\s*<model name="(?:orange|blue)_line_[^"]*">.*?</model>',
+        '', content, flags=re.DOTALL
+    )
 
-with open(SDF_PATH, 'w') as f:
-    f.write(content)
+    new_block = '\n'.join(new_models)
+    content = content.replace('</world>', new_block + '\n  </world>')
 
-print("✅ 完成，端點對到內牆角落")
+    with open(sdf_path, 'w') as f:
+        f.write(content)
+
+    print("✅ 完成，端點對到內牆角落")
+
+
+if __name__ == '__main__':
+    main()

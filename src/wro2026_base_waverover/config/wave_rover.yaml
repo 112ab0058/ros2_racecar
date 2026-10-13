@@ -1,0 +1,48 @@
+# WAVE ROVER base driver parameters (node name: wave_rover_driver).
+# Every parameter of the node is listed here; launch arguments only override.
+# Defaults in driver_node.py PARAMETERS must stay identical to this file.
+wave_rover_driver:
+  ros__parameters:
+    # --- transport -----------------------------------------------------------
+    transport: serial            # 'serial' (Orin 40-pin UART) or 'http' (Wi-Fi)
+    port: /dev/ttyTHS1           # serial: Orin pin 8 TX, pin 10 RX, pin 6 GND
+    baud: 115200
+    host: 192.168.4.1            # http: ESP32 address (AP mode default; DHCP in STA mode)
+    send_rate: 10.0              # serial: resend T:1 at this rate (Hz)
+    http_cmd_period: 0.5         # http: resend an unchanged T:1 every (s)
+    http_timeout: 0.3            # http request timeout (s)
+    serial_continuous_feedback: false  # serial: send T:131 cmd 1 at start (not used)
+
+    # --- motion limits and safety -------------------------------------------
+    # L/R wheel commands are PWM fractions (0.5 = 100 %), NOT m/s.
+    max_speed: 0.05              # wheel command cap (~10 % PWM)
+    track_width: 0.125           # m; firmware constant, NOT measured yet (待實測)
+    cmd_timeout: 0.3             # stop if no /cmd_vel for this long (s)
+    feedback_timeout: 2.0        # stop + /diagnostics ERROR if no T:130 reply for this long (s); 0 disables
+    low_battery_voltage: 11.0    # /diagnostics WARN below this (3S Li-ion, full 12.6 V)
+    critical_battery_voltage: 10.5  # refuse non-zero wheel commands below this
+
+    # --- feedback ------------------------------------------------------------
+    feedback_period: 0.2         # poll T:130 and T:126 every (s)
+    poll_base: true              # T:130: battery voltage (watchdog input)
+    poll_imu: true               # T:126: IMU
+    imu_frame_id: imu_link
+    battery_frame_id: base_link
+    diagnostics_period: 1.0      # /diagnostics publish period (s)
+
+    # --- dead-reckoning odometry (LOW QUALITY, not a Nav2 main source) --------
+    # v = wheel command actually sent x pwm_to_mps; wz = IMU gz.
+    # pwm_to_mps is UNKNOWN until measured: with 0 the odom only rotates.
+    publish_odom: true
+    publish_odom_tf: true        # TF odom -> base_link; set false if another node owns it
+    odom_frame_id: odom
+    base_frame_id: base_link
+    odom_rate: 20.0              # Hz
+    pwm_to_mps: 0.0              # UNKNOWN (待實測)
+    imu_timeout: 0.5             # ignore IMU yaw rate older than this (s)
+    imu_yaw_rate_sign: 1.0       # IMU z axis vs base_link z: UNKNOWN (待實測)
+    odom_hold_when_stopped: true # zero wheel command -> pose does not move (no gyro drift)
+    odom_pose_covariance_xy: 100.0   # m^2, deliberately large
+    odom_pose_covariance_yaw: 10.0   # rad^2
+    odom_twist_covariance_vx: 1.0    # (m/s)^2
+    odom_twist_covariance_wz: 0.1    # (rad/s)^2

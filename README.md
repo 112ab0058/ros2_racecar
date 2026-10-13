@@ -2,7 +2,18 @@
 
 **Team:** NTUT
 **Country:** Taiwan
-**Current focus:** 160 x 160 cm project field, Gazebo first, physical-car architecture planned
+**Current focus:** real car bring-up on a Jetson Orin Nano + Waveshare WAVE ROVER (transitional test car); the Gazebo simulation line is finished and kept as reference
+
+## Project Status
+
+The project has two lines. The single source of truth for "where are we now" is [docs/STATUS.md](docs/STATUS.md) (Traditional Chinese); the document index is [docs/README.md](docs/README.md).
+
+| Line | Status (2026-10-13) |
+|---|---|
+| Simulation (`src/wro2026_sim`, Gazebo) | Finished. Phase 6J controller accepted (`line_follower.py`, SHA-256 `de79e41c…`). Phase 7 odometry-calibration campaigns ended with documented architecture blockers in the frozen simulation model. Kept as reference only; it is not ported to the real car. Workflow rules: [docs/sim/SPEC.md](docs/sim/SPEC.md). |
+| Real car (Jetson Orin Nano, ROS 2 Jazzy) | H0 hardware inventory and H1 OS/ROS baseline done; H2 suspended-wheel low-speed / stop tests pass over HTTP, visual confirmation and UART wiring pending. The WAVE ROVER has no wheel encoders. Packages: `src/wro2026_base_waverover` (chassis driver with stop/timeout/feedback-loss/low-battery protection, dead-reckoning odom) and `src/wro2026_real` (bringup, URDF, parameterised line detector), both with hardware-free pytest suites. Hardware: [docs/real/REAL_CAR_HARDWARE.md](docs/real/REAL_CAR_HARDWARE.md). How to run: [docs/real/RUNBOOK.md](docs/real/RUNBOOK.md). Rules: [CLAUDE.md](CLAUDE.md). |
+
+The rest of this README describes the simulation line as it was developed in 2026-05 to 2026-07.
 
 ## Project Overview
 
@@ -101,7 +112,7 @@ Current dimensions:
 | Orange / blue line width | 20 mm |
 | Simulation wall height | 300 mm for TurtleBot3 LiDAR |
 
-See `docs/FIELD_PLAN_160CM.md` for physical material and layout notes.
+See `docs/sim/FIELD_PLAN_160CM.md` for physical material and layout notes.
 
 ## Runtime Modes
 
@@ -194,22 +205,26 @@ Race mode is optimized for WSL:
 - LiDAR model fixed at 360 samples, 8 Hz
 - only required bridge topics enabled
 
-See `docs/GAZEBO_PERFORMANCE.md` for the performance checklist.
+See `docs/sim/GAZEBO_PERFORMANCE.md` for the performance checklist.
 
 ## Repository Structure
 
 ```text
 ros2_racecar/
 ├── README.md
+├── AGENTS.md / CLAUDE.md      rules for AI assistants (sim line / real-car line)
 ├── docs/
-│   ├── CURRENT_STATE.md
-│   ├── FIELD_PLAN_160CM.md
-│   ├── GAZEBO_PERFORMANCE.md
-│   ├── ROS2_WSL_NETWORK.md
+│   ├── README.md              document index
+│   ├── STATUS.md              the only "current state" document
 │   ├── SYSTEM_ARCHITECTURE.md
-│   └── WORKSPACE_MAP.md
+│   ├── real/                  real-car hardware notes
+│   ├── sim/                   SPEC, field plan, Gazebo performance, WSL notes
+│   └── archive/               frozen phase docs and the 2026-10-09 handoff
+├── tools/                     check_md_links.py, fix_lines.py
 ├── ros2_wsl_network.bash
 └── src/
+    ├── wro2026_base_waverover/  real car: WAVE ROVER chassis driver (Jetson)
+    ├── wro2026_real/            real car: bringup, URDF, line detector (Jetson)
     └── wro2026_sim/
         ├── CMakeLists.txt
         ├── package.xml
@@ -229,6 +244,8 @@ ros2_racecar/
 The old tutorial packages, loose demo scripts, old 3.2 m maps, old mapper package, and old world variants are intentionally removed from the mainline.
 
 ## Next Work
+
+Current next steps are in [docs/STATUS.md](docs/STATUS.md). The list below is the simulation plan from 2026-07, kept for history:
 
 1. Run the no-obstacle baseline for 3 laps and watch line trigger repeatability.
 2. Move one obstacle back to the north continuous obstacle zone and tune avoidance.

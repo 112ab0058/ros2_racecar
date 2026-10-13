@@ -1,6 +1,6 @@
 # System Architecture
 
-Updated: 2026-07-05
+Updated: 2026-10-13 (real-car packages and data flow added; the 2026-07-05 plan below is kept)
 
 This project has two tracks:
 
@@ -38,12 +38,14 @@ Foxglove / RViz debugging
 | Layer | Planned package | Responsibility |
 |---|---|---|
 | Simulation | `wro2026_sim` | Gazebo world, race launch, line detection, LiDAR obstacle avoidance, simulated odom |
-| Physical bringup | `wro2026_bringup` | Future real-car launch, sensor startup, lifecycle wiring |
+| Chassis (transitional car) | `wro2026_base_waverover` | **Exists (2026-10).** WAVE ROVER driver: `/cmd_vel` -> ESP32 JSON over HTTP or UART, `/battery`, `/imu/data`, `/diagnostics`, low-quality dead-reckoning `/odom` + TF `odom -> base_link`. Replaced when the competition chassis arrives |
+| Real-car upper layer | `wro2026_real` | **Exists (2026-10).** Bringup (driver + robot_state_publisher), minimal URDF, parameterised line detector. Talks to the chassis only through `/cmd_vel`, `/odom`, TF and sensor topics |
+| Physical bringup | `wro2026_bringup` | Future real-car launch, sensor startup, lifecycle wiring (for now covered by `wro2026_real`) |
 | CAN bridge | `wro2026_can_bridge` | Future ROS 2 node translating CAN frames to encoder, motor, battery, and status topics |
 | Robot model | `wro2026_description` | Future URDF, frames, sensor poses, wheelbase, base footprint |
 | Navigation | `wro2026_navigation` | Future maps, SLAM Toolbox config, Nav2 costmaps, planner/controller params |
 
-Only `wro2026_sim` is active in the current Gazebo workflow. Mapping is launched through `wro2026_sim/launch/mapping.launch.py` when needed. The other packages are planned integration boundaries.
+`wro2026_sim` is the Gazebo package. On the real car (Jetson), only `wro2026_base_waverover` and `wro2026_real` are built; `wro2026_sim` must not be deployed there. Mapping is launched through `wro2026_sim/launch/mapping.launch.py` when needed. The other packages are planned integration boundaries.
 
 ## Current Gazebo Data Flow
 
@@ -86,6 +88,35 @@ SLAM / Nav2 / race controller
 ```
 
 The physical car should not depend on Gazebo ground truth. The simulation keeps ground truth odom only to accelerate controller development.
+
+## Current Real-Car Data Flow (2026-10, Waveshare WAVE ROVER)
+
+The transitional car has an ESP32 board with a JSON protocol and **no wheel encoders**, so the plan above (MCU + CAN + encoders) is not available yet.
+
+```text
+teleop / future controller ──/cmd_vel──┐            (nothing publishes /cmd_vel by default)
+                                       ▼
+                    wro2026_base_waverover (Jetson)
+                      core: kinematics, max_speed cap, cmd_timeout,
+                            feedback watchdog, battery limits, odom
+                      transport: HTTP (Wi-Fi) or UART /dev/ttyTHS1
+                                       │  {"T":1,"L":..,"R":..}  {"T":130}  {"T":126}
+                                       ▼
+                    ESP32 on the WAVE ROVER ── 4 motors (PWM, no encoders), IMU
+                                       │  {"T":1001,...,"v":..}  {"T":1002,r/p/y,a*,g*}
+                                       ▼
+   /battery  /imu/data  /diagnostics  /wave_rover/feedback  /wave_rover/sent_cmd
+   /odom + TF odom -> base_link   (v = sent wheel command x pwm_to_mps [UNKNOWN, 0];
+                                   wz = IMU gz; held still when the command is zero)
+                                       │
+   wro2026_real: robot_state_publisher (urdf/wave_rover.urdf)
+                 TF base_link -> imu_link, camera_link (placeholder poses)
+
+   camera (model UNKNOWN, no driver yet) ──/camera/image_raw──> wro2026_real line_detector
+                                                               ──/line_detection (9 floats)
+```
+
+The `/line_detection` layout is the simulation's Float32MultiArray and is fragile; it should become a custom message. The dead-reckoning odometry is low quality (large covariance) and must not be the main odometry source for Nav2.
 
 ## Debugging Interfaces
 
