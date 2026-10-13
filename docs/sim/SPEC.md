@@ -157,16 +157,17 @@
 新 Codex 對話開始時，依序讀取：
 
 1. AGENTS.md
-2. docs/sim/SPEC.md
-3. docs/archive/sim_phases/CURRENT_STATE.md
-4. docs/archive/sim_phases/NEXT_PROMPT.md
-5. docs/archive/sim_phases/TEST_EVIDENCE.md
+2. docs/STATUS.md
+3. docs/sim/SPEC.md
 
-以目前 working tree、CURRENT_STATE.md 與 controller SHA 為準。
+需要歷史背景時才讀封存的 docs/archive/sim_phases/CURRENT_STATE.md、TEST_EVIDENCE.md；同資料夾的 NEXT_PROMPT.md（2026-07-06）已過期，不可當作任務。
+（2026-10-13 文件整理時更新此清單；原清單為 AGENTS.md、SPEC.md、CURRENT_STATE.md、NEXT_PROMPT.md、TEST_EVIDENCE.md。）
+
+以目前 working tree、docs/STATUS.md 與 controller SHA 為準。
 
 不得重新執行已標記 Done 的歷史 Phase。
 不得為理解專案而重新掃描全部舊 evidence 或原始 logs。
-只有 CURRENT_STATE.md 缺少必要資訊或資料互相矛盾時，才讀取指定的歷史 summary。
+只有 docs/STATUS.md 與封存的 CURRENT_STATE.md 缺少必要資訊或資料互相矛盾時，才讀取指定的歷史 summary。
 
 新對話第一步只能摘要：
 

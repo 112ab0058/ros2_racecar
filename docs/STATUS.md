@@ -21,7 +21,7 @@
 ## 實車線：Jetson Orin Nano + Waveshare WAVE ROVER（過渡測試車）
 
 硬體細節見 [real/REAL_CAR_HARDWARE.md](real/REAL_CAR_HARDWARE.md)，操作步驟見 [real/RUNBOOK.md](real/RUNBOOK.md)。里程碑定義來自 [START_HERE_NEXT_AI](archive/handoff_2026-10-09/START_HERE_NEXT_AI.md)。
-程式：`src/wro2026_base_waverover`（底盤 driver，由 Jetson 的 `wave_rover_driver` 搬進來）、`src/wro2026_real`（bringup、URDF、參數化 line detector）。兩個 package 都有不需硬體的 pytest（Jetson `colcon test` 61 項 0 失敗）。
+程式：`src/wro2026_base_waverover`（底盤 driver，由 Jetson 的 `wave_rover_driver` 搬進來）、`src/wro2026_real`（bringup、URDF、參數化 line detector）。兩個 package 都有不需硬體的 pytest（Jetson `colcon test`：0 失敗，數字見 [2026-10-13 報告](reports/2026-10-13_cleanup_and_wave_rover_base.md)）。
 
 | 里程碑 | 狀態 | 說明 |
 |---|---|---|
@@ -49,6 +49,9 @@
 - `src/wro2026_sim/config/phase7/localization_validation_route.yaml` 的 `source_evidence` 只是紀錄欄位，不影響執行；它指向的證據檔案（`~/ros2_evidence/...`）只存在 Ray 的 WSL 電腦上，不在 repo 裡。歷史 Phase 的 evidence 也都在那台電腦。
 - 模擬 package 沒有任何自動測試（實車的兩個 package 有）。
 - `/line_detection` 的 Float32MultiArray 格式只靠位置表示意義，很脆弱，之後應改成自訂 message。
+- 底盤 driver 把 `/cmd_vel` 的 `linear.x`、`angular.z` 直接當 PWM 比例（沿用舊 driver），但 `/odom` 的速度是 m/s；上層目前必須知道這個底盤的單位，違反「上層只靠 `/cmd_vel` 溝通、不依賴底盤」的原則。`pwm_to_mps` 量好後應改成 m/s → PWM 換算。
+- 新舊 driver 的互斥檢查只在新 driver 和 `test_motion` 裡；先開新 driver、再開舊 driver 時，舊的不會擋（舊 driver 不能改），要靠人確認。
 - Jetson 沒有 OpenCV / cv_bridge：line detector 只支援 rgb8 / bgr8 / rgba8 / bgra8 影像。
 - Ray 的 WSL `~/ros2_racecar` 有一份未追蹤的 H0 草稿（WSL repo 的 docs 底下的 HARDWARE_INVENTORY.md）、一個 stash、一個只在本機的 `backup/local-main-20261009` 分支（2026-10-13 唯讀檢查，未處理）。
 - 封存文件的內文沒有改，裡面提到的 `docs/` 路徑（例如舊的 CURRENT_STATE 位置）指的是 2026-10-13 搬移前的位置。
+- `archive/handoff_2026-10-09/SHA256SUMS.txt` 是封存前內容的雜湊；每個 .md 去掉第一行封存標記與後面的空行（`tail -n +3`）後仍然相符。

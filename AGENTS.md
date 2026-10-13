@@ -5,7 +5,7 @@
 - 模擬線（`src/wro2026_sim`）：照 `docs/sim/SPEC.md`。
 - 實車線（`src/wro2026_base_waverover`、`src/wro2026_real` 等非模擬 package）：照 `CLAUDE.md`。
 
-模擬線的規則（原文保留）：
+模擬線的規則（原規則保留，路徑已更新）：
 
 - 以目前 working tree、`docs/STATUS.md` 與 controller SHA 為準。
 - 不得重新執行已完成的歷史 Phase。

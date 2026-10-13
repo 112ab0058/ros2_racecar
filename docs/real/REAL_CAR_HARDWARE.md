@@ -2,7 +2,7 @@
 
 更新時間：2026-10-13
 狀態：過渡測試車已可由 Orin 透過 HTTP 下指令；序列埠接線預計 2026-10-14 完成。
-2026-10-13 晚：driver 已搬進 repo（`src/wro2026_base_waverover`），新 driver 以 HTTP 做過只讀驗證（見下方「已驗證（2026-10-13 晚）」）。Jetson 的 `~/ros2_ws/src/wave_rover_driver` 保留為備份，兩個不能同時跑。操作步驟見 [RUNBOOK.md](RUNBOOK.md)。
+2026-10-13 02:28（+08:00）：driver 已搬進 repo（`src/wro2026_base_waverover`），新 driver 以 HTTP 做過只讀驗證（見下方「已驗證（2026-10-13 02:28）」）。Jetson 的 `~/ros2_ws/src/wave_rover_driver` 保留為備份，兩個不能同時跑。操作步驟見 [RUNBOOK.md](RUNBOOK.md)。
 規則：未經實物或文件確認的項目一律標 `UNKNOWN`。
 
 ## 系統一覽
@@ -70,7 +70,7 @@ Waveshare WAVE ROVER（ESP32 驅動板 + 4 顆馬達，差速、無 encoder）
 - 啟動只送停止、前進/後退/左轉/右轉各約 0.9 s、`/cmd_vel` 中斷 0.306 s 內送停止、關閉 driver 時送停止：全部 PASS。
 - 輪子實際轉向：**待人工目視確認**（沒有 encoder，回授無法證明）。
 
-## 已驗證（2026-10-13 晚，新 driver `wro2026_base_waverover`，HTTP，只讀）
+## 已驗證（2026-10-13 02:28，新 driver `wro2026_base_waverover`，HTTP，只讀）
 
 條件：`ros2 launch wro2026_real bringup.launch.py transport:=http host:=192.168.0.16 max_speed:=0.0`，沒有任何 `/cmd_vel` publisher（啟動前後都確認 Publisher count 0）。只送了 `{"T":1,"L":0,"R":0}`、`{"T":130}`、`{"T":126}`。Log：Jetson `~/wave_rover_logs/verify_2_5_20261013_022804/`。
 
@@ -89,6 +89,7 @@ Waveshare WAVE ROVER（ESP32 驅動板 + 4 顆馬達，差速、無 encoder）
 - **IMU gz 靜止時雜訊很大**：直接讀 30 筆 T:126，gz 平均 0.05 deg/s、標準差 5.1 deg/s、範圍 -14.7～+13.9 deg/s；gx、gy 標準差只有約 0.2 deg/s。韌體融合後的 yaw（`y`）在同一段約 3 秒內只變 0.16°。odom 在沒有指令時固定不動，但行進中用 gz 積分的 yaw 可能漂得快（之後可考慮改用 `y`）。
 - HTTP 模式下，沒變的停止指令實際約 1.7 Hz 重送（設定每 0.5 s，加上 HTTP 延遲與回授輪詢）。
 - T:130 回授的 `L`/`R` 靜止時為 0（與先前一致）；電池 12.12 V。
+- 同日 10:46 再做一次只讀驗證時電池 11.08 V（車子整晚開著，約 8 小時降 1 V）；接近 11.0 V 警告門檻，測試前要充電。
 
 ## 對里程碑的影響
 

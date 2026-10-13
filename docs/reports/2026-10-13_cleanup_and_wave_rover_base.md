@@ -19,12 +19,12 @@
 | P1 `fix_lines.py` | DONE | `--sdf`，預設 repo 相對路徑；`--help` exit 0；SDF SHA 前後相同 `232ac111…` |
 | P2.1 底盤 package | DONE | `src/wro2026_base_waverover`；先 commit 原樣搬入（`05efd25`）再重構（`4fd576a`） |
 | P2.2 odometry | DONE | `/odom` + TF，`pwm_to_mps` 預設 0，啟動 log 有警告 |
-| P2.3 測試 | DONE | Windows 41 passed / 2 skipped；Jetson `colcon test` 見下 |
+| P2.3 測試 | DONE | Windows 46 + 16 passed（各 2 skipped）；Jetson `colcon test` 66 項 0 失敗（見第 5 節） |
 | P2.4 `wro2026_real` | DONE | URDF、bringup、line detector（numpy-only） |
 | P2.5 實機只讀驗證 | DONE | 見第 4 節；有一個流程失誤（SIGINT 送錯 PID），無安全影響 |
 | P3 實車文件 | DONE | RUNBOOK、REAL_CAR_HARDWARE、STATUS、README、SYSTEM_ARCHITECTURE、CLAUDE.md |
 | P4.1 檢查清單 | DONE | 見第 5 節 |
-| P4.2 獨立審查 | PARTIAL | 已啟動，用量額度用完前沒有收到結果，見第 7 節 |
+| P4.2 獨立審查 | DONE | 20 項發現（無違反規則），17 項已修正、3 項說明不改，修正後重新測試並在實機只讀驗證，見第 7 節 |
 | P4.3 draft PR | BLOCKED | Windows 沒有安裝 `gh`，依 prompt 條件不開 PR；分支已 push，見第 11 節 |
 | P4.4 報告 | DONE | 本檔 |
 
@@ -112,6 +112,19 @@ ros2 launch wro2026_real bringup.launch.py transport:=http host:=192.168.0.16 ma
 
 舊 driver：`~/ros2_ws/src/wave_rover_driver` `git status` 乾淨、HEAD `543a4fc`，沒有修改，整個驗證期間沒有啟動。
 
+### 審查修正後的第二次只讀驗證（2026-10-13 10:46，+08:00）
+
+因為改了收送指令的排程（第 7 節 B2），用同樣的條件（`max_speed:=0.0`、沒有 `/cmd_vel` publisher）再跑一次，log 在 Jetson `~/wave_rover_logs/verify_review_fix_20261013_104651/`：
+
+| 檢查 | 結果 |
+|---|---|
+| `/cmd_vel` | Publisher 0、Subscription 1 |
+| 頻率 | `/battery` 4.884 Hz、`/imu/data` 4.803 Hz、`/odom` 19.997 Hz；`/diagnostics` level OK、message ok |
+| `/odom` | 位置 (0, 0, 0) |
+| 送出的指令 | 62 筆，全部 `{"T":1,"L":0,"R":0}` |
+| 關閉 | 這次 SIGINT 直接送到 `ros2 launch`：`shutdown stop sent: ok`、兩個 process `finished cleanly`、沒有殘留；之後 T:130 為 `L=0, R=0` |
+| **電池** | **11.08 V**（凌晨 02:28 是 12.12 V，車子整晚開著）。已接近 11.0 V 警告門檻，請先充電再做任何測試 |
+
 ## 5. 檢查清單（指令輸出）
 
 ```text
@@ -129,22 +142,26 @@ src/wro2026_sim/config/phase7/localization_validation_route.yaml
 $ git ls-files --eol
 crlf in index: 0  crlf in worktree: 0  mixed: 0（其餘為 i/lf、4 個空檔 i/none、2 個 .pgm binary）
 $ python3 tools/check_md_links.py
-30 markdown files, 89 references checked, 25 inline references in docs/archive/ skipped (frozen), 0 WARN, 0 ERROR
+31 markdown files, 107 references checked, 25 inline references in docs/archive/ skipped (frozen), 0 WARN, 0 ERROR
 $ (Windows) python -m pytest   # Python 3.12.13, numpy 1.26.4, OpenCV 4.10, pytest 9.1.1
-wro2026_base_waverover: 41 passed, 2 skipped (ament flake8/pep257 不在 Windows)
+wro2026_base_waverover: 46 passed, 2 skipped (ament flake8/pep257 不在 Windows)
 wro2026_real:           16 passed, 2 skipped
 $ (Jetson, 乾淨 build) colcon build && colcon test && colcon test-result --all
-build/wro2026_base_waverover/pytest.xml: 43 tests, 0 errors, 0 failures, 0 skipped
+build/wro2026_base_waverover/pytest.xml: 48 tests, 0 errors, 0 failures, 0 skipped
 build/wro2026_real/pytest.xml: 18 tests, 0 errors, 0 failures, 3 skipped (OpenCV 交叉比對，Jetson 沒有 OpenCV)
-Summary: 61 tests, 0 errors, 0 failures, 3 skipped
+Summary: 66 tests, 0 errors, 0 failures, 3 skipped
+（以上是審查修正後的數字；修正前是 41 passed 與 61 tests，同樣 0 失敗）
 ```
 
 ## 6. Git
 
-報告 commit 之前的狀態（報告本身再多一個 commit）：
+最後這個文件 commit 之前的狀態（這個 commit 本身再多一個）：
 
 ```text
 $ git log --oneline origin/main..HEAD
+c0bcf2a real: fix independent-review findings in the base driver
+8ca051c docs(report): fix link-check error for WSL-only file
+8672fc2 docs: report for 2026-10-13 cleanup and WAVE ROVER base
 123dc7e docs(real): RUNBOOK, verified bringup, status/architecture update
 e85c83f real: add wro2026_real (bringup, URDF, parameterised line detector)
 c039545 real: hardware-free tests for wro2026_base_waverover
@@ -153,12 +170,37 @@ c039545 real: hardware-free tests for wro2026_base_waverover
 60211a8 docs: reorganize into STATUS/real/sim/archive; remove hard-coded paths
 958f004 docs: H0 hardware inventory for WAVE ROVER + Orin; fix stale Humble note
 $ git diff --stat origin/main...HEAD | tail -1
- 73 files changed, 4039 insertions(+), 52 deletions(-)
+ 74 files changed, 4401 insertions(+), 52 deletions(-)
 ```
+
+`958f004` 是上一個分支 `real/h0-hardware-inventory` 的 commit（還沒進 main）。
 
 ## 7. 獨立審查
 
-**未完成（PARTIAL）**：已經用 subagent 啟動獨立審查（輸入只有 `git diff -M origin/main...HEAD` 和任務 prompt），但在它回報之前本次 session 的用量額度用完，所以沒有收到結果、也沒有據此修正任何東西。建議下次先重跑這一步再開 PR。
+由 subagent 執行，輸入只有 `git diff -M origin/main...HEAD` 和這份任務 prompt。結論：**沒有違反規則的地方**；找到 8 個程式問題（B）和 12 個文件問題（C）。
+
+| # | 問題 | 嚴重度 | 處理 |
+|---|---|---|---|
+| B1 | `/cmd_vel` 收到 NaN 時，`clamp()` 會變成 +max_speed（全速前進） | 中 | **已修**：NaN / inf 一律當停止，`set_cmd_vel` 回傳 False，node log warn；加測試（舊程式會失敗） |
+| B2 | HTTP 模式下指令一直變動時，輪速指令永遠優先，T:130 輪詢被擠掉 → 2 s 後判定回授遺失 → 停停走走 | 中 | **已修**：送完一次輪速後，若有到期的輪詢就先輪詢一次；新的停止指令永遠立刻送。加測試（模擬每個請求 0.09 s、指令每圈都變；舊程式會失敗），並在實機重新只讀驗證 |
+| B3 | `test_motion --startup-only` 仍用 `max_speed` 0.05 啟動 driver，若有別的程式發 `/cmd_vel` 仍會動 | 低～中 | **已修**：`--startup-only` 時 driver 的 `max_speed` 設 0.0 |
+| B4 | UART 讀取一直出錯時（拔線），讀取迴圈沒有 sleep，CPU 100 % | 低 | **已修**：出錯時 sleep 0.1 s，計數 `read_errors` |
+| B5 | 送失敗的停止指令要等 `cmd_period`（HTTP 0.5 s）才重送 | 低 | **已修**：送失敗後 0.1 s 重送；加測試。odom 在送失敗時仍用「最後成功送出的指令」，不改（實際狀態未知，ESP32 3 s 會自停，odom 本來就是低品質） |
+| B6 | `map_server.yaml` 拿掉 `yaml_filename` 可能影響其他 launch；預設地圖是否有安裝 | 低（未確認） | **不改**：Phase 1 已用 grep 確認只有一個 launch 使用；WSL 驗證用 `evaluate_parameters` 解析出路徑且 `os.path.isfile` 為 True（第 4 節之前的 Phase 1 紀錄） |
+| B7 | 新舊 driver 互斥只在新 driver 這一側；舊執行檔名稱未確認 | 低 | **文件已補**：RUNBOOK、package README、STATUS 寫明「先開新的再開舊的擋不住」。舊執行檔名已由舊 `setup.py`（`driver = wave_rover_driver.driver_node:main`）確認 |
+| B8 | bringup 說「每個參數都能覆寫」，但少了 4 個 odom covariance | 低 | **已修**：補上 |
+| C1 | `docs/sim/SPEC.md` 第 10 節仍要新對話讀封存的 CURRENT_STATE、過期的 NEXT_PROMPT，與 AGENTS.md 矛盾 | 中 | **已修**：改成 AGENTS.md → STATUS.md → SPEC.md，封存文件只在需要背景時讀，NEXT_PROMPT 標為過期；保留一行說明原清單 |
+| C2 | handoff 的 `SHA256SUMS.txt` 與加了封存標記的檔案不符 | 低 | **已補說明**：STATUS 已知問題寫明去掉前兩行後相符 |
+| C3 | AGENTS.md 寫「原文保留」，實際改了路徑 | 低 | **已修**：「原規則保留，路徑已更新」 |
+| C4 | RUNBOOK 寫停止送 `/cmd_vel`「0.3 s 內停」，新 driver HTTP 下可能到約 0.6 s，且未實測 | 低 | **已修** |
+| C5 | RUNBOOK 沒有檢查 `teleop_twist_keyboard`、`python3-serial` | 低 | **已修**：加檢查指令；兩者在 Jetson 上都有（2026-10-13 已確認），不需要安裝 |
+| C6 | `/cmd_vel` 當 PWM 比例、`/odom` 是 m/s，上層必須知道底盤單位 | 低 | **記為已知問題**（STATUS）。程式不改：prompt 要求功能和參數完全保留；`pwm_to_mps` 量好後再改成 m/s 換算 |
+| C7 | 硬體文件寫「2026-10-13 晚」，實際是 02:28 | 低 | **已修**：改成 02:28（+08:00） |
+| C8 | CLAUDE.md 用 `user2@112ab-jno`，RUNBOOK 用 IP | 低 | **不改**：該行來自上一個分支的 commit；主機名稱和 IP 都是有效的連線方式（IP 是 DHCP 會變） |
+| C9 | STATUS 寫「61 項 0 失敗」，其實含 3 項略過 | 低 | **已修**：STATUS 改連到本報告的數字 |
+| C10 | `docs/README.md` 沒有 reports 索引 | 低 | 報告 commit 時已加 |
+| C11 | real README 說 RSP 沒裝會略過，但 package.xml 宣告為依賴 | 低 | **已修**：說明兩者並存的原因 |
+| C12 | RUNBOOK「兩邊都是 3.3 V 邏輯」在 repo 裡沒有來源，接錯可能燒壞 Orin | 低（未確認） | **已修**：註明來源只有前一輪 Jetson 報告，接線前先用電表量車頂 TX 對 GND ≤ 3.3 V |
 
 ## 8. 需要你裝的 apt 套件
 
@@ -177,9 +219,10 @@ $ git diff --stat origin/main...HEAD | tail -1
 
 ## 9. 需要你親自確認或測試的項目
 
+0. **電池充電**：10:46 量到 11.08 V（凌晨 12.12 V），接近 11.0 V 警告門檻；低於 10.5 V 時 driver 會拒絕所有非零指令。
 1. **先處理 WSL repo**（第 2 節的未追蹤檔、stash、本機分支）。
 2. **輪子目視測試**：新 driver 還沒讓輪子轉過。架空後照 `docs/real/RUNBOOK.md` 第 3 節跑 `test_motion`，確認四輪方向和停止。
-3. 明天 UART 接線：照第 10 節。接線前再對一次 Waveshare 腳位圖，不要接 5V。
+3. 明天 UART 接線：照第 10 節。接線前再對一次 Waveshare 腳位圖、用電表量車頂 TX 電壓（≤ 3.3 V），不要接 5V。
 4. 量測：輪距、輪徑、`pwm_to_mps`、IMU z 軸方向（RUNBOOK 第 5 節），填進 `config/wave_rover.yaml`。
 5. 確認我做的兩個安全取捨是否符合你的預期：收到第一筆 T:130 前拒絕非零指令；回授遺失後要等回授恢復才放行。
 6. IMU gz 靜止雜訊大（標準差 5.1 deg/s）：要不要改用韌體 yaw（T:126 的 `y`）做 odom 的角度。

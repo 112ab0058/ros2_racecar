@@ -7,9 +7,9 @@
 
 - 任何會讓馬達轉的程式或指令，先確認：限速、限時、怎麼停。
 - driver 有 `/cmd_vel` 逾時停車（`cmd_timeout` 0.3 s）、速度上限（`max_speed` 0.05 = 約 10 % PWM）、回授遺失停車（2 s 沒有 T:130 回應）、低電壓拒絕指令（< 10.5 V）、關閉時送停止。
-- 停車方法，由快到慢：車子電源鍵 → 在 launch 的終端機按 Ctrl-C → 停止送 `/cmd_vel`（0.3 s 內停）→ ESP32 自己約 3 s 沒收到指令會停。
+- 停車方法，由快到慢：車子電源鍵 → 在 launch 的終端機按 Ctrl-C → 停止送 `/cmd_vel`（約 0.3–0.6 s：`cmd_timeout` 0.3 s，HTTP 時再加上一次請求的時間；舊 driver 實測 0.306 s，新 driver 未在實機測過）→ ESP32 自己約 3 s 沒收到指令會停。
 - stop 與 timeout 沒在架空狀態驗證前，不在地面自主行駛；repo 裡沒有自主行駛的 launch。
-- **舊的 `wave_rover_driver`（`~/ros2_ws`）和新的 `wro2026_base_waverover` 不能同時跑**（新 driver 和 `test_motion` 會檢查並拒絕啟動）。
+- **舊的 `wave_rover_driver`（`~/ros2_ws`）和新的 `wro2026_base_waverover` 不能同時跑**。新 driver 和 `test_motion` 啟動時會檢查，發現舊的或另一個新的就拒絕啟動；但**先開新的、再開舊的**時，舊 driver 不會檢查（它不能改），所以啟動舊 driver 前要自己先 `pgrep` 確認。
 
 ## 1. 部署與 build
 
@@ -82,12 +82,15 @@ ros2 run wro2026_base_waverover test_motion --transport http --host 192.168.0.16
 
 ## 4. 明天接 UART 之後（照順序，任何一步失敗就停下來）
 
-接線（Orin 和車子都先關電源）：Orin pin 8（TX）→ 車頂 RX、pin 10（RX）← 車頂 TX、pin 6 GND ↔ GND。**不要接 5V**（Orin 的 5V 腳是輸出，不能和車子的 5V 互接）。接之前再對一次 Waveshare 的腳位圖；兩邊都是 3.3 V 邏輯。
+接線（Orin 和車子都先關電源）：Orin pin 8（TX）→ 車頂 RX、pin 10（RX）← 車頂 TX、pin 6 GND ↔ GND。**不要接 5V**（Orin 的 5V 腳是輸出，不能和車子的 5V 互接）。接之前再對一次 Waveshare 的腳位圖。
+「兩邊都是 3.3 V 邏輯」目前只來自前一輪的 Jetson 測試報告（`~/wave_rover_logs/REPORT.md`），repo 裡沒有原始資料：**接線前先開車子電源，用電表量車頂 TX 對 GND 的電壓，確認不超過 3.3 V**，再關電源接線。
 
 Jetson：
 
 ```bash
 source /opt/ros/jazzy/setup.bash && source ~/racecar_ws/install/setup.bash
+python3 -c "import serial; print('pyserial', serial.VERSION)"     # 2026-10-13 有：3.5
+ros2 pkg list | grep teleop_twist_keyboard                         # 2026-10-13 有
 ```
 
 1. UART 唯讀檢查（不寫入任何資料），要 0 FAIL：

@@ -21,13 +21,13 @@ ros2 launch wro2026_base_waverover bringup.launch.py
 
 完整機器人（driver + robot_state_publisher）用 `ros2 launch wro2026_real bringup.launch.py`。
 參數全部在 `config/wave_rover.yaml`；launch 參數 `<name>:=<value>` 只覆寫，空值代表用 YAML 的值。
-**舊的 `wave_rover_driver` 和這個 driver 不能同時跑**：driver 和 `test_motion` 啟動時會檢查，發現另一個就拒絕啟動。
+**舊的 `wave_rover_driver` 和這個 driver 不能同時跑**：這個 driver 和 `test_motion` 啟動時會檢查，發現舊的或另一個新的就拒絕啟動。舊 driver 本身不會檢查，所以先開新的再開舊的時擋不住，要自己確認。
 
 ## Topic
 
 | Topic | 型別 | 說明 |
 |---|---|---|
-| `/cmd_vel`（訂閱） | `geometry_msgs/Twist` | `linear.x`、`angular.z` 直接當 PWM 比例做差速換算（**不是 m/s**），每輪限制在 `max_speed` |
+| `/cmd_vel`（訂閱） | `geometry_msgs/Twist` | `linear.x`、`angular.z` 直接當 PWM 比例做差速換算（**不是 m/s**），每輪限制在 `max_speed`；NaN / inf 當成停止 |
 | `/battery` | `sensor_msgs/BatteryState` | T:130 → T:1001 的 `v`，只有電壓 |
 | `/imu/data` | `sensor_msgs/Imu` | T:126 → T:1002，covariance 全 0（未知） |
 | `/odom`、TF `odom → base_link` | `nav_msgs/Odometry` | **低品質 dead reckoning**，見下 |
@@ -40,6 +40,9 @@ ros2 launch wro2026_base_waverover bringup.launch.py
 | 條件 | 行為 |
 |---|---|
 | 啟動 | 只送 `{"T":1,"L":0,"R":0}`（零一律編成整數 0） |
+| `/cmd_vel` 含 NaN / inf | 當成停止，log warn |
+| 指令一直在變（HTTP） | 每送一次輪速就讓出一次給到期的回授詢問，T:130 不會被擠掉；新的停止指令永遠立刻送 |
+| T:1 送失敗 | 0.1 s 後重送（不是等 `cmd_period`） |
 | `/cmd_vel` 超過 `cmd_timeout`（0.3 s）沒來 | 送停止 |
 | 連續 `feedback_timeout`（2 s）沒收到 T:130 回應 | log error、立刻送停止、拒絕非零指令、`/diagnostics` ERROR；回授恢復後才放行。收到第一筆回應之前也拒絕非零指令 |
 | 電池 < `low_battery_voltage`（11.0 V） | `/diagnostics` WARN、log warn |

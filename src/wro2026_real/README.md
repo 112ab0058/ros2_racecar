@@ -44,7 +44,7 @@ TF：`odom → base_link`（底盤 driver，低品質 dead reckoning）→ `imu_
 - 核心 `line_detection.py`：只要 numpy（Jetson 有 1.26.4）。
 - 節點的影像轉換：rgb8 / bgr8 / rgba8 / bgra8 直接用 numpy 轉，不需要 cv_bridge。**其他格式（yuv422、mono8、compressed）需要 cv_bridge，Jetson 目前沒裝**，收到會略過並警告。
 - 相機 driver：型號 UNKNOWN，Jetson 沒有任何相機 package，也沒有 `/dev/video*`。
-- robot_state_publisher：Jetson 有裝；沒裝時 bringup 會略過並提示。
+- robot_state_publisher：package.xml 宣告為執行依賴（用 rosdep 會裝）；Jetson 已經有。萬一沒裝，bringup 會略過並提示，不會失敗。
 
 ## 測試
 
