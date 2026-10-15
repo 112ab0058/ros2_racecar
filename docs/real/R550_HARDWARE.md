@@ -28,10 +28,13 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 | 項目 | 值 | 來源 |
 |---|---|---|
 | 型號 | **C30D**（板上絲印） | 實物 |
-| 主控 | STM32（廠商頁面寫 WheelBoard C30D STM32）；晶片型號、韌體版本 UNKNOWN | 廠商頁 |
+| 主控 | **STM32F407VET6**，FreeRTOS；韌體版本 UNKNOWN | 廠商開發手冊 |
+| IMU | **ICM20948**，在控制板上 | 廠商開發手冊 |
 | 板上元件 | OLED 螢幕；藍牙序列模組（標示 LEVEL 3.3V、Power 3.6–6V、腳位 STATE / RXD / TXD / GND / VCC / PWRC）；兩個藍色按鈕；兩個 USB-C 孔；藍色螺絲端子（接電池紅黑線）；四組馬達接頭（MotorA–D） | 實物 |
 | **馬達開關** | 板上有 **Motor OFF / ON** 撥動開關。**OFF 時馬達不會轉**，第一次通電、只讀測試都要放 OFF | 實物（絲印） |
-| 和主機的連線 | USB（車上有一條標示「STM32」的 USB-A 線）；baud、協定 UNVERIFIED，見 [R550_COMPATIBILITY.md](R550_COMPATIBILITY.md) | 實物 + 待確認 |
+| 三個 USB-C | 左：給樹莓派 / Jetson Nano 的 **5 V 供電**；中：**串口 3，和 ROS 主機通訊**；右：串口 1，燒錄程式 | 廠商主板詳解圖 |
+| 和主機的連線 | 串口 3（中間的 USB-C）；baud、協定 UNVERIFIED，見 [R550_COMPATIBILITY.md](R550_COMPATIBILITY.md) | 廠商資料 + 待確認 |
+| 電源輸入 | ≤ 17 V、不可反接，建議 12 V；馬達 4 路共 ≤ 5 A | C30D 手冊 |
 
 ## 感測器
 
@@ -41,7 +44,7 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 | N10P 規格 | ToF；量程 0.1–25 m（白色目標），黑色目標 11 m；掃描 6–12 Hz；5400 點/秒；角解析度 0.4–0.8°；介面 Ethernet + UART 460800 bps；5 V 360 mA | [廠商頁](https://openelab.com/products/wheeltec-leishen-n10p-lidar-ethernet) |
 | 光達接線 | 一條 USB-A 線標示「激光雷達供電線」（只供電）；資料線走哪裡 UNKNOWN | 實物 |
 | 相機 | **WHEELTEC C70**：RGB、global shutter CMOS、720P、UVC（免驅動）、ZH1.5-4PIN 轉 USB 2.0；FOV、幀率未列 | 實物 + [廠商頁](https://openelab.com/products/wheeltec-c70-wide-fov-camera) |
-| IMU | 在控制板上（廠商頁寫有 IMU）；型號 UNKNOWN | 廠商頁 |
+| IMU | ICM20948（控制板上）。開機前 10 秒取樣零點，期間不能動車 | 廠商開發手冊 |
 | 深度相機 | 這台沒有（2026-10-13 使用者說深度相機不用） | 實物 |
 
 ## 電源
@@ -51,7 +54,8 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 | 充電器 | 鋰電池充電器，DC5525 接頭，輸出 **DC 12.6 V 1.9 A** → 推測電池是 3 串鋰電池 | 實物（充電器盒） |
 | 充電口 | 車身上標「充電口」 | 實物 |
 | 電池容量 | UNKNOWN | |
-| 給 Orin 的供電 | UNKNOWN。Orin 需要 9–20 V；要查產品資料有沒有給主機的 DC 輸出 | 待確認 |
+| 給 Orin 的供電 | **未解決**。板子給主機的是 5 V USB-C（給樹莓派 / Jetson Nano），Orin Nano 開發板需要 9–20 V，不能用 | 廠商主板詳解 + Orin 規格 |
+| 電壓門檻 | > 10 V 才能控制；10.5 V 蜂鳴器提醒；< 10.8 V 建議充電 | 廠商手冊 |
 
 ## 配件（盒內）
 
