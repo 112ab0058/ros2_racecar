@@ -1,0 +1,67 @@
+# WHEELTEC R550 mini AKM 硬體盤點（H0）
+
+更新時間：2026-10-15（到貨當天，依照片與廠商頁面整理）。
+規則：照片或實物確認的寫「實物」；只有廠商頁面寫的寫「廠商頁」；都沒有的寫 UNKNOWN。
+
+## 系統一覽（規劃）
+
+```text
+Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
+   ├─ USB ── C30D 控制板（STM32）── 4 顆馬達 + encoder、轉向、IMU、電池
+   ├─ USB ── LSLIDAR N10P 光達（另一條 USB 只供電）
+   └─ USB ── WHEELTEC C70 相機
+```
+
+## 車體
+
+| 項目 | 值 | 來源 |
+|---|---|---|
+| 型號 | **R550 mini akm**（R550 ROS 教育機器人，阿克曼轉向） | 實物（車上標籤） |
+| 廠商 | 輪趣科技（東莞）有限公司（WHEELTEC） | 實物（標籤） |
+| 出廠日期 | 2026-08-25 | 實物（標籤） |
+| 產品資料 | 標籤上有「掃描二維碼……產品資料」的 QR code | 實物（標籤） |
+| 尺寸、軸距、輪距、輪徑、最大轉向角 | UNKNOWN。廠商頁面的 271 × 189 × 151 mm 是 R550 一般版，**mini 版不一定相同** | 待量測 / 待產品資料 |
+| 馬達、encoder | UNKNOWN。廠商頁面寫 MG513 + 500 線 GMR encoder（一般版） | 待確認 |
+
+## 控制板
+
+| 項目 | 值 | 來源 |
+|---|---|---|
+| 型號 | **C30D**（板上絲印） | 實物 |
+| 主控 | STM32（廠商頁面寫 WheelBoard C30D STM32）；晶片型號、韌體版本 UNKNOWN | 廠商頁 |
+| 板上元件 | OLED 螢幕；藍牙序列模組（標示 LEVEL 3.3V、Power 3.6–6V、腳位 STATE / RXD / TXD / GND / VCC / PWRC）；兩個藍色按鈕；兩個 USB-C 孔；藍色螺絲端子（接電池紅黑線）；四組馬達接頭（MotorA–D） | 實物 |
+| **馬達開關** | 板上有 **Motor OFF / ON** 撥動開關。**OFF 時馬達不會轉**，第一次通電、只讀測試都要放 OFF | 實物（絲印） |
+| 和主機的連線 | USB（車上有一條標示「STM32」的 USB-A 線）；baud、協定 UNVERIFIED，見 [R550_COMPATIBILITY.md](R550_COMPATIBILITY.md) | 實物 + 待確認 |
+
+## 感測器
+
+| 項目 | 值 | 來源 |
+|---|---|---|
+| 光達 | **LSLIDAR N10P**（外殼印 LSLIDAR N10P、WHEELTEC）。**不是 M10P**，之前的調查要更正 | 實物 |
+| N10P 規格 | ToF；量程 0.1–25 m（白色目標），黑色目標 11 m；掃描 6–12 Hz；5400 點/秒；角解析度 0.4–0.8°；介面 Ethernet + UART 460800 bps；5 V 360 mA | [廠商頁](https://openelab.com/products/wheeltec-leishen-n10p-lidar-ethernet) |
+| 光達接線 | 一條 USB-A 線標示「激光雷達供電線」（只供電）；資料線走哪裡 UNKNOWN | 實物 |
+| 相機 | **WHEELTEC C70**：RGB、global shutter CMOS、720P、UVC（免驅動）、ZH1.5-4PIN 轉 USB 2.0；FOV、幀率未列 | 實物 + [廠商頁](https://openelab.com/products/wheeltec-c70-wide-fov-camera) |
+| IMU | 在控制板上（廠商頁寫有 IMU）；型號 UNKNOWN | 廠商頁 |
+| 深度相機 | 這台沒有（2026-10-13 使用者說深度相機不用） | 實物 |
+
+## 電源
+
+| 項目 | 值 | 來源 |
+|---|---|---|
+| 充電器 | 鋰電池充電器，DC5525 接頭，輸出 **DC 12.6 V 1.9 A** → 推測電池是 3 串鋰電池 | 實物（充電器盒） |
+| 充電口 | 車身上標「充電口」 | 實物 |
+| 電池容量 | UNKNOWN | |
+| 給 Orin 的供電 | UNKNOWN。Orin 需要 9–20 V；要查產品資料有沒有給主機的 DC 輸出 | 待確認 |
+
+## 配件（盒內）
+
+六角扳手、USB 線、小螺絲起子、一包螺絲零件、充電器。
+
+## 待確認（到貨第一週）
+
+1. 掃 QR code 下載產品資料：原始碼、STM32 通訊協定、C30D 說明、ROS 版本
+2. 軸距、輪距、輪徑、最大轉向角（量測或產品資料）
+3. 電池容量；Orin 怎麼從車上取電
+4. STM32 的 USB 序列 baud 與協定（先只「聽」STM32 送來的封包驗證）
+5. N10P 的資料走 USB 序列還是網路；用哪個 driver
+6. C70 的 FOV、幀率、可用解析度（`v4l2-ctl --list-formats-ext`）

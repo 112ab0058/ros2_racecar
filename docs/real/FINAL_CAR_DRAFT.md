@@ -2,6 +2,8 @@
 >
 > 2026-10-13 更新（使用者）：Orbbec 深度相機**可能不會用**；LiDAR 型號與到貨時間仍在確認中。
 >
+> 2026-10-15：實車已到貨，**以 [R550_HARDWARE.md](R550_HARDWARE.md) 為準**（R550 mini akm、C30D、LSLIDAR N10P、WHEELTEC C70）。下面是到貨前的紀錄。
+>
 > 2026-10-13 更新（使用者確認）：比賽車是 **WHEELTEC R550 阿克曼版（AKM）**，內建光達（應為 M10P），主機用我們的 Jetson Orin Nano，快到貨。repo 舊資料寫的「V550」是誤記。
 > 廠商頁面上的 WHEELTEC R550 AKM/DiffBot（Raspberry Pi 5 版）規格，**我們實際買到的配置未確認**：
 > 參考尺寸 271 × 189 × 151 mm、約 1.8 kg；MG513 減速馬達 + 500 線 AB 相 GMR encoder；STM32 控制板（WheelBoard C30D）；

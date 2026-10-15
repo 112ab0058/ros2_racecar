@@ -1,5 +1,7 @@
 # WHEELTEC R550 / LeiShen M10P 相容性調查（B3）
 
+> **2026-10-15 更正**：實車到貨，光達是 **LSLIDAR N10P，不是 M10P**；車型是 **R550 mini akm**；相機是 WHEELTEC C70。本文件第 5 節和 build 結果是針對 M10P，要依 N10P 重查（N10P 廠商頁：UART 460800 bps + Ethernet）。實物盤點見 [R550_HARDWARE.md](R550_HARDWARE.md)。
+
 調查日期：2026-10-13（R550 還沒到貨）。目標環境：Jetson Orin Nano、Ubuntu 24.04、ROS 2 Jazzy。
 可信度標記：**官方** = 廠商自己的 repo / 頁面；**第三方** = 別人的 repo 或經銷商；**推測** = 由程式或資料推論，沒有直接寫明。
 

@@ -38,7 +38,7 @@
 
 ## 下一步
 
-比賽車確定是 **WHEELTEC R550 阿克曼版**（內建光達，應為 M10P；主機改用我們的 Orin；快到貨）。到貨前繼續用 WAVE ROVER，但不在它身上做 R550 會取代的工作（速度校正、里程計）。
+**2026-10-15 R550 到貨**：型號是 **R550 mini akm**，控制板 C30D（STM32），光達是 **LSLIDAR N10P（不是 M10P）**，相機是 **WHEELTEC C70**（RGB、720P、UVC）。硬體盤點見 [real/R550_HARDWARE.md](real/R550_HARDWARE.md)；接下來照 [research/LEARNING_PATH.md](research/LEARNING_PATH.md) 的 5 個階段進行，過程記在 [research/LOGBOOK.md](research/LOGBOOK.md)。A、B 是到貨前的紀錄。
 
 ### A. 現在：WAVE ROVER
 1. ~~人工目視確認（H2，HTTP）~~：2026-10-13 完成，方向正確。
@@ -54,11 +54,11 @@
 4. **B4 網路：PARTIAL**。IP / MAC、DHCP 綁定步驟、NetBird 現況、WSL 看不到 Orin 的原因寫在 [real/NETWORK.md](real/NETWORK.md)；bringup 的唯讀 Foxglove（`foxglove:=true`）已加，但 `foxglove_bridge` 還沒裝，沒能實際連線。路由器綁定、NetBird 邀請要 Ray / 組員處理。
 5. **B5 控制器整合：PARTIAL**。`wro2026_control` 已 merge，topic 名稱改成參數（IMU 預設 `/imu/data`），離線測試、sim2d、matrix 的結果修改前後完全相同（這些只測 `core.py`；改過的 `race_node.py` / `race_monitor.py` 另用靜態測試檢查 topic 接線）；WAVE ROVER driver 加了 `cmd_vel_units`（`pwm` / `mps`）；介面合約在 [real/INTERFACES.md](real/INTERFACES.md)。Jetson 沒有 Python 的 OpenCV（`python3-opencv`，`import cv2` 失敗；C++ 的 OpenCV 4.6 有裝），所以控制器在 Jetson 上不能跑、`test_core.py` 收集失敗；WAVE ROVER 沒有位移 odom 和光達，不能跑控制器。**控制器的 `start` 參數預設是 true**，之後在實車上一律要加 `start:=false`。
 
-### C. R550 到貨後
-1. H0：拍照、記錄版本、電池與給 Orin 的供電方式、STM32 韌體與通訊協定。
+### C. R550 到貨後（詳細步驟見 [research/LEARNING_PATH.md](research/LEARNING_PATH.md)）
+1. H0：拍照、記錄版本、電池與給 Orin 的供電方式、STM32 韌體與通訊協定。2026-10-15 依照片完成初步盤點（[real/R550_HARDWARE.md](real/R550_HARDWARE.md)）；**下一步是掃車上的 QR code 下載產品資料**，以及 Motor 開關放 OFF、只聽 STM32 封包驗證協定。
 2. 底盤 package `wro2026_base_r550`：沿用 WAVE ROVER driver 的安全機制（`/cmd_vel` 逾時、限速、回授遺失、低電壓），架空測試 stop / timeout。
 3. 阿克曼：確認 STM32 收的是 (v, ω) 還是 (v, 轉向角)，量軸距、最大轉向角，寫進 URDF。
-4. 光達 driver + TF；encoder odom + IMU 用 `robot_localization` 融合。
+4. 光達 driver（**N10P**，B3 查的是 M10P，要重查；官方 `Lslidar_ROS2_driver` 有列 N10 系列）+ 相機 driver（C70 是 UVC）+ TF；encoder odom + IMU 用 `robot_localization` 融合。
 5. 接上 `wro2026_control`（pose-free 控制器），先低速、再地面。
 6. 之後才是 SLAM / Nav2（H6–H7）。
 

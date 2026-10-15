@@ -9,11 +9,19 @@
 | [STATUS.md](STATUS.md) | 唯一的「目前狀態」：模擬線結論、實車里程碑 H0–H9、下一步、已知問題 |
 | [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) | 系統架構、package 分工與資料流（模擬與實車） |
 
+## 研究紀錄（`research/`）
+
+| 文件 | 用途 |
+|---|---|
+| [research/LOGBOOK.md](research/LOGBOOK.md) | 研究日誌：每次工作的目的、做法、數據、問題、學到的東西（專題報告素材） |
+| [research/LEARNING_PATH.md](research/LEARNING_PATH.md) | R550 的 5 階段學習路線：要做的事、觀念、小練習、要記錄的數據 |
+
 ## 實車（`real/`）
 
 | 文件 | 用途 |
 |---|---|
 | [real/REAL_CAR_HARDWARE.md](real/REAL_CAR_HARDWARE.md) | Jetson 與 WAVE ROVER 的硬體盤點、允許的 ESP32 指令、已驗證項目、UNKNOWN 清單 |
+| [real/R550_HARDWARE.md](real/R550_HARDWARE.md) | **比賽車 R550 mini akm 的實物盤點**（C30D、N10P 光達、C70 相機、電源、待確認項目） |
 | [real/FINAL_CAR_DRAFT.md](real/FINAL_CAR_DRAFT.md) | 最終比賽車（Ackermann、STM32、Orbbec、LiDAR、encoder）的硬體盤點草稿，大多數型號仍是 UNKNOWN |
 | [real/RUNBOOK.md](real/RUNBOOK.md) | 實車操作：部署、啟動 / 停止、架空目視測試、UART 接線後的步驟、量測輪距與 `pwm_to_mps` |
 | [real/ORIN_BACKUP.md](real/ORIN_BACKUP.md) | Orin 狀態備份（套件清單、apt 來源、原始碼）與完整 SD 卡映像的做法和還原步驟 |
