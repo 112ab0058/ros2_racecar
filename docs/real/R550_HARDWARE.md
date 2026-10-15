@@ -30,7 +30,7 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 | 型號 | **C30D**（板上絲印） | 實物 |
 | 主控 | **STM32F407VET6**，FreeRTOS；韌體版本 UNKNOWN | 廠商開發手冊 |
 | IMU | **ICM20948**，在控制板上 | 廠商開發手冊 |
-| 板上元件 | OLED 螢幕；藍牙序列模組（標示 LEVEL 3.3V、Power 3.6–6V、腳位 STATE / RXD / TXD / GND / VCC / PWRC）；兩個藍色按鈕；兩個 USB-C 孔；藍色螺絲端子（接電池紅黑線）；四組馬達接頭（MotorA–D） | 實物 |
+| 板上元件 | OLED 螢幕；藍牙序列模組（標示 LEVEL 3.3V、Power 3.6–6V、腳位 STATE / RXD / TXD / GND / VCC / PWRC）；兩個藍色按鈕（USER、RESET）；三個 USB-C 孔；藍色螺絲端子（接電池紅黑線）；四組馬達接頭（MotorA–D） | 實物 |
 | **馬達開關** | 板上有 **Motor OFF / ON** 撥動開關。**OFF 時馬達不會轉**，第一次通電、只讀測試都要放 OFF | 實物（絲印） |
 | 三個 USB-C | 左：給樹莓派 / Jetson Nano 的 **5 V 供電**；中：**串口 3，和 ROS 主機通訊**；右：串口 1，燒錄程式 | 廠商主板詳解圖 |
 | 和主機的連線 | 串口 3（中間的 USB-C）；baud、協定 UNVERIFIED，見 [R550_COMPATIBILITY.md](R550_COMPATIBILITY.md) | 廠商資料 + 待確認 |
