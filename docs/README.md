@@ -13,6 +13,7 @@
 
 | 文件 | 用途 |
 |---|---|
+| [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md) | **專題範圍、架構、已決定 / 待決定的事、4 週時程**（2026-10-16 決定） |
 | [research/LOGBOOK.md](research/LOGBOOK.md) | 研究日誌：每次工作的目的、做法、數據、問題、學到的東西（專題報告素材） |
 | [research/R550_STUDY_NOTES.md](research/R550_STUDY_NOTES.md) | 廠商資料包研讀筆記：C30D 板子、開機流程、阿克曼運動學公式、馬達 PI 控制、電源、還缺的資料 |
 | [research/LEARNING_PATH.md](research/LEARNING_PATH.md) | R550 的 5 階段學習路線：要做的事、觀念、小練習、要記錄的數據 |

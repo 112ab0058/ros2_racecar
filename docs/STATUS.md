@@ -38,6 +38,8 @@
 
 ## 下一步
 
+**2026-10-16 專題範圍確定**：不參加 WRO，11 月中完成；用 slam_toolbox + Nav2 做建圖導航，不用 YOLO，再加 AI 任務層。範圍、架構、4 週時程見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，以它為準；下面 A、B、C 是之前的紀錄。
+
 **2026-10-15 R550 到貨**：型號是 **R550 mini akm**，控制板 C30D（STM32），光達是 **LSLIDAR N10P（不是 M10P）**，相機是 **WHEELTEC C70**（RGB、720P、UVC）。硬體盤點見 [real/R550_HARDWARE.md](real/R550_HARDWARE.md)；接下來照 [research/LEARNING_PATH.md](research/LEARNING_PATH.md) 的 5 個階段進行，過程記在 [research/LOGBOOK.md](research/LOGBOOK.md)。A、B 是到貨前的紀錄。
 
 ### A. 現在：WAVE ROVER
