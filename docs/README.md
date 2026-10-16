@@ -30,7 +30,7 @@
 | [real/R550_COMPATIBILITY.md](real/R550_COMPATIBILITY.md) | WHEELTEC R550 / M10P 相容性調查：ROS 2 程式、STM32 協定、光達 driver、風險、到貨第一天清單 |
 | [real/NETWORK.md](real/NETWORK.md) | 實車網路：各裝置 IP / MAC、路由器 DHCP 綁定、NetBird 現況、Foxglove 連線、WSL 看不到 Orin 的原因、`ROS_DOMAIN_ID` 建議 |
 | [real/INTERFACES.md](real/INTERFACES.md) | 底盤 package 的介面合約：必須提供的 topic、單位、frame、頻率、安全行為；控制器用的 topic；WAVE ROVER 還沒做到的項目 |
-| [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) | R550 序列協定 module（和 WHEELTEC 官方文件的範例封包一致，實車未驗證；只有編碼 / 解碼，沒有 ROS node） |
+| [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) | R550 底盤 package：協定 module（和官方文件範例一致）、**只讀**回授 node（`/odom`、`/imu/data`、`/battery`）、`listen` 工具、第一次接車的步驟；還沒有指令端 |
 | [../src/wro2026_control/wro2026_control/core.py](../src/wro2026_control/wro2026_control/core.py) | 不依賴座標的比賽控制器（WIP，從 `control/pose-free-race-controller` merge 進來；沒有 README，說明在檔案開頭的 docstring）；ROS 介面見 [real/INTERFACES.md](real/INTERFACES.md) 第 3 節 |
 | [../src/wro2026_base_waverover/README.md](../src/wro2026_base_waverover/README.md) | 底盤 driver：結構、topic、安全行為、odometry 的限制 |
 | [../src/wro2026_real/README.md](../src/wro2026_real/README.md) | bringup、URDF、line detector 與 `/line_detection` 格式 |

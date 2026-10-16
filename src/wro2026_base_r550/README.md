@@ -2,13 +2,20 @@
 
 > **協定來源：WHEELTEC 官方文件**「串口通信控制与反馈」V1.0（2024-06-04）與「阿克曼转向角度指令计算」V1.0（2021-10-26），在 R550 資料包的 `1.WHEELTEC ROS机器人通用资料/2.运动底盘的控制与运动学解析/5.串口控制讲解/`。文件裡印出的範例封包都寫成測試，全部通過。**還沒在實車上錄封包驗證**。（最早是依兩份第三方 driver 寫的：[robotverseny/drivers](https://github.com/robotverseny/drivers) `26a63c5`、[shupx/akm_driver](https://github.com/shupx/akm_driver) `075e0f1`。）
 
-WHEELTEC R550 阿克曼版（比賽車）底盤的協定 module。這次只有純 Python 的編碼 / 解碼，**沒有任何會送指令的 ROS node**；等 R550 到貨、確認協定之後再寫 driver，並沿用 `wro2026_base_waverover` 的安全機制（`/cmd_vel` 逾時、限速、回授遺失、低電壓）。
+WHEELTEC R550 mini akm 的底盤 package。目前有：協定 module、**只讀**的回授 node（發 `/odom`、`/imu/data`、`/battery`）、命令列的 `listen` 工具。
+
+**這個 package 目前不會送任何東西給 STM32**：沒有訂閱 `/cmd_vel`、程式裡沒有寫入序列埠（有測試檢查）。會讓馬達轉的指令端之後再寫，並沿用 `wro2026_base_waverover` 的安全機制（`/cmd_vel` 逾時、限速、回授遺失、低電壓）。
 
 ## 內容
 
 | 檔案 | 用途 |
 |---|---|
 | `wro2026_base_r550/protocol.py` | 指令封包編碼（Twist 模式、Ackermann 模式）、回授封包解碼、XOR checksum、單位換算、從序列位元組流重組封包 |
+| `wro2026_base_r550/feedback.py` | 回授 → 里程計積分（中點法，斷線超過 0.5 s 不積分）、幀率統計 |
+| `wro2026_base_r550/feedback_node.py` | ROS 2 node `r550_feedback`（只讀）：`/odom` + TF `odom → base_link`、`/imu/data`、`/battery`、`/diagnostics` |
+| `wro2026_base_r550/listen.py` | 命令列工具（不需要 ROS）：每秒印一行解碼結果，可存原始位元組 |
+| `config/r550_feedback.yaml`、`launch/feedback.launch.py` | node 的參數和 launch |
+| `test/test_feedback.py` | 里程計、listen、**只讀保證**（不寫序列埠、不訂閱、不用指令編碼）、參數和 yaml 一致 |
 | `test/test_protocol.py` | pytest；包含**官方文件印出的範例封包**，和依規則手算的封包；都不是從 R550 錄下來的 |
 
 ## 協定摘要（官方文件）
@@ -45,6 +52,30 @@ STM32 → 主機，24 bytes，預設 20 Hz：`0x7B`、flag_stop（0 = 馬達使�
 - **STM32 自己有沒有指令逾時停車**：官方文件沒寫，driver 一定要自己做逾時停車。
 
 完整調查見 `docs/real/R550_COMPATIBILITY.md`，研讀筆記見 `docs/research/R550_STUDY_NOTES.md`。
+
+## 第一次接上 R550：只聽不送
+
+**Motor 開關放 OFF**。這一步不會送任何指令，但還是照安全規則做。
+
+1. Windows：把 `real/r550-prep` 分支拉下來，再照 [RUNBOOK 第 1 節](../../docs/real/RUNBOOK.md)把這個 package 複製到 Jetson 的 `~/racecar_ws/src/`，`colcon build`
+2. R550 開主電源，等 10 秒（IMU 取零點，不要碰車）
+3. 用 USB 線接 **C30D 中間的 USB-C（串口 3）** 到 Orin。**不要接右邊那個（串口 1 是燒錄用的）**
+4. Jetson：
+   ```bash
+   lsusb                          # 找 CH9102 / CP2102 那一行（QinHeng 或 Silicon Labs）
+   ls -l /dev/serial/by-id/       # 找到裝置名稱，例如 /dev/ttyACM0 或 /dev/ttyUSB0
+   source ~/racecar_ws/install/setup.bash
+   ros2 run wro2026_base_r550 listen --port /dev/ttyACM0 --seconds 10 --raw-out ~/r550_first.bin
+   ```
+   沒權限（Permission denied）就檢查 `groups` 裡有沒有 `dialout`
+5. 對照：每秒約 20 幀、`bad_frames=0`、電壓和 OLED 顯示的一樣、Motor OFF 時 `motor=` 顯示什麼（文件說 flag 0 = 使能，OFF 時應該不是 0，**待驗證**）、車子靜止時 `acc` 的 z 約 +9.8
+6. 都正常後再開 ROS node：
+   ```bash
+   ros2 launch wro2026_base_r550 feedback.launch.py port:=/dev/ttyACM0
+   ros2 topic hz /odom              # 約 20 Hz
+   ros2 topic echo /battery --once
+   ```
+   Motor OFF、用手推車子往前，`/odom` 的 x 應該增加（第 2 階段的練習）
 
 ## 測試
 

@@ -1,0 +1,23 @@
+# R550 feedback node parameters (node name: r550_feedback). READ ONLY node.
+# Defaults in feedback_node.py PARAMETERS must stay identical to this file.
+r550_feedback:
+  ros__parameters:
+    port: ''                     # REQUIRED: C30D serial 3 (middle USB-C); ls -l /dev/serial/by-id/
+    baud: 115200                 # official WHEELTEC document
+    odom_frame_id: odom
+    base_frame_id: base_link
+    imu_frame_id: imu_link
+    battery_frame_id: base_link
+    publish_odom_tf: true        # set false when robot_localization (EKF) publishes odom -> base_link
+    odom_max_gap: 0.5            # s; do not integrate across longer gaps between frames
+    feedback_timeout: 0.5        # s; /diagnostics ERROR when no valid frame for this long
+    expected_rate: 20.0          # Hz (firmware RATE_20_HZ); WARN below half
+    low_battery_voltage: 10.8    # V; vendor: charge below 10.8 V
+    diagnostics_period: 1.0      # s
+    # covariances: placeholders until measured (stage 2 of LEARNING_PATH)
+    odom_pose_covariance_xy: 0.01
+    odom_pose_covariance_yaw: 0.05
+    odom_twist_covariance_vx: 0.001
+    odom_twist_covariance_wz: 0.01
+    imu_gyro_covariance: 0.0001
+    imu_accel_covariance: 0.01
