@@ -1,6 +1,6 @@
 # 實車網路
 
-更新時間：2026-10-14。IP 都是 DHCP 拿到的，路由器綁定之前可能會變。
+更新時間：2026-10-14（2026-10-16 刪掉 WAVE ROVER 的內容）。IP 都是 DHCP 拿到的，路由器綁定之前可能會變。
 
 ## 1. 裝置
 
@@ -11,7 +11,6 @@
 | Orin NetBird `wt0` | — | NetBird 內部 IP（不寫進 repo） | 見第 3 節 |
 | Orin `l4tbr0` | — | 192.168.55.1 | USB 裝置模式用，目前 DOWN |
 | Orin `can0` | — | — | DOWN（R550 若用 CAN 才會用到） |
-| WAVE ROVER ESP32（Wi-Fi STA） | `30:76:F5:7D:DD:44` | 192.168.0.16 | HTTP 80 埠 |
 | Ray 的 Windows 電腦（乙太網路） | — | 192.168.0.181 | |
 | Ray 的 WSL | — | 172.21.173.167/20 | `networkingMode=nat`，在 Windows 後面，見第 5 節 |
 | 路由器 | — | 192.168.0.1 | 型號 UNKNOWN |
@@ -21,49 +20,41 @@
 | 目標 | 結果 |
 |---|---|
 | 192.168.0.15:22（Orin SSH） | TCP 成功（ping 不通，但 TCP 通） |
-| 192.168.0.16:80（ESP32 HTTP） | TCP 成功（ping 不通） |
 | 192.168.0.15:8765（Foxglove） | 失敗：`foxglove_bridge` 還沒裝，見第 4 節 |
 
-用到的埠：SSH 22、ESP32 HTTP 80、Foxglove 8765、ROS 2 DDS（UDP 7400 起，依 `ROS_DOMAIN_ID` 而定）。
+用到的埠：SSH 22、Foxglove 8765、ROS 2 DDS（UDP 7400 起，依 `ROS_DOMAIN_ID` 而定）。
 
 ## 2. 路由器 DHCP 綁定（Ray 自己做）
 
 路由器型號未知，選單名稱可能不同（常見：「DHCP 保留」、「靜態 IP 分配」、「Address Reservation」）。
 
 1. 用瀏覽器開 `http://192.168.0.1`，登入管理頁面。
-2. 找到 DHCP 的「保留位址 / 綁定」頁面，新增三筆：
+2. 找到 DHCP 的「保留位址 / 綁定」頁面，新增兩筆：
 
    | MAC | 綁定 IP |
    |---|---|
    | `58:02:05:de:1e:7d`（Orin Wi-Fi） | 192.168.0.15 |
    | `3c:6d:66:76:88:57`（Orin 有線） | 192.168.0.14 |
-   | `30:76:F5:7D:DD:44`（ESP32） | 192.168.0.16 |
 
 3. 儲存。裝置要重新取得 IP 才會生效（重開機或重新連線）。
-4. 在 Windows 確認：`Test-NetConnection 192.168.0.15 -Port 22`、`Test-NetConnection 192.168.0.16 -Port 80`。
+4. 在 Windows 確認：`Test-NetConnection 192.168.0.15 -Port 22`。
 
 不要改 Orin 本身的網路設定（不要改成靜態 IP），讓路由器負責綁定。
 
 ## 3. NetBird 現況
 
-Orin 上（2026-10-14 唯讀檢查 `netbird status`）：Daemon 0.79.0、Management / Signal 都已連線、**Peers 0/3 connected**（主機名稱見 `REAL_CAR_HARDWARE.md`；NetBird 內部 IP 不寫進 repo）。
+Orin 上（2026-10-14 唯讀檢查 `netbird status`）：Daemon 0.79.0、Management / Signal 都已連線、**Peers 0/3 connected**（主機名稱 `112ab-jno`；NetBird 內部 IP 不寫進 repo）。
 
 - Orin 在**組員的 NetBird 帳號**下。Ray 的電腦還沒加入，要請組員從 NetBird 管理頁面邀請 Ray（或給一把 setup key），Ray 在自己電腦安裝 NetBird 並登入後，才能在不同網路下用 `112ab-jno.netbird.cloud` 連 Orin。
 - 這次沒有改任何 NetBird 設定。
 
 ## 4. Foxglove（建議的視覺化方式）
 
-`wro2026_real` 的 bringup 加了 `foxglove:=true`：
+還沒設定。`ros-jazzy-foxglove-bridge` **目前沒裝**（待 Ray 決定是否安裝）。
 
-```bash
-ros2 launch wro2026_real bringup.launch.py transport:=http host:=192.168.0.16 max_speed:=0.0 foxglove:=true
-```
-
-- 需要 `ros-jazzy-foxglove-bridge`（**目前沒裝**，啟動時會顯示略過；見 2026-10-13 R550 準備報告的 B2）。
 - 連線：Foxglove（桌面版或網頁版）→ Open connection → Foxglove WebSocket → `ws://192.168.0.15:8765`。
-- **只能讀取**：`capabilities` 只開 `connectionGraph`、`assets`，沒有 `clientPublish`、`parameters`、`services`，另外 `client_topic_whitelist` 設成不符合任何 topic。所以從 Foxglove 介面**不能**發 `/cmd_vel`、不能改 `max_speed` 之類的參數、不能呼叫 service。設定在 `src/wro2026_real/wro2026_real/foxglove_config.py`，有 pytest 檢查。參數名稱依 ROS 2 版 foxglove_bridge 的文件（[foxglove-sdk](https://github.com/foxglove/foxglove-sdk) 的 `ros/src/foxglove_bridge/README.md`）。
-- 2026-10-14 在 Orin 用上面的指令啟動：driver 與 robot_state_publisher 正常、`/cmd_vel` Publisher 0、foxglove_bridge 因未安裝而略過、8765 沒有在聽；關閉時 `shutdown stop sent: ok`。
-- **唯讀還沒有在真的 bridge 上驗證過**（只用 pytest 檢查了參數 dict）。ROS 2 不會對沒宣告的參數名稱報錯，如果安裝的 bridge 版本參數名稱不同，它會用預設值（含 `clientPublish`）。裝好 `ros-jazzy-foxglove-bridge` 後第一次啟動時要確認：
+- **要設成唯讀**：`capabilities` 只開 `connectionGraph`、`assets`（不開 `clientPublish`、`parameters`、`services`），`client_topic_whitelist` 設成不符合任何 topic。這樣從 Foxglove 介面**不能**發 `/cmd_vel`、不能改參數。參數名稱依 ROS 2 版 foxglove_bridge 的文件（[foxglove-sdk](https://github.com/foxglove/foxglove-sdk) 的 `ros/src/foxglove_bridge/README.md`）。之前 WAVE ROVER 的 bringup 有這份設定，2026-10-16 隨舊 package 刪除，R550 要重新寫。
+- **唯讀要在真的 bridge 上驗證**。ROS 2 不會對沒宣告的參數名稱報錯，如果安裝的 bridge 版本參數名稱不同，它會用預設值（含 `clientPublish`）。裝好 `ros-jazzy-foxglove-bridge` 後第一次啟動時要確認：
   1. `ros2 param get /foxglove_bridge capabilities` 只有 `connectionGraph`、`assets`。
   2. Foxglove 連上後，在連線資訊裡看伺服器宣告的 capabilities 沒有 `clientPublish`；試著用 Publish 面板發一則訊息到測試 topic，應該被拒絕。
   3. `ros2 topic info /cmd_vel` 仍然是 Publisher 0。

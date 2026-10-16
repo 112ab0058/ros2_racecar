@@ -4,7 +4,7 @@
 
 WHEELTEC R550 mini akm 的底盤 package。目前有：協定 module、**只讀**的回授 node（發 `/odom`、`/imu/data`、`/battery`）、命令列的 `listen` 工具。
 
-**這個 package 目前不會送任何東西給 STM32**：沒有訂閱 `/cmd_vel`、程式裡沒有寫入序列埠（有測試檢查）。會讓馬達轉的指令端之後再寫，並沿用 `wro2026_base_waverover` 的安全機制（`/cmd_vel` 逾時、限速、回授遺失、低電壓）。
+**這個 package 目前不會送任何東西給 STM32**：沒有訂閱 `/cmd_vel`、程式裡沒有寫入序列埠（有測試檢查）。會讓馬達轉的指令端之後再寫，必須有 `/cmd_vel` 逾時停車、限速、回授遺失停車、低電壓拒絕。
 
 ## 內容
 
@@ -51,13 +51,13 @@ STM32 → 主機，24 bytes，預設 20 Hz：`0x7B`、flag_stop（0 = 馬達使�
 - 序列埠的裝置名稱（USB 轉串口晶片 CH9102 或 CP2102，`lsusb` 確認）。
 - **STM32 自己有沒有指令逾時停車**：官方文件沒寫，driver 一定要自己做逾時停車。
 
-完整調查見 `docs/real/R550_COMPATIBILITY.md`，研讀筆記見 `docs/research/R550_STUDY_NOTES.md`。
+研讀筆記見 `docs/research/R550_STUDY_NOTES.md`，操作步驟見 `docs/real/RUNBOOK.md`。
 
 ## 第一次接上 R550：只聽不送
 
 **Motor 開關放 OFF**。這一步不會送任何指令，但還是照安全規則做。
 
-1. Windows：把 `real/r550-prep` 分支拉下來，再照 [RUNBOOK 第 1 節](../../docs/real/RUNBOOK.md)把這個 package 複製到 Jetson 的 `~/racecar_ws/src/`，`colcon build`
+1. Windows：把 `real/r550-prep` 分支拉下來，再照 [RUNBOOK 第 2 節](../../docs/real/RUNBOOK.md)把這個 package 複製到 Jetson 的 `~/racecar_ws/src/`，`colcon build`
 2. R550 開主電源，等 10 秒（IMU 取零點，不要碰車）
 3. 用 USB 線接 **C30D 中間的 USB-C（串口 3）** 到 Orin。**不要接右邊那個（串口 1 是燒錄用的）**
 4. Jetson：

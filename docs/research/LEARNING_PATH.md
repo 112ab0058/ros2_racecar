@@ -98,7 +98,7 @@
 
 **要做的事**
 1. 實體場地（160 × 160 cm，見 `docs/sim/FIELD_PLAN_160CM.md`）：用 C70 拍場地上的橘線和藍線，調整 line detector 的 HSV 參數
-2. 接上 `wro2026_control`（pose-free 控制器），**加 `start:=false`**，確認收到的資料都正確後，再低速啟動
+2. 決策層（狀態機 / AI 任務層）先用 `start:=false` 之類的開關確認收到的資料都正確，再低速啟動
 3. 之後才做 SLAM（`slam_toolbox`）建地圖、Nav2 導航
 
 **要懂的觀念**
