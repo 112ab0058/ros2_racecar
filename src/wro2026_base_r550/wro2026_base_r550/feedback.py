@@ -85,14 +85,11 @@ class RateMeter:
             self.times.pop(0)
 
 
-def motors_enabled(feedback):
-    """flag_stop byte: 0 = motors enabled (official doc), anything else = disabled."""
-    return feedback.stop_flag == 0
-
-
 def feedback_summary(fb):
     """One-line human-readable summary of a Feedback (for logs and listen)."""
-    return (f'motor={"ON " if motors_enabled(fb) else "OFF"}(flag={fb.stop_flag}) '
+    # flag_stop is NOT the Motor switch: it read 0 with the switch at OFF
+    # (R550, 2026-10-16). The official doc only says 0 = motors enabled.
+    return (f'flag_stop={fb.stop_flag} '
             f'vx={fb.vx:+.3f} m/s wz={fb.wz:+.3f} rad/s '
             f'acc=({fb.accel_x:+.2f},{fb.accel_y:+.2f},{fb.accel_z:+.2f}) m/s2 '
             f'gyro_z={fb.gyro_z:+.4f} rad/s battery={fb.voltage:.2f} V')

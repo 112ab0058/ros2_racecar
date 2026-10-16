@@ -37,7 +37,7 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 | 板上元件 | OLED 螢幕；藍牙序列模組（標示 LEVEL 3.3V、Power 3.6–6V、腳位 STATE / RXD / TXD / GND / VCC / PWRC）；兩個藍色按鈕（USER、RESET）；三個 USB-C 孔；藍色螺絲端子（接電池紅黑線）；四組馬達接頭（MotorA–D） | 實物 |
 | **馬達開關** | 板上有 **Motor OFF / ON** 撥動開關。**OFF 時馬達不會轉**，第一次通電、只讀測試都要放 OFF | 實物（絲印） |
 | 三個 USB-C | 左：給樹莓派 / Jetson Nano 的 **5 V 供電**；中：**串口 3，和 ROS 主機通訊**；右：串口 1，燒錄程式 | 廠商主板詳解圖 |
-| 和主機的連線 | **一條 USB 線**：Orin 的 USB-A ↔ C30D 中間的 USB-C（串口 3），底盤只需要這一條訊號線（Orin 的電源另外接）。廠商文件：主控和底盤、感測器的訊號全部走 USB。**115200 baud**；指令 11 bytes、回授 24 bytes（20 Hz），見 [R550_STUDY_NOTES.md](../research/R550_STUDY_NOTES.md) 第 7 節。USB 轉串口晶片 CH9102 或 CP2102（哪一顆待 `lsusb` 確認） | 廠商協定文件；實車未錄封包 |
+| 和主機的連線 | **一條 USB 線**：Orin 的 USB-A ↔ C30D 中間的 USB-C（串口 3），底盤只需要這一條訊號線（Orin 的電源另外接）。廠商文件：主控和底盤、感測器的訊號全部走 USB。**115200 baud**；指令 11 bytes、回授 24 bytes（20 Hz），見 [R550_STUDY_NOTES.md](../research/R550_STUDY_NOTES.md) 第 7 節。USB 轉串口晶片是 **CH9102**（`lsusb`：`1a86:55d4`），Linux 內建 CDC-ACM driver，裝置 `/dev/ttyACM0`，固定名稱 `/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0002-if00` | 廠商協定文件 + **2026-10-16 實車錄封包驗證** |
 | 電源輸入 | ≤ 17 V、不可反接，建議 12 V；馬達 4 路共 ≤ 5 A | C30D 手冊 |
 
 ## 感測器

@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from wro2026_base_r550.feedback import (feedback_summary, motors_enabled, normalize_angle,
+from wro2026_base_r550.feedback import (feedback_summary, normalize_angle,
                                         OdomIntegrator, quaternion_from_yaw, RateMeter)
 from wro2026_base_r550.listen import listen
 from wro2026_base_r550.protocol import bcc, decode_feedback
@@ -81,9 +81,7 @@ def test_rate_meter():
 
 
 def test_motor_flag_and_summary():
-    on = decode_feedback(make_frame(stop_flag=0))
-    off = decode_feedback(make_frame(stop_flag=1))
-    assert motors_enabled(on) and not motors_enabled(off)
+    assert 'flag_stop=1 ' in feedback_summary(decode_feedback(make_frame(stop_flag=1)))
     text = feedback_summary(decode_feedback(OFFICIAL_FEEDBACK))
     assert 'vx=+0.155' in text and 'wz=-0.033' in text and 'battery=23.43 V' in text
 

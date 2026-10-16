@@ -27,7 +27,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import BatteryState, Imu
 from tf2_ros import TransformBroadcaster
 
-from .feedback import monotonic, motors_enabled, OdomIntegrator, quaternion_from_yaw, RateMeter
+from .feedback import monotonic, OdomIntegrator, quaternion_from_yaw, RateMeter
 from .protocol import BAUD_RATE, FeedbackStream
 
 UNUSED_COVARIANCE = 1.0e6  # z / roll / pitch are not estimated (planar odometry)
@@ -247,8 +247,8 @@ class R550Feedback(Node):
             'dropped_bytes': str(stream.dropped_bytes),
             'odom_gaps': str(gaps),
             'battery_v': 'unknown' if fb is None else f'{fb.voltage:.2f}',
-            'motors_enabled': 'unknown' if fb is None else str(motors_enabled(fb)),
-            'stop_flag': 'unknown' if fb is None else str(fb.stop_flag),
+            # not the Motor switch (reads 0 with the switch at OFF); meaning UNKNOWN
+            'flag_stop': 'unknown' if fb is None else str(fb.stop_flag),
         }
         status.values = [KeyValue(key=k, value=v) for k, v in values.items()]
         arr = DiagnosticArray()

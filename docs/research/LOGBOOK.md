@@ -16,6 +16,25 @@
 
 ---
 
+## 2026-10-16（下午）　第一次和 R550 的 STM32 通訊（只聽）
+
+- **目的**：確認 Orin 讀得到 STM32 的回授，而且封包格式和官方文件一樣。
+- **做法**：Motor OFF；Windows `git pull` → `scp` 到 Orin → `colcon build`；車上的「STM32通信线」（C30D 上印 `UART3` 的孔）接 Orin；跑 `listen` 10 秒，原始資料存 Orin `~/r550_first.bin`。
+- **結果**：
+  - USB 轉串口晶片是 **CH9102**（`1a86:55d4`），Linux 內建 driver，裝置 `/dev/ttyACM0`
+  - **10 秒收到 4801 bytes，約 20 Hz，壞幀 0**：協定和官方文件一致，`wro2026_base_r550` 在實車上驗證通過
+  - 靜止時：vx = wz = 0；加速度 (−0.03, 0.00, 9.81) m/s²；陀螺儀 z 只在 ±0.0005 rad/s（約 ±0.03°/s）之間跳。**WAVE ROVER 的 IMU 靜止標準差是 5.1°/s**，這顆 ICM20948 安靜得多
+  - 電池 10.96 V，接近 10.8 V 的建議充電線
+- **問題與判斷**：
+  - **USB 反向供電**：車子電源關著就插 USB，Orin USB 的 5 V 讓 STM32 開機，但量到的電池電壓接近 0，蜂鳴器每秒響（低電壓警報）。正確順序：車子電源 → 等 10 秒 → 插 USB
+  - **舊 build 殘留**：第一次 `ros2 run` 出現 `StopIteration`，因為 Orin 上 10/13 build 的舊版登記資料還在。刪掉這個 package 的 `build/`、`install/` 重新 build 就好
+  - **flag_stop 不是 Motor 開關**：開關在 OFF，讀到的 flag 還是 0。`listen` 原本把它顯示成「motor=ON」，會誤導，已改成只顯示數值。安全上**不能用這個值判斷馬達會不會動**
+- **學到**：
+  - USB 同時帶電源和資料；Linux 用 `/dev/serial/by-id/` 給裝置固定名字
+  - 新舊版本混在一起（原始碼或 build 產物）會出怪問題，所以要先清乾淨
+  - 文件寫的意義要用實物驗證（flag_stop）
+- **下一步**：充電；啟動 ROS node 看 `/odom`、`/imu/data`；Motor OFF 手推車子看 `/odom`。
+
 ## 2026-10-16（下午）　和教授開會後確定專題範圍
 
 - **目的**：開會後發現整個架構還不清楚，釐清要做什麼、用廠商的還是自己做。

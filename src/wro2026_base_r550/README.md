@@ -68,7 +68,7 @@ STM32 → 主機，24 bytes，預設 20 Hz：`0x7B`、flag_stop（0 = 馬達使�
    ros2 run wro2026_base_r550 listen --port /dev/ttyACM0 --seconds 10 --raw-out ~/r550_first.bin
    ```
    沒權限（Permission denied）就檢查 `groups` 裡有沒有 `dialout`
-5. 對照：每秒約 20 幀、`bad_frames=0`、電壓和 OLED 顯示的一樣、Motor OFF 時 `motor=` 顯示什麼（文件說 flag 0 = 使能，OFF 時應該不是 0，**待驗證**）、車子靜止時 `acc` 的 z 約 +9.8
+5. 對照：每秒約 20 幀、`bad_frames=0`、電壓和 OLED 顯示的一樣、`flag_stop`（**2026-10-16 實測：Motor 開關在 OFF 時也是 0，所以它不代表 Motor 開關**）、車子靜止時 `acc` 的 z 約 +9.8
 6. 都正常後再開 ROS node：
    ```bash
    ros2 launch wro2026_base_r550 feedback.launch.py port:=/dev/ttyACM0
