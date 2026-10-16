@@ -21,6 +21,7 @@ Codex 時期的專案規則在 AGENTS.md，模擬（`src/wro2026_sim`）相關�
 ### Package 規劃
 - `src/wro2026_sim`：模擬，保持原樣，不得部署到 Jetson。
 - `src/wro2026_base_r550`：R550 底盤（協定、只讀回授 node、`listen`；指令端之後加）。不得依賴 Gazebo / ros_gz / turtlebot3。
+- `src/wro2026_lidar_n10p`：N10P 光達 driver（純 Python、只讀，協定照 LSLIDAR 官方 driver）。
 - Jetson 上用 `~/racecar_ws`（不是 git repo）build / test；操作步驟在 `docs/real/RUNBOOK.md`。Jetson 的 `~/ros2_ws/src/wave_rover_driver` 是舊 driver 的備份，不要修改。
 
 ### 安全規則（實車）
