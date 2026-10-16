@@ -1,36 +1,40 @@
 """
 WHEELTEC STM32 serial protocol: encode commands, decode feedback (no rclpy).
 
-UNVERIFIED: written from two third-party copies of WHEELTEC's ROS driver,
-not from WHEELTEC documentation and not tested on our R550:
+Source (2026-10-16): WHEELTEC's own document "串口通信控制与反馈" V1.0
+(2024-06-04, file 串口通信控制与反馈_2026-8-12.pdf in the R550 vendor
+package) and "阿克曼转向角度指令计算" V1.0 (2021-10-26). test_protocol.py
+checks every example frame printed in those documents. Not yet checked
+against packets recorded from our R550 (still UNVERIFIED on the car).
 
-* robotverseny/drivers, turn_on_wheeltec_robot (ROS 2 Jazzy port),
-  commit 26a63c5c8cbcea5b9239e544a9298b18039560e7 (2025-02-04),
-  include/turn_on_wheeltec_robot/wheeltec_robot.h, src/wheeltec_robot.cpp
-* shupx/akm_driver, turn_on_wheeltec_robot (ROS 1, WHEELTEC Ackermann),
-  commit 075e0f1c88147cac5318ba9e2d15f5a6a399cc66 (2021-03-26)
+Earlier sources (third-party copies of WHEELTEC's ROS driver), kept for
+reference: robotverseny/drivers commit 26a63c5, shupx/akm_driver 075e0f1.
 
-Both agree on everything below except bytes 1-2 of the command frame
-(see encode_twist_command). Serial: 115200 baud, 8N1 (both sources).
+Serial: serial port 3 (middle USB-C on the C30D), 115200 baud, 8N1.
 
 Command frame, host -> STM32, 11 bytes:
   [0] 0x7B header
-  [1] reserved (robotverseny: 0; shupx: 1 "product type")
-  [2] reserved (shupx: "robot enable flag", 0)
-  [3:5] x speed, int16 big-endian, mm/s
-  [5:7] y speed, int16 big-endian, mm/s (omni chassis only)
-  [7:9] z: angular velocity in mrad/s (Twist mode), or
-        steering angle in rad x 1000 / 2 (Ackermann mode)
+  [1] [2] reserved, no meaning (official doc); send 0
+  [3:5] x target speed, int16 big-endian, mm/s
+  [5:7] y target speed, int16 big-endian, mm/s (omni chassis only)
+  [7:9] z target angular velocity, int16 big-endian, rad/s x 1000.
+        Ackermann chassis also use angular velocity here: the STM32
+        converts (vx, wz) into a steering angle itself and rejects radii
+        smaller than the minimum turning radius (official doc 4.4).
   [9]  BCC = XOR of bytes 0..8
   [10] 0x7D tail
 
-Feedback frame, STM32 -> host, 24 bytes:
-  [0] 0x7B, [1] stop flag
-  [2:4] [4:6] [6:8] x / y speed (mm/s), z angular velocity (mrad/s), int16 BE
-  [8:14]  accelerometer x/y/z raw int16 BE, +-2 g (16384 LSB per g)
-  [14:20] gyroscope x/y/z raw int16 BE, +-500 deg/s (65.5 LSB per deg/s)
-  [20:22] battery voltage, mV, 16 bit BE
+Feedback frame, STM32 -> host, 24 bytes (20 Hz by default, RATE_20_HZ):
+  [0] 0x7B, [1] flag_stop (0 = motors enabled, other = disabled)
+  [2:4] [4:6] [6:8] x / y speed (mm/s), z angular velocity (rad/s x 1000)
+  [8:14]  accelerometer x/y/z raw int16 BE; official: raw / 1672 = m/s^2
+  [14:20] gyroscope x/y/z raw int16 BE; official: raw / 3753 = rad/s
+  [20:22] battery voltage, mV
   [22] BCC = XOR of bytes 0..21, [23] 0x7D
+
+Sign convention: the official doc's text says z is clockwise-positive, but
+its worked examples and command table use left turn = positive z, i.e.
+counter-clockwise positive like ROS REP-103. Check on the car.
 """
 from collections import namedtuple
 import math
@@ -42,10 +46,10 @@ FEEDBACK_FRAME_SIZE = 24
 BAUD_RATE = 115200
 
 SPEED_SCALE = 1000.0           # m/s -> mm/s, rad/s -> mrad/s
-STEERING_SCALE = 1000.0 / 2.0  # Ackermann mode: rad -> wire units (source: x1000/2)
+STEERING_SCALE = 1000.0 / 2.0  # third-party driver only, see encode_ackermann_command
 ACCEL_LSB_PER_G = 16384.0      # +-2 g full scale
-STANDARD_G = 9.8               # the source divides by 1671.84 = 32768 / 19.6
-GYRO_RAD_PER_LSB = 0.00026644  # 1 / 65.5 / 57.30 (+-500 deg/s full scale)
+STANDARD_G = 9.8               # 16384 / 9.8 = 1671.8 (official doc: divide by 1672)
+GYRO_RAD_PER_LSB = 0.00026644  # 1 / 65.5 / 57.30 = 1 / 3753.2 (official doc: divide by 3753)
 
 Feedback = namedtuple(
     'Feedback',
@@ -81,10 +85,10 @@ def _command(x_bytes, y_bytes, z_bytes, byte1, byte2):
 
 def encode_twist_command(vx, wz, *, vy=0.0, byte1=0, byte2=0):
     """
-    Encode a Twist-mode command: vx, vy in m/s, wz in rad/s.
+    Encode a command: vx, vy in m/s, wz in rad/s.
 
-    byte1 / byte2 are 0 in the ROS 2 source; the ROS 1 Ackermann source sends
-    byte1 = 1. Which one our R550 firmware expects is UNKNOWN.
+    This is the official format (bytes 1-2 reserved, 0). For the Ackermann
+    car, wz is the body angular velocity, not the steering angle.
     """
     return _command(_int16_wire(vx, SPEED_SCALE, 'vx'), _int16_wire(vy, SPEED_SCALE, 'vy'),
                     _int16_wire(wz, SPEED_SCALE, 'wz'), byte1, byte2)
@@ -92,11 +96,12 @@ def encode_twist_command(vx, wz, *, vy=0.0, byte1=0, byte2=0):
 
 def encode_ackermann_command(speed, steering_angle, byte1=0, byte2=0):
     """
-    Encode an Ackermann-mode command: speed in m/s, steering angle in rad.
+    Do not use on the R550. Third-party drivers only.
 
-    Both sources write steering_angle * 1000 / 2 into bytes 7-8 and leave
-    y = 0. Whether the R550 firmware reads (v, w) or (v, steering angle) is
-    UNKNOWN until it is checked on the car.
+    The two third-party ROS drivers write steering_angle * 1000 / 2 into
+    bytes 7-8. The official WHEELTEC document says bytes 7-8 are the
+    angular velocity, so the STM32 would read this value as rad/s x 1000.
+    Kept only until the STM32 source confirms there is no such mode.
     """
     return _command(_int16_wire(speed, SPEED_SCALE, 'speed'), b'\x00\x00',
                     _int16_wire(steering_angle, STEERING_SCALE, 'steering_angle'),

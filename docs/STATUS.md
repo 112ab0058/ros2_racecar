@@ -50,14 +50,14 @@
 2026-10-13～14 的結果見 [R550 準備報告](reports/2026-10-13_r550_prep.md)。
 1. **B1 Orin 備份：DONE（狀態備份）**。套件清單、apt 來源、原始碼已備份到 Orin 與 Ray 的 Windows（[real/ORIN_BACKUP.md](real/ORIN_BACKUP.md)）；完整 SD 卡映像要 Ray 關機拔卡自己做（步驟在同一份文件）。
 2. **B2 ROS 2 套件：BLOCKED**。模擬安裝顯示 `ros-jazzy-nav2-bringup` 會把 Ubuntu 的 OpenCV 4.6 開發套件換成 NVIDIA 的 4.8（移除 10 個套件），依規則沒有安裝。`rosbag2-storage-mcap`、`tf2-tools` 本來就有；其餘 3 個（robot-localization、slam-toolbox、foxglove-bridge）一起模擬：移除 0 個、升級的 7 個都不是 nvidia / cuda / tensorrt / libnv / linux- 開頭（也沒有 NVIDIA 來源或 OpenCV），兩項檢查都通過；要不要裝由 Ray 決定。
-3. **B3 R550 / M10P 相容性：PARTIAL**。調查完成，但 M10P 官方 driver 在 Jetson 上 build 失敗（缺 Boost，依 CMakeLists 推測還缺 PCL / pcl_conversions / pcap，都沒裝）。沒找到 WHEELTEC 公開的 R550 官方程式；STM32 協定來自兩份同源（都源自 WHEELTEC 原廠 driver）的第三方程式，彼此一致，但都不是 R550 / C30D 的資料，寫成 `src/wro2026_base_r550`（UNVERIFIED，沒有 ROS node）。M10P 官方 driver 的 README 寫支援 Jazzy。見 [real/R550_COMPATIBILITY.md](real/R550_COMPATIBILITY.md)。
+3. **B3 R550 / M10P 相容性：PARTIAL**。調查完成，但 M10P 官方 driver 在 Jetson 上 build 失敗（缺 Boost，依 CMakeLists 推測還缺 PCL / pcl_conversions / pcap，都沒裝）。沒找到 WHEELTEC 公開的 R550 官方程式；STM32 協定來自兩份同源（都源自 WHEELTEC 原廠 driver）的第三方程式，彼此一致，但都不是 R550 / C30D 的資料，寫成 `src/wro2026_base_r550`（沒有 ROS node）。**2026-10-16 找到 WHEELTEC 官方協定文件，編碼 / 解碼和文件裡的範例封包全部一致**（還沒在實車錄封包驗證）。M10P 官方 driver 的 README 寫支援 Jazzy。見 [real/R550_COMPATIBILITY.md](real/R550_COMPATIBILITY.md)。
 4. **B4 網路：PARTIAL**。IP / MAC、DHCP 綁定步驟、NetBird 現況、WSL 看不到 Orin 的原因寫在 [real/NETWORK.md](real/NETWORK.md)；bringup 的唯讀 Foxglove（`foxglove:=true`）已加，但 `foxglove_bridge` 還沒裝，沒能實際連線。路由器綁定、NetBird 邀請要 Ray / 組員處理。
 5. **B5 控制器整合：PARTIAL**。`wro2026_control` 已 merge，topic 名稱改成參數（IMU 預設 `/imu/data`），離線測試、sim2d、matrix 的結果修改前後完全相同（這些只測 `core.py`；改過的 `race_node.py` / `race_monitor.py` 另用靜態測試檢查 topic 接線）；WAVE ROVER driver 加了 `cmd_vel_units`（`pwm` / `mps`）；介面合約在 [real/INTERFACES.md](real/INTERFACES.md)。Jetson 沒有 Python 的 OpenCV（`python3-opencv`，`import cv2` 失敗；C++ 的 OpenCV 4.6 有裝），所以控制器在 Jetson 上不能跑、`test_core.py` 收集失敗；WAVE ROVER 沒有位移 odom 和光達，不能跑控制器。**控制器的 `start` 參數預設是 true**，之後在實車上一律要加 `start:=false`。
 
 ### C. R550 到貨後（詳細步驟見 [research/LEARNING_PATH.md](research/LEARNING_PATH.md)）
-1. H0：拍照、記錄版本、電池與給 Orin 的供電方式、STM32 韌體與通訊協定。2026-10-15 依照片完成初步盤點（[real/R550_HARDWARE.md](real/R550_HARDWARE.md)）；**下一步是掃車上的 QR code 下載產品資料**，以及 Motor 開關放 OFF、只聽 STM32 封包驗證協定。
+1. H0：拍照、記錄版本、電池與給 Orin 的供電方式、STM32 韌體與通訊協定。2026-10-15 依照片完成初步盤點（[real/R550_HARDWARE.md](real/R550_HARDWARE.md)）；產品資料包已下載（2026-10-16，STM32 原始碼、Mini 硬體說明、ROS 2 教學還缺），研讀筆記見 [research/R550_STUDY_NOTES.md](research/R550_STUDY_NOTES.md)。**下一步**：Motor 開關放 OFF、開機拍 OLED，再只聽 STM32 封包，和官方協定比對。
 2. 底盤 package `wro2026_base_r550`：沿用 WAVE ROVER driver 的安全機制（`/cmd_vel` 逾時、限速、回授遺失、低電壓），架空測試 stop / timeout。
-3. 阿克曼：確認 STM32 收的是 (v, ω) 還是 (v, 轉向角)，量軸距、最大轉向角，寫進 URDF。
+3. 阿克曼：官方文件寫 STM32 收 (v, ω)，自己換算轉角（2026-10-16）；還要架空實測方向。量軸距、最大轉向角，寫進 URDF（廠商程式註解：mini 阿克曼軸距 0.144 m、輪距 0.162 m，待量測）。
 4. 光達 driver（**N10P**，B3 查的是 M10P，要重查；官方 `Lslidar_ROS2_driver` 有列 N10 系列）+ 相機 driver（C70 是 UVC）+ TF；encoder odom + IMU 用 `robot_localization` 融合。
 5. 接上 `wro2026_control`（pose-free 控制器），先低速、再地面。
 6. 之後才是 SLAM / Nav2（H6–H7）。

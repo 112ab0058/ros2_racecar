@@ -1,9 +1,9 @@
 """
 Protocol tests.
 
-The sources contain no captured packets, so the example frames below were
-computed by hand from the encoding rules in the sources' C++ code
-(see protocol.py). They are NOT recordings from an R550.
+The first group of frames was computed by hand from the encoding rules.
+The OFFICIAL_* frames at the end are copied from WHEELTEC's documents
+(see protocol.py). None of them is a recording from our R550.
 """
 import math
 
@@ -103,3 +103,56 @@ def test_stream_drops_corrupted_frame_and_keeps_next():
     bad[5] ^= 0x01
     frames = FeedbackStream().feed(bytes(bad) + FEEDBACK)
     assert len(frames) == 1
+
+
+# ---- Frames printed in WHEELTEC's official documents (2026-10-16) ----
+# 串口通信控制与反馈 V1.0, section 3.1 (feedback example and 100 mm/s command)
+OFFICIAL_FEEDBACK = bytes.fromhex(
+    '7B 00 00 9B 00 00 FF DF 00 60 00 0C 40 A8 FF FD 00 06 00 1E 5B 87 82 7D')
+
+# 阿克曼转向角度指令计算 V1.0, table: (frame, vx mm/s, wz rad/s x 1000).
+# Only the forward rows: the "backward 80 mm/s" column has z values that do
+# not match the document's own formula (about 10x too large), so it is not
+# used. The "-300 mm/s" frame is FE D3 = -301 in the document (typo for
+# FE D4), so -301 is used here.
+OFFICIAL_COMMANDS = [
+    ('7B 00 00 01 2C 00 00 00 00 56 7D', 300, 0),
+    ('7B 00 00 FE D3 00 00 00 00 56 7D', -301, 0),
+    ('7B 00 00 00 64 00 00 00 00 1F 7D', 100, 0),
+    ('7B 00 00 FF 9C 00 00 00 00 18 7D', -100, 0),
+    ('7B 00 00 00 F0 00 00 00 3E B5 7D', 240, 62),     # left 5 deg
+    ('7B 00 00 00 F0 00 00 00 78 F3 7D', 240, 120),    # left 10 deg
+    ('7B 00 00 00 F0 00 00 00 B0 3B 7D', 240, 176),    # left 15 deg
+    ('7B 00 00 00 F0 00 00 00 E5 6E 7D', 240, 229),    # left 20 deg
+    ('7B 00 00 00 F0 00 00 FF BC C8 7D', 240, -68),    # right 5 deg
+    ('7B 00 00 00 F0 00 00 FF 70 04 7D', 240, -144),   # right 10 deg
+    ('7B 00 00 00 F0 00 00 FF 1A 6E 7D', 240, -230),   # right 15 deg
+    ('7B 00 00 00 F0 00 00 FE B5 C0 7D', 240, -331),   # right 20 deg
+]
+
+
+@pytest.mark.parametrize('frame_hex, vx_mm, wz_milli', OFFICIAL_COMMANDS)
+def test_official_command_frames(frame_hex, vx_mm, wz_milli):
+    assert encode_twist_command(vx_mm / 1000, wz_milli / 1000) == bytes.fromhex(frame_hex)
+
+
+def test_official_feedback_example():
+    fb = decode_feedback(OFFICIAL_FEEDBACK)
+    assert fb.stop_flag == 0
+    assert fb.vx == pytest.approx(0.155)
+    assert fb.wz == pytest.approx(-0.033)
+    # the document divides by 1672 (accel) and 3753 (gyro)
+    assert fb.accel_x == pytest.approx(96 / 1672, rel=1e-3)
+    assert fb.accel_z == pytest.approx(16552 / 1672, rel=1e-3)
+    assert fb.gyro_z == pytest.approx(30 / 3753, rel=1e-3)
+    assert fb.voltage == pytest.approx(23.431)
+
+
+@pytest.mark.parametrize('deg, wz_milli', [(5, 62), (10, 120), (15, 176), (20, 229),
+                                           (-5, -68), (-10, -144), (-15, -230),
+                                           (-20, -331)])
+def test_official_steering_formula(deg, wz_milli):
+    # Document's formula: R = H / tan(angle) + W / 2, wz = vx / R
+    # (H = wheelbase, W = track; 0.322 m for the example car), 240 mm/s
+    radius = 0.322 / math.tan(math.radians(deg)) + 0.322 / 2
+    assert int(0.24 / radius * 1000) == wz_milli

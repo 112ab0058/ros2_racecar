@@ -2,6 +2,8 @@
 
 > **2026-10-15 更正**：實車到貨，光達是 **LSLIDAR N10P，不是 M10P**；車型是 **R550 mini akm**；相機是 WHEELTEC C70。本文件第 5 節和 build 結果是針對 M10P，要依 N10P 重查（N10P 廠商頁：UART 460800 bps + Ethernet）。實物盤點見 [R550_HARDWARE.md](R550_HARDWARE.md)。
 
+> **2026-10-16 更新：找到 WHEELTEC 官方協定文件**（資料包 `5.串口控制讲解/串口通信控制与反馈_2026-8-12.pdf`）。第 1、3、4 節的第三方結論大多被證實：115200、`0x7B` / `0x7D`、XOR、指令 11 bytes、回授 24 bytes；byte 1、2 是**無意義的保留位**；**阿克曼版 Z 欄位也是角速度（rad/s × 1000）**，STM32 自己換算成轉角。`× 1000 / 2` 的轉向角模式不在官方文件裡，不用。整理見 [R550_STUDY_NOTES.md](../research/R550_STUDY_NOTES.md) 第 7 節。
+
 調查日期：2026-10-13（R550 還沒到貨）。目標環境：Jetson Orin Nano、Ubuntu 24.04、ROS 2 Jazzy。
 可信度標記：**官方** = 廠商自己的 repo / 頁面；**第三方** = 別人的 repo 或經銷商；**推測** = 由程式或資料推論，沒有直接寫明。
 
@@ -11,8 +13,8 @@
 |---|---|---|
 | WHEELTEC R550 的 ROS 2 程式公開在哪裡 | 沒找到 WHEELTEC 官方的公開 repo。經銷商頁面只寫「ROS 2」、Raspberry Pi 5 版本，沒寫 distro；資料要跟廠商 / 組員拿 | 第三方 |
 | WHEELTEC 的 ROS 2 程式能不能在 Jazzy 上跑 | 有第三方把 `turn_on_wheeltec_robot` 移植到 ROS 2 Jazzy 並在 WHEELTEC 阿克曼小車上使用，所以**很可能可以**；但那是別的車型、別人改過的版本 | 第三方 + 推測 |
-| STM32 序列協定 | 兩份第三方程式一致：115200 baud、`0x7B` 開頭、`0x7D` 結尾、XOR checksum、指令 11 bytes、回授 24 bytes。兩份都源自 WHEELTEC 原廠 driver（**同源，不算獨立驗證**），而且都不是 R550 / C30D 控制板的資料，一致只代表兩份副本彼此相符。已寫成 `src/wro2026_base_r550`（UNVERIFIED） | 第三方（源自廠商程式）+ 推測（套用到 R550） |
-| 阿克曼版收 (v, ω) 還是 (v, 轉向角) | 程式裡兩種都有：ROS 2 移植版預設送 (v, ω)，ROS 1 阿克曼版送 (v, 轉向角 × 1000 / 2)。我們的 R550 韌體用哪一種**未知** | 第三方 + 推測 |
+| STM32 序列協定 | 兩份第三方程式一致：115200 baud、`0x7B` 開頭、`0x7D` 結尾、XOR checksum、指令 11 bytes、回授 24 bytes。兩份都源自 WHEELTEC 原廠 driver（**同源，不算獨立驗證**），而且都不是 R550 / C30D 控制板的資料，一致只代表兩份副本彼此相符。已寫成 `src/wro2026_base_r550`（UNVERIFIED） | 第三方；**2026-10-16 已由官方文件證實**（實車封包還沒錄） |
+| 阿克曼版收 (v, ω) 還是 (v, 轉向角) | 程式裡兩種都有：ROS 2 移植版預設送 (v, ω)，ROS 1 阿克曼版送 (v, 轉向角 × 1000 / 2)。我們的 R550 韌體用哪一種**未知**。**2026-10-16：官方文件寫 Z 是角速度，用 (v, ω)** | 第三方 → 官方 |
 | M10P 的 ROS 2 driver | LeiShen 官方 `Lslidar_ROS2_driver` 分支 `LS-S1_V1.0` 支援 M10P，README 寫有在 Ubuntu 24.04 + Jazzy 測過 | 官方 |
 | M10P 在 Jetson 上 build | `lslidar_msgs` 成功；`lslidar_driver` 在 CMake 階段失敗：缺 Boost（本次 build 的實際結果）。依 `CMakeLists.txt` 推測之後還會缺 PCL、pcl_conversions、libpcap。沒有裝，列在第 5 節 | 官方程式的 build 結果 + 推測 |
 

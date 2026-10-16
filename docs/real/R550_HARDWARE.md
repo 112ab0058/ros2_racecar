@@ -20,7 +20,8 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 | 廠商 | 輪趣科技（東莞）有限公司（WHEELTEC） | 實物（標籤） |
 | 出廠日期 | 2026-08-25 | 實物（標籤） |
 | 產品資料 | 標籤上有「掃描二維碼……產品資料」的 QR code | 實物（標籤） |
-| 尺寸、軸距、輪距、輪徑、最大轉向角 | UNKNOWN。廠商頁面的 271 × 189 × 151 mm 是 R550 一般版，**mini 版不一定相同** | 待量測 / 待產品資料 |
+| 軸距、輪距 | **0.144 m、0.162 m**（廠商換算程式的註解「mini阿克曼」；**還沒量測**） | 廠商程式註解 |
+| 尺寸、輪徑、最大轉向角 | UNKNOWN。廠商頁面的 271 × 189 × 151 mm 是 R550 一般版，**mini 版不一定相同** | 待量測 / 待產品資料 |
 | 馬達、encoder | UNKNOWN。廠商頁面寫 MG513 + 500 線 GMR encoder（一般版） | 待確認 |
 
 ## 控制板
@@ -33,7 +34,7 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 | 板上元件 | OLED 螢幕；藍牙序列模組（標示 LEVEL 3.3V、Power 3.6–6V、腳位 STATE / RXD / TXD / GND / VCC / PWRC）；兩個藍色按鈕（USER、RESET）；三個 USB-C 孔；藍色螺絲端子（接電池紅黑線）；四組馬達接頭（MotorA–D） | 實物 |
 | **馬達開關** | 板上有 **Motor OFF / ON** 撥動開關。**OFF 時馬達不會轉**，第一次通電、只讀測試都要放 OFF | 實物（絲印） |
 | 三個 USB-C | 左：給樹莓派 / Jetson Nano 的 **5 V 供電**；中：**串口 3，和 ROS 主機通訊**；右：串口 1，燒錄程式 | 廠商主板詳解圖 |
-| 和主機的連線 | 串口 3（中間的 USB-C）；baud、協定 UNVERIFIED，見 [R550_COMPATIBILITY.md](R550_COMPATIBILITY.md) | 廠商資料 + 待確認 |
+| 和主機的連線 | 串口 3（中間的 USB-C），**115200 baud**；指令 11 bytes、回授 24 bytes（20 Hz），見 [R550_STUDY_NOTES.md](../research/R550_STUDY_NOTES.md) 第 7 節。USB 轉串口晶片 CH9102 或 CP2102（哪一顆待 `lsusb` 確認） | 廠商協定文件；實車未錄封包 |
 | 電源輸入 | ≤ 17 V、不可反接，建議 12 V；馬達 4 路共 ≤ 5 A | C30D 手冊 |
 
 ## 感測器
@@ -63,9 +64,9 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 
 ## 待確認（到貨第一週）
 
-1. 掃 QR code 下載產品資料：原始碼、STM32 通訊協定、C30D 說明、ROS 版本
-2. 軸距、輪距、輪徑、最大轉向角（量測或產品資料）
+1. ~~掃 QR code 下載產品資料~~（2026-10-16 已下載；STM32 原始碼、Mini 硬體說明、ROS 2 教學還缺）
+2. 量測軸距、輪距（廠商註解 0.144 / 0.162 m）、輪徑、最大轉向角
 3. 電池容量；Orin 怎麼從車上取電
-4. STM32 的 USB 序列 baud 與協定（先只「聽」STM32 送來的封包驗證）
+4. ~~STM32 的 baud 與協定~~（官方文件已找到，2026-10-16）；還要只「聽」STM32 送來的封包，和文件比對
 5. N10P 的資料走 USB 序列還是網路；用哪個 driver
 6. C70 的 FOV、幀率、可用解析度（`v4l2-ctl --list-formats-ext`）
