@@ -13,7 +13,7 @@
 | 硬體盤點 | 大致完成。軸距約 15 cm、輪徑約 7 cm、光達中心離地約 15 cm；最大轉向角、輪距、外形尺寸 UNKNOWN | [real/R550_HARDWARE.md](real/R550_HARDWARE.md) |
 | 廠商資料研讀 | 協定、運動學、開機流程、接線完成；STM32 原始碼、Mini 硬體說明還沒下載到 | [research/R550_STUDY_NOTES.md](research/R550_STUDY_NOTES.md) |
 | STM32 通訊（只讀） | **2026-10-16 實車通過**：CH9102、115200、約 20 Hz、壞幀 0 | [real/RUNBOOK.md](real/RUNBOOK.md) |
-| ROS node（只讀）`/odom`、`/imu/data`、`/battery` | 程式完成、pytest 通過；**還沒在實車上啟動** | [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) |
+| ROS node（只讀）`/odom`、`/imu/data`、`/battery` | **2026-10-16 實車通過**：20 Hz；里程計比例校正 0.814（架空手轉測的，暫定） | [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) |
 | 指令端（會讓馬達轉） | 未開始；要有 `/cmd_vel` 逾時停車、限速、回授遺失停車、低電壓拒絕，先架空驗證 | |
 | 光達 N10P、相機 C70 | 未開始 | |
 | Orin 裝上車、電池供電 | 未解決。廠商作法是電池（10–12.6 V）直接接主控 | [real/R550_HARDWARE.md](real/R550_HARDWARE.md) |

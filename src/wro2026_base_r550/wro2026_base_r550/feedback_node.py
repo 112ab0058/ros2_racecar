@@ -42,6 +42,9 @@ PARAMETERS = [
     ('battery_frame_id', 'base_link', 'frame of /battery'),
     ('publish_odom_tf', True, 'broadcast TF odom -> base_link (false when an EKF owns it)'),
     ('odom_max_gap', 0.5, 'do not integrate across a gap between frames longer than this (s)'),
+    # 2026-10-16: STM32 reports 26.4 cm per wheel turn, tyre circumference 21.5 cm
+    ('vx_scale', 0.814, 'multiply STM32 vx by this (wheels-in-the-air test, provisional)'),
+    ('wz_scale', 0.814, 'multiply STM32 wz by this (assumed same as vx; NOT verified)'),
     ('feedback_timeout', 0.5, '/diagnostics ERROR when no valid frame for this long (s)'),
     ('expected_rate', 20.0, 'expected frame rate (Hz); WARN below half of it'),
     ('low_battery_voltage', 10.8, 'WARN below this voltage (vendor: charge below 10.8 V)'),
@@ -133,20 +136,22 @@ class R550Feedback(Node):
 
     def _on_frame(self, now, fb):
         with self.lock:
-            self.odom.update(now, fb.vx, fb.wz)
+            vx = fb.vx * self.p['vx_scale']
+            wz = fb.wz * self.p['wz_scale']
+            self.odom.update(now, vx, wz)
             x, y, yaw = self.odom.x, self.odom.y, self.odom.yaw
             self.rate.tick(now)
             self.last_frame_time = now
             self.last_fb = fb
         stamp = self.get_clock().now().to_msg()
         try:
-            self._publish_odom(stamp, x, y, yaw, fb)
+            self._publish_odom(stamp, x, y, yaw, vx, wz)
             self._publish_imu(stamp, fb)
             self._publish_battery(stamp, fb)
         except Exception:  # context shut down while the thread was publishing
             pass
 
-    def _publish_odom(self, stamp, x, y, yaw, fb):
+    def _publish_odom(self, stamp, x, y, yaw, vx, wz):
         qx, qy, qz, qw = quaternion_from_yaw(yaw)
         o = Odometry()
         o.header.stamp = stamp
@@ -156,9 +161,8 @@ class R550Feedback(Node):
         o.pose.pose.position.y = y
         o.pose.pose.orientation.x, o.pose.pose.orientation.y = qx, qy
         o.pose.pose.orientation.z, o.pose.pose.orientation.w = qz, qw
-        o.twist.twist.linear.x = fb.vx
-        o.twist.twist.linear.y = fb.vy
-        o.twist.twist.angular.z = fb.wz
+        o.twist.twist.linear.x = vx
+        o.twist.twist.angular.z = wz
         pc = [0.0] * 36
         pc[0] = pc[7] = self.p['odom_pose_covariance_xy']
         pc[14] = pc[21] = pc[28] = UNUSED_COVARIANCE
