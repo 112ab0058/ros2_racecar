@@ -43,6 +43,7 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 |---|---|---|
 | 光達 | **LSLIDAR N10P**（外殼印 LSLIDAR N10P、WHEELTEC）。**不是 M10P**，之前的調查要更正 | 實物 |
 | N10P 規格 | ToF；量程 0.1–25 m（白色目標），黑色目標 11 m；掃描 6–12 Hz；5400 點/秒；角解析度 0.4–0.8°；介面 Ethernet + UART 460800 bps；5 V 360 mA | [廠商頁](https://openelab.com/products/wheeltec-leishen-n10p-lidar-ethernet) |
+| 光達安裝高度 | **地面到光達中心約 15 cm**（2026-10-16 Ray 量）。2D 光達只掃這個高度的水平面 | 實物量測 |
 | 光達接線 | 一條 USB-A 線標示「激光雷達供電線」（只供電）；資料線走哪裡 UNKNOWN | 實物 |
 | 相機 | **WHEELTEC C70**：RGB、global shutter CMOS、720P、UVC（免驅動）、ZH1.5-4PIN 轉 USB 2.0；FOV、幀率未列 | 實物 + [廠商頁](https://openelab.com/products/wheeltec-c70-wide-fov-camera) |
 | IMU | ICM20948（控制板上）。開機前 10 秒取樣零點，期間不能動車 | 廠商開發手冊 |
