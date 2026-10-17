@@ -25,6 +25,25 @@ def test_encode_decode_roundtrip():
     assert pkt.points[15][1] == pytest.approx(1.15)
 
 
+# Recorded from our N10P on 2026-10-17 (~/n10p_first.bin): wall at ~2.6-2.8 m,
+# two points with distance 0 (no return).
+REAL_PACKET = bytes.fromhex(
+    'a5 5a 6c 10 46 26 f8 0a 41 4d 00 00 00 0a 43 51 00 00 00 0a 4b 45 00 00 00 0a 4e 44'
+    ' 00 00 00 0a 5e 40 00 00 00 0a 63 43 00 00 00 0a 76 44 00 00 00 0b 16 5d 00 00 00'
+    ' 0b 1b 73 00 00 00 0b 21 41 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0a e7 39'
+    ' 00 00 00 0a e6 18 00 00 00 0a cf 43 00 00 00 0a d4 20 00 00 00 00 02 2a f3 56')
+
+
+def test_real_packet_from_our_lidar():
+    pkt = decode_packet(REAL_PACKET)
+    assert REAL_PACKET[2] == PACKET_SIZE and REAL_PACKET[3] == 16
+    assert (pkt.start_deg, pkt.end_deg) == (99.76, 109.95)
+    assert len(pkt.points) == 14                       # the two distance-0 slots are dropped
+    assert pkt.points[0][1:] == (2.625, 0x4D)          # 2625 mm, intensity 77
+    assert pkt.points[-1][1] == pytest.approx(2.772)
+    assert pkt.points[-1][0] == pytest.approx(109.95)  # slot 15 at the end angle
+
+
 def test_no_return_points_keep_their_slot_angle():
     d = list(FULL)
     d[1] = d[2] = None

@@ -23,7 +23,8 @@ PARAMETERS = [
     ('port', '', 'serial device of the N10P adapter; required'),
     ('baud', BAUD_RATE, 'serial baud rate (official driver: 460800 for N10_P)'),
     ('frame_id', 'laser_link', 'frame of /scan'),
-    ('bins', 720, 'beams per scan (720 = 0.5 deg); must stay constant for slam_toolbox'),
+    ('bins', 480, 'beams per scan (480 = 0.75 deg, just above the ~0.68 deg point spacing at '
+                  '10 Hz); must stay constant for slam_toolbox'),
     ('range_min', 0.1, 'm; closer returns are dropped (N10P minimum range ~0.1 m)'),
     ('range_max', 25.0, 'm; farther returns are dropped'),
     ('angle_offset_deg', 0.0, 'added to every angle (lidar zero vs laser_link x axis)'),

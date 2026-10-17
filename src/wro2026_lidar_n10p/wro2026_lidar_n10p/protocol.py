@@ -9,14 +9,21 @@ recorded from our lidar (UNVERIFIED on hardware).
 Serial: 460800 baud, 8N1. The N10P streams by itself after power-on; the
 official driver sends nothing to an N10P at start-up, and neither do we.
 
+Checked on our N10P (2026-10-17, 3324 packets recorded, 0 bad): 333
+packets/s, 10 revolutions/s, about 10.2 deg per packet. Byte 2 is always
+0x6C (108, the packet length) and byte 3 is 16 (points per packet).
+
 Packet, 108 bytes:
   [0:2]     0xA5 0x5A header
-  [2:5]     not used by the official driver
+  [2]       0x6C = 108 (packet length; seen on our lidar)
+  [3]       16 (points per packet; seen on our lidar)
+  [4]       varies 64-70 on our lidar, meaning UNKNOWN (not used)
   [5:7]     start angle, uint16 big-endian, degrees x 100
   [7:103]   16 points x 6 bytes: distance (uint16 BE, mm), intensity (uint8),
-            then a second echo in the same layout. 0xFFFF = no return.
-            We use the first echo only.
-  [103:105] not used by the official driver
+            then a second echo in the same layout. 0xFFFF = no return,
+            and our lidar also sends distance 0 for no return (18 % of
+            points in the 2026-10-17 recording). First echo only.
+  [103:105] small counter (0-4 on our lidar), meaning UNKNOWN (not used)
   [105:107] end angle, uint16 big-endian, degrees x 100
   [107]     checksum = sum of bytes 0..106, low 8 bits
 
@@ -39,7 +46,7 @@ POINT_STRIDE = 6
 DATA_START = 7
 START_ANGLE_AT = 5
 END_ANGLE_AT = 105
-NO_RETURN = 0xFFFF
+NO_RETURN = 0xFFFF  # distance 0 is also treated as no return
 BAUD_RATE = 460800
 
 Packet = namedtuple('Packet', 'start_deg end_deg points')  # points: [(deg, range_m, intensity)]
@@ -77,7 +84,7 @@ def decode_packet(packet):
     for n in range(POINTS_PER_PACKET):
         i = DATA_START + n * POINT_STRIDE
         dist = _u16(packet, i)
-        if dist == NO_RETURN:
+        if dist in (NO_RETURN, 0):
             continue
         deg = (start + step * n) % 360.0
         points.append((deg, dist / 1000.0, packet[i + 2]))

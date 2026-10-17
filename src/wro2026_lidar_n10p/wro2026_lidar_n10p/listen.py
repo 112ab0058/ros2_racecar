@@ -16,7 +16,7 @@ import time
 from .protocol import BAUD_RATE, PacketStream, ScanAssembler
 
 
-def listen(read, seconds, out=print, raw_file=None, clock=time.monotonic, bins=720):
+def listen(read, seconds, out=print, raw_file=None, clock=time.monotonic, bins=480):
     """Read with read() for `seconds`; return (stream, assembler)."""
     stream = PacketStream()
     scans = ScanAssembler(bins=bins)
