@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<!--
+  WHEELTEC R550 mini akm: where the sensors are on the car (TF tree).
+
+  base_link = centre of the REAR axle (Ackermann convention: the point that
+  moves without sliding sideways). x forward, y left, z up (REP-103).
+  /odom from wro2026_base_r550 publishes odom -> base_link; this file adds
+  everything below base_link. Measured values are noted; UNKNOWN = not measured.
+
+      odom -> base_link -+-> base_footprint   (same point, on the ground)
+                         +-> laser_link       (N10P rotation centre)
+                         +-> imu_link         (ICM20948 on the C30D)
+-->
+<robot name="r550_mini_akm">
+
+  <link name="base_link"/>
+
+  <!-- Rear axle height = wheel radius: diameter 7 cm measured 2026-10-16. -->
+  <link name="base_footprint"/>
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_footprint"/>
+    <origin xyz="0 0 -0.035" rpy="0 0 0"/>
+  </joint>
+
+  <!--
+    N10P, 2026-10-17 tape measure:
+      x 0.13  centre about 13 cm in front of the rear axle (wheelbase ~15 cm)
+      y 0.0   lateral offset not measured; assumed on the centre line
+      z 0.115 scan plane 15 cm above the ground - 3.5 cm axle height
+    rpy 0: the driver already turns lidar 0 deg (= car front) into ROS +x.
+  -->
+  <link name="laser_link"/>
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_link"/>
+    <origin xyz="0.13 0 0.115" rpy="0 0 0"/>
+  </joint>
+
+  <!--
+    ICM20948 on the C30D: position UNKNOWN (placeholder 0 0 0). For a 2D car
+    only the orientation matters for the gyro; axes ASSUMED aligned with the
+    car (z up). NOT verified: compare gyro z with /odom wz in a turn.
+  -->
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+</robot>

@@ -1,0 +1,13 @@
+# N10P scan node parameters (node name: n10p_scan). READ ONLY node.
+# Defaults in scan_node.py PARAMETERS must stay identical to this file.
+n10p_scan:
+  ros__parameters:
+    port: ''                     # REQUIRED: ls -l /dev/serial/by-id/
+    baud: 460800                 # official LSLIDAR driver, N10_P
+    frame_id: laser_link
+    bins: 480                    # 0.75 deg; at 10 Hz the lidar gives ~533 points/rev (~0.68 deg), so
+                                 # 720 bins left ~40 % empty (2026-10-17). Keep constant (slam_toolbox)
+    range_min: 0.1               # m
+    range_max: 25.0              # m (N10P spec: 25 m on white targets)
+    angle_offset_deg: 0.0        # lidar zero vs laser_link x axis: check with /scan
+    scan_timeout: 1.0            # s
