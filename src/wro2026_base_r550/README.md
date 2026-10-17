@@ -2,9 +2,29 @@
 
 > **協定來源：WHEELTEC 官方文件**「串口通信控制与反馈」V1.0（2024-06-04）與「阿克曼转向角度指令计算」V1.0（2021-10-26），在 R550 資料包的 `1.WHEELTEC ROS机器人通用资料/2.运动底盘的控制与运动学解析/5.串口控制讲解/`。文件裡印出的範例封包都寫成測試，全部通過。**還沒在實車上錄封包驗證**。（最早是依兩份第三方 driver 寫的：[robotverseny/drivers](https://github.com/robotverseny/drivers) `26a63c5`、[shupx/akm_driver](https://github.com/shupx/akm_driver) `075e0f1`。）
 
-WHEELTEC R550 mini akm 的底盤 package。目前有：協定 module、**只讀**的回授 node（發 `/odom`、`/imu/data`、`/battery`）、命令列的 `listen` 工具。
+WHEELTEC R550 mini akm 的底盤 package。有：協定 module、**只讀**的回授 node `feedback_node`（發 `/odom`、`/imu/data`、`/battery`）、命令列的 `listen` 工具，以及**會讓馬達轉**的 `base_node`（2026-10-17 寫好，**還沒架空驗證**）。
 
-**這個 package 目前不會送任何東西給 STM32**：沒有訂閱 `/cmd_vel`、程式裡沒有寫入序列埠（有測試檢查）。會讓馬達轉的指令端之後再寫，必須有 `/cmd_vel` 逾時停車、限速、回授遺失停車、低電壓拒絕。
+- `feedback_node`、`listen`：只讀，不訂閱 `/cmd_vel`、不寫序列埠（有測試檢查）。`sensors.launch.py` 用的是這個。
+- `base_node`：回授 + 指令端。`enable_commands` 預設 **false**（等於只讀）；設成 true 才會把 `/cmd_vel` 送到 STM32。兩個 node 開同一個串口，**不要同時跑**。
+
+## 指令端的安全規則（`command.py` 的 `CommandGate`，每一條都有測試）
+
+每 1/20 秒決定一次要送什麼，第一個成立的規則勝出：
+
+| 規則 | 結果 |
+|---|---|
+| `enable_commands` 是 false | 不訂閱、不送任何東西 |
+| 啟動後超過 `max_run_time` 秒（> 0 時） | 送 0，直到重開（測試時用來限時） |
+| 超過 `feedback_timeout`（0.5 s）沒收到 STM32 回授 | 送 0 |
+| 濾波後的電壓低於 `min_battery_voltage`（10.5 V） | 送 0，回升 0.2 V 才恢復（瞬間掉壓不會觸發） |
+| 還沒收過 `/cmd_vel`，或最新一筆超過 `cmd_timeout`（0.3 s） | 送 0 |
+| 正常 | 限速 `max_vx` 0.3 / 倒車 0.15 m/s、`max_wz` 1.0 rad/s；vx 加速度限制 0.5 m/s²；保持指令的曲率；\|vx\| < 0.02 m/s 時 wz = 0（阿克曼不能原地轉） |
+
+- 安全停車是**立刻送 0**，不經過加速度限制。
+- 單位換算：STM32 以為輪子一圈 26.4 cm，實際 21.5 cm（`vx_scale` 0.814）。`/odom` 乘 0.814，指令就除以 0.814，所以 `/cmd_vel` 0.1 m/s 實際就是 0.1 m/s。
+- 按 Ctrl+C 停 node 時，先送 5 個停車封包再關串口。
+- 額外發 `cmd_vel_out`（實際送出的速度，實際單位）和 `/diagnostics` 的 `r550_base: command`（目前的狀態）。
+- **還不知道**：node 被強制結束（沒送停車封包）時，STM32 會不會自己停。架空測試第 10 步會測；在知道之前，硬體停車就是 **Motor 開關**。
 
 ## 內容
 
@@ -13,6 +33,10 @@ WHEELTEC R550 mini akm 的底盤 package。目前有：協定 module、**只讀*
 | `wro2026_base_r550/protocol.py` | 指令封包編碼（Twist 模式、Ackermann 模式）、回授封包解碼、XOR checksum、單位換算、從序列位元組流重組封包 |
 | `wro2026_base_r550/feedback.py` | 回授 → 里程計積分（中點法，斷線超過 0.5 s 不積分）、幀率統計 |
 | `wro2026_base_r550/feedback_node.py` | ROS 2 node `r550_feedback`（只讀）：`/odom` + TF `odom → base_link`、`/imu/data`、`/battery`、`/diagnostics` |
+| `wro2026_base_r550/command.py` | 指令端的安全規則 `CommandGate`（純邏輯，沒有 ROS、沒有串口） |
+| `wro2026_base_r550/base_node.py` | ROS 2 node `r550_base`：回授 + `/cmd_vel` → STM32（**會讓馬達轉**） |
+| `config/r550_base.yaml`、`launch/base.launch.py` | 指令端參數（`enable_commands` 預設 false）和 launch |
+| `test/test_command.py` | 每一條安全規則、參數和 yaml 一致、預設不啟用 |
 | `wro2026_base_r550/listen.py` | 命令列工具（不需要 ROS）：每秒印一行解碼結果，可存原始位元組 |
 | `config/r550_feedback.yaml`、`launch/feedback.launch.py` | node 的參數和 launch |
 | `test/test_feedback.py` | 里程計、listen、**只讀保證**（不寫序列埠、不訂閱、不用指令編碼）、參數和 yaml 一致 |

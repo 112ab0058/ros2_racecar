@@ -99,8 +99,10 @@ class SerialReader:
 class R550Feedback(Node):
     """ROS wiring around SerialReader / OdomIntegrator."""
 
-    def __init__(self):
-        super().__init__('r550_feedback')
+    mode_text = 'READ ONLY: nothing is sent to the STM32, no /cmd_vel'
+
+    def __init__(self, node_name='r550_feedback'):
+        super().__init__(node_name)
         self.p = {name: self.declare_parameter(name, default).value
                   for name, default, _ in PARAMETERS}
         if not self.p['port']:
@@ -122,7 +124,7 @@ class R550Feedback(Node):
         self.reader = SerialReader(self.p['port'], self.p['baud'], self._on_frame,
                                    self._on_read_error)
         self.get_logger().info(f"listening on {self.p['port']} @ {self.p['baud']} "
-                               '(READ ONLY: nothing is sent to the STM32, no /cmd_vel)')
+                               f'({self.mode_text})')
         self.create_timer(self.p['diagnostics_period'], self._publish_diagnostics)
         self.reader.start()
 
@@ -243,7 +245,7 @@ class R550Feedback(Node):
         status.hardware_id = 'wheeltec_r550_c30d'
         status.message = '; '.join(msgs) or 'ok'
         values = {
-            'mode': 'READ ONLY (no commands sent)',
+            'mode': self.mode_text,
             'port': self.p['port'],
             'frame_rate_hz': f'{rate:.1f}',
             'feedback_age_s': 'none' if age is None else f'{age:.2f}',

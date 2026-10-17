@@ -126,6 +126,43 @@ bash ~/racecar_ws/tools/orin_check.sh --bag 20   # 另外錄 20 秒 rosbag（錄
 
 Windows 的 `tools/real/deploy.sh` 是 `deploy.cmd` 的 bash 版，給 Git Bash、WSL、Claude Code 用。
 
+## 6b. 架空測試指令端（會讓馬達轉，先跟 Claude 確認）
+
+**準備**：
+- 車子放在盒子上，**四個輪子都離地**，旁邊沒有東西會碰到輪子。
+- 只需要 STM32 那條 USB；`sensors.launch.py` **不能**同時在跑（兩個程式會搶同一個串口）。
+- 手放在紅色 Motor 開關旁邊。
+
+**Orin**（自己在 ssh 終端機跑，它會一步一步問你）：
+
+```bash
+bash ~/racecar_ws/tools/orin_air_test.sh
+```
+
+| 步驟 | 做什麼 | 應該看到 |
+|---|---|---|
+| 1 | Motor **OFF**，送 0.05 m/s | 輪子不動（確認指令有送出，但馬達沒電） |
+| 2 | Motor ON，前進 0.05 m/s 3 秒後停止發布 | 慢慢往前轉，約 0.3 秒內停（逾時停車） |
+| 3 | 倒車 −0.05 m/s | 往後轉，然後停 |
+| 4 | 要求 1.0 m/s | 只比步驟 2 快一點（被限在 0.1 m/s） |
+| 5 | 0.05 m/s + wz +0.1（轉彎半徑 0.5 m，比最小轉彎半徑大） | 前輪往**左**轉（確認正負號） |
+| 6 | 只給 wz、vx = 0 | 完全不動（阿克曼不原地轉） |
+| 7 | 轉動中停掉 node | 立刻停（停車封包） |
+| 8 | `max_run_time` 5 秒 | 5 秒後停，即使指令還在送 |
+| 9 | 電壓下限設 13 V | 不動（低電壓拒絕） |
+| 10 | 轉動中 `kill -9` node | **記錄**：STM32 會不會自己停（不會就關 Motor 開關） |
+
+- **限制**：最高 0.1 m/s、每步 2–8 秒、逾時 0.3 秒。
+- **停止**：`Ctrl+C`（node 會送停車封包），或 Motor 開關 OFF。
+- **結果**：`~/r550_airtest/<時間>/report.txt`，還有每一步的 `cmd_vel_out`、`/odom` CSV。
+
+只開 node、自己發指令：
+
+```bash
+ros2 launch wro2026_base_r550 base.launch.py enable_commands:=true max_vx:=0.1 max_run_time:=120
+ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.05}}"   # Ctrl+C 停止發布 → 0.3 s 後停車
+```
+
 ## 7. 充電
 
 - 12.6 V 充電器接車身「充电口」；紅燈充電中、綠燈充滿。

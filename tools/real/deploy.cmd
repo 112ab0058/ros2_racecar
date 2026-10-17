@@ -18,7 +18,7 @@ echo [1/2] git pull
 git pull --ff-only || goto :fail
 
 echo [2/2] send to %ORIN% and build (enter the Orin password if asked)
-tar --exclude=__pycache__ -cf - tools/real/orin_build.sh tools/real/orin_check.sh src/wro2026_base_r550 src/wro2026_lidar_n10p src/wro2026_description src/wro2026_bringup | ssh %ORIN% "rm -rf ~/racecar_ws/.deploy && mkdir -p ~/racecar_ws/.deploy && tar -xf - -C ~/racecar_ws/.deploy && bash ~/racecar_ws/.deploy/tools/real/orin_build.sh"
+tar --exclude=__pycache__ -cf - tools/real src/wro2026_base_r550 src/wro2026_lidar_n10p src/wro2026_description src/wro2026_bringup | ssh %ORIN% "rm -rf ~/racecar_ws/.deploy && mkdir -p ~/racecar_ws/.deploy && tar -xf - -C ~/racecar_ws/.deploy && bash ~/racecar_ws/.deploy/tools/real/orin_build.sh"
 if errorlevel 1 goto :fail
 
 echo.
