@@ -110,6 +110,22 @@ ros2 launch wro2026_bringup sensors.launch.py
 - TF 檢查：`ros2 run tf2_ros tf2_echo base_link laser_link` 應該是 `[0.130, 0.000, 0.115]`。
 - Foxglove：Windows 瀏覽器開 app.foxglove.dev，連 `ws://192.168.0.15:8765`。bridge 是唯讀的，電腦端不能發 topic。
 
+### 自動檢查（不用開一堆終端機）
+
+**Orin**：
+
+```bash
+bash ~/racecar_ws/tools/orin_check.sh            # 約 1 分鐘
+bash ~/racecar_ws/tools/orin_check.sh --bag 20   # 另外錄 20 秒 rosbag（錄的時候用手推車）
+```
+
+- 沒有在跑 `sensors.launch.py` 的話，腳本會自己開（不含 Foxglove），檢查完再關掉。
+- 檢查項目：串口、node、topic 頻率、電池、TF、一筆 `/scan` 的有效點數。
+- 結果存在 `~/r550_check/<時間>/`：`report.txt`、`launch.log`、`scan_once.yaml`，加 `--bag` 時還有 `bag/`。
+- 全部只讀，不會讓馬達轉，也不用 sudo。
+
+Windows 的 `tools/real/deploy.sh` 是 `deploy.cmd` 的 bash 版，給 Git Bash、WSL、Claude Code 用。
+
 ## 7. 充電
 
 - 12.6 V 充電器接車身「充电口」；紅燈充電中、綠燈充滿。

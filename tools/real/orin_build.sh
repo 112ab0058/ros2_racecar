@@ -21,6 +21,8 @@ for p in "${PKGS[@]}"; do
     rm -rf "$WS/src/$p" "$WS/build/$p" "$WS/install/$p"
     mv "$STAGE/src/$p" "$WS/src/"
 done
+mkdir -p "$WS/tools"
+cp "$STAGE"/tools/real/orin_*.sh "$WS/tools/"     # e.g. bash ~/racecar_ws/tools/orin_check.sh
 rm -rf "$STAGE"
 
 source /opt/ros/jazzy/setup.bash
