@@ -21,6 +21,7 @@
 | [real/ORIN_BACKUP.md](real/ORIN_BACKUP.md) | Orin 狀態備份與 SD 卡映像的做法、還原步驟 |
 | [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) | R550 底盤 package：協定、只讀 node、`listen` 工具 |
 | [../src/wro2026_lidar_n10p/README.md](../src/wro2026_lidar_n10p/README.md) | N10P 光達 driver（純 Python、只讀）：協定、`/scan` node、`listen` 工具 |
+| [../src/wro2026_description/README.md](../src/wro2026_description/README.md) | URDF / TF：光達、IMU 裝在車上的位置 |
 
 ## 模擬（`sim/`，已結束，只當參考）
 

@@ -2,7 +2,7 @@
 
 LSLIDAR N10P 光達的 ROS 2 driver（純 Python），**只讀**：不會送任何東西給光達（N10P 通電後自己就會一直送資料）。
 
-> **協定來源**：LSLIDAR 官方 ROS 2 driver，分支 `M10P/N10P`（[Lslidar_ROS2_driver](https://github.com/Lslidar/Lslidar_ROS2_driver) commit `8bb760c`，2023-05-29）的 `lidar_name == "N10_P"` 部分。**還沒在我們的光達上驗證**（2026-10-16 寫好，等 USB 延長線）。
+> **協定來源**：LSLIDAR 官方 ROS 2 driver，分支 `M10P/N10P`（[Lslidar_ROS2_driver](https://github.com/Lslidar/Lslidar_ROS2_driver) commit `8bb760c`，2023-05-29）的 `lidar_name == "N10_P"` 部分。2026-10-17 在我們的光達上驗證通過。
 
 為什麼不用官方 driver：官方的是 C++，只在 Foxy / Humble 測過，要另外安裝 Boost、PCL、libpcap、pcl_conversions（約 1.4 GB）。我們只需要 `/scan`，所以照它的協定寫成 Python，和 `wro2026_base_r550` 同一套做法。
 

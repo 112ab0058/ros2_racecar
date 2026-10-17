@@ -16,6 +16,7 @@
 | ROS node（只讀）`/odom`、`/imu/data`、`/battery` | **2026-10-16 實車通過**：20 Hz；里程計比例校正 0.814（架空手轉測的，暫定） | [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) |
 | 指令端（會讓馬達轉） | 未開始；要有 `/cmd_vel` 逾時停車、限速、回授遺失停車、低電壓拒絕，先架空驗證 | |
 | 光達 N10P | Python driver `wro2026_lidar_n10p`（協定照官方 driver）。**2026-10-17 實車只聽通過**：333 包/秒、每秒 10 圈、壞封包 0。光達 0° 正對車頭、左右方向正確。**`/scan` 10 Hz 實車通過、Foxglove 即時看得到**（Orin 上還是 720 格舊版，要重新部署 480 格） | [../src/wro2026_lidar_n10p/README.md](../src/wro2026_lidar_n10p/README.md) |
+| URDF / TF | `wro2026_description` 寫好（光達在後軸前 13 cm、離地 15 cm；左右偏移、IMU 位置 UNKNOWN），**還沒在實車啟動** | [../src/wro2026_description/README.md](../src/wro2026_description/README.md) |
 | 相機 C70 | 未開始 | |
 | Orin 裝上車、電池供電 | 未解決。廠商作法是電池（10–12.6 V）直接接主控 | [real/R550_HARDWARE.md](real/R550_HARDWARE.md) |
 | 套件 robot-localization、slam-toolbox、foxglove-bridge | **2026-10-17 已安裝**（新增 204、移除 0）。Nav2 還沒裝：會換掉 OpenCV，要另外處理 | [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md) 第 7 節 |
@@ -23,7 +24,7 @@
 
 ## 下一步
 
-1. 部署 480 格的光達 driver；量光達、IMU 相對後軸的位置，做 URDF / TF（`base_link → laser_link`、`imu_link`）
+1. 部署 480 格的光達 driver 和 `wro2026_description`，在 Foxglove 把 `/odom`、`/scan` 一起看
 2. 在地上直線推 / 開一段距離，重新校正里程計比例（目前 0.814 是架空測的）
 3. Orin 用機殼的調節支架裝上車（底部高過光達掃描面）、電池供電（需要電池接頭的照片）
 4. 場地的牆加高到約 25 cm（光達掃描面在 15 cm）

@@ -23,9 +23,11 @@ Claude 的工作區 ──push──▶ GitHub（正本） ──pull──▶ W
 cd $env:USERPROFILE\ros2_racecar
 git status                       # 確認沒有沒存的修改
 git pull
-ssh user2@192.168.0.15 "rm -rf ~/racecar_ws/src/wro2026_base_r550"
-scp -r src\wro2026_base_r550 user2@192.168.0.15:racecar_ws/src/
+ssh user2@192.168.0.15 "cd ~/racecar_ws/src && rm -rf wro2026_base_r550 wro2026_lidar_n10p wro2026_description"
+scp -r src\wro2026_base_r550 src\wro2026_lidar_n10p src\wro2026_description user2@192.168.0.15:racecar_ws/src/
 ```
+
+實車用的 package 是這三個；`wro2026_sim` 不要複製到 Orin。
 
 先刪再複製：直接覆蓋時，舊版有、新版沒有的檔案會留下來，新舊混在一起。
 
@@ -34,10 +36,11 @@ scp -r src\wro2026_base_r550 user2@192.168.0.15:racecar_ws/src/
 ```bash
 cd ~/racecar_ws
 source /opt/ros/jazzy/setup.bash
-rm -rf build/wro2026_base_r550 install/wro2026_base_r550   # 清掉舊的 build 產物
-colcon build --packages-select wro2026_base_r550
+PKGS="wro2026_base_r550 wro2026_lidar_n10p wro2026_description"
+for p in $PKGS; do rm -rf build/$p install/$p; done        # 清掉舊的 build 產物
+colcon build --packages-select $PKGS
 source install/setup.bash
-colcon test --packages-select wro2026_base_r550 && colcon test-result --verbose   # 不需要硬體
+colcon test --packages-select $PKGS && colcon test-result --verbose   # 不需要硬體
 ```
 
 沒清 `build/`、`install/` 的話，`ros2 run` 可能出現 `StopIteration`（舊版的登記資料殘留，2026-10-16 遇過）。
@@ -60,8 +63,9 @@ colcon test --packages-select wro2026_base_r550 && colcon test-result --verbose 
 | 項目 | 值 |
 |---|---|
 | USB 轉串口晶片 | CH9102（`lsusb`：`1a86:55d4 QinHeng`），Linux 內建 CDC-ACM driver |
-| 裝置 | `/dev/ttyACM0`（插拔順序可能改變號碼） |
-| **固定名稱（用這個）** | `/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0002-if00` |
+| 裝置 | `/dev/ttyACM*`（插拔順序會改變號碼，不要用） |
+| **STM32 固定名稱** | `/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0002-if00` |
+| **光達固定名稱** | `/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0001-if00`（同一種晶片，只能靠序號分） |
 | 權限 | user2 在 `dialout` 群組，可以直接讀 |
 
 ## 5. 只聽 STM32（不需要 ROS node）
@@ -94,6 +98,20 @@ ros2 topic echo /diagnostics --once
 ```
 
 停止：在跑 launch 的終端機按 `Ctrl+C`。
+
+### 光達、TF、Foxglove
+
+每一行各開一個終端機（都要 `source`）：
+
+```bash
+ros2 launch wro2026_lidar_n10p scan.launch.py port:=/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0001-if00
+ros2 launch wro2026_description description.launch.py
+ros2 run foxglove_bridge foxglove_bridge --ros-args -p port:=8765 -p "capabilities:=['connectionGraph','assets']" -p "client_topic_whitelist:=['^$']"
+```
+
+- 光達串口**一次只能給一個程式**：`listen` 和 node 同時開會出現 `multiple access on port?`。用 `pgrep -af n10p` 找、`pkill -f wro2026_lidar_n10p` 關。
+- TF 檢查：`ros2 run tf2_ros tf2_echo base_link laser_link` 應該是 `[0.130, 0.000, 0.115]`。
+- Windows 瀏覽器開 app.foxglove.dev，連 `ws://192.168.0.15:8765`。bridge 是唯讀的（電腦端不能發 topic）。
 
 ## 7. 充電
 
