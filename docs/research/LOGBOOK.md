@@ -16,6 +16,25 @@
 
 ---
 
+## 2026-10-17（下午）　安裝套件；`/scan` 在 Foxglove 即時顯示
+
+- **目的**：把光達接進 ROS，並在 Windows 上即時看到 `/scan`（Orin 沒有螢幕、WSL 看不到 Orin 的 topic）。
+- **做法**：
+  - 先用 `apt -s`（模擬）確認，再由 Ray 自己 `sudo apt install` 三個套件：`ros-jazzy-foxglove-bridge`、`ros-jazzy-slam-toolbox`、`ros-jazzy-robot-localization`
+  - Orin 啟動 `n10p_scan` node，再開**唯讀**的 foxglove_bridge（只開 `connectionGraph`、`assets`，`client_topic_whitelist` 設成空的，電腦端不能發 topic、不能呼叫 service）
+  - Windows 用 app.foxglove.dev 連 `ws://192.168.0.15:8765`，3D 面板的參考系設成 `laser_link`
+- **結果**：
+  - apt：新增 204 個套件、**移除 0 個**、約 795 MB；另有 10 個 Ubuntu 安全更新（bzip2、curl、libevent、freetype 等）跟著升級。Nav2 沒裝（會把 OpenCV 4.6 換成 NVIDIA 的 4.8，之後另外處理）
+  - `/scan`：**10.04 Hz**、frame `laser_link`；`/diagnostics` 顯示 `lidar ok`
+  - Foxglove 俯視圖看得到房間的兩面牆和牆角，和上午錄的俯視圖一致：[圖](figures/2026-10-17_foxglove_scan.png)
+- **問題與判斷**：
+  - Foxglove 診斷出現 `serial read failed … multiple access on port?`：同一個光達串口被**兩個程式**同時開（`listen` 和 node）。`pgrep -af` 找出來、`pkill` 掉，只留一個 node 就正常。串口一次只能給一個程式讀
+  - `/scan` 旁的紅色驚嘆號是「有 286 個 Infinity」：沒有回波的方向依 ROS 規定（REP-117）填 `inf`，不是錯誤。Orin 上還是舊的 720 格版本，空格多；部署 480 格版本後會變少
+  - 點全黑：顏色欄位選了 `intensity`，但 driver 沒發強度，改成依 `range` 上色
+  - 光達旁邊很近（10–40 cm）有一排點，可能是車上的線、支架或 Orin，要等 Orin 裝好後再看要不要遮掉
+- **學到**：用 Foxglove 這種「瀏覽器連 bridge」的方式，就不用處理 WSL 的 DDS 網路問題；bridge 預設可以讓電腦端發指令，車子在旁邊時要設成唯讀
+- **下一步**：部署 480 格版本；量光達、IMU 相對後軸的位置，做 TF（`base_link → laser_link`），讓 `/odom` 和 `/scan` 能一起看。
+
 ## 2026-10-17　光達 N10P 第一次讀到資料
 
 - **目的**：確認光達接得上 Orin、協定解讀正確。
