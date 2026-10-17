@@ -24,7 +24,7 @@
 
 ## 下一步
 
-1. 部署 480 格的光達 driver 和 `wro2026_description`，在 Foxglove 把 `/odom`、`/scan` 一起看
+1. 用 `tools/real/deploy.cmd` 部署（含 480 格光達、URDF、`wro2026_bringup`），`sensors.launch.py` 一次啟動，在 Foxglove 把 `/odom`、`/scan` 一起看
 2. 在地上直線推 / 開一段距離，重新校正里程計比例（目前 0.814 是架空測的）
 3. Orin 用機殼的調節支架裝上車（底部高過光達掃描面）、電池供電（需要電池接頭的照片）
 4. 場地的牆加高到約 25 cm（光達掃描面在 15 cm）

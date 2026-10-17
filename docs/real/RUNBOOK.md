@@ -17,35 +17,31 @@ Claude 的工作區 ──push──▶ GitHub（正本） ──pull──▶ W
 
 ## 2. 部署與 build
 
-**Windows（PowerShell）**：拿新程式、複製到 Orin
+**Windows**：在 repo 資料夾的 `tools\real\` 裡雙擊 `deploy.cmd`，或在 PowerShell 執行：
 
 ```powershell
 cd $env:USERPROFILE\ros2_racecar
-git status                       # 確認沒有沒存的修改
-git pull
-ssh user2@192.168.0.15 "cd ~/racecar_ws/src && rm -rf wro2026_base_r550 wro2026_lidar_n10p wro2026_description"
-scp -r src\wro2026_base_r550 src\wro2026_lidar_n10p src\wro2026_description user2@192.168.0.15:racecar_ws/src/
+tools\real\deploy.cmd
 ```
 
-實車用的 package 是這三個；`wro2026_sim` 不要複製到 Orin。
+它會依序做三件事，中間只會問一次 Orin 密碼：
 
-先刪再複製：直接覆蓋時，舊版有、新版沒有的檔案會留下來，新舊混在一起。
+1. `git pull --ff-only`：Windows 上有沒存的修改就停下來，不會亂合併。
+2. 用 `tar` 把 4 個實車 package（`wro2026_base_r550`、`wro2026_lidar_n10p`、`wro2026_description`、`wro2026_bringup`）打包，透過**一條 ssh** 送到 Orin 的 `~/racecar_ws/.deploy`。`wro2026_sim` 不會送。
+3. 在 Orin 上執行 `tools/real/orin_build.sh`：
+   - 先刪掉舊的 `src/`、`build/`、`install/`，再放新的。直接覆蓋的話，舊版有、新版沒有的檔案會殘留；舊的 build 產物會造成 `StopIteration`（2026-10-16 遇過）。
+   - 最後跑 `colcon build`。
 
-**Orin**（`ssh user2@192.168.0.15` 登入後）：
+最後顯示 `OK` 就是成功。顯示 `FAILED` 時，往上看錯誤訊息。
+
+**Orin 上跑測試**（不需要硬體，想確認時再跑）：
 
 ```bash
-cd ~/racecar_ws
-source /opt/ros/jazzy/setup.bash
-PKGS="wro2026_base_r550 wro2026_lidar_n10p wro2026_description"
-for p in $PKGS; do rm -rf build/$p install/$p; done        # 清掉舊的 build 產物
-colcon build --packages-select $PKGS
-source install/setup.bash
-colcon test --packages-select $PKGS && colcon test-result --verbose   # 不需要硬體
+cd ~/racecar_ws && source install/setup.bash
+colcon test --packages-select wro2026_base_r550 wro2026_lidar_n10p wro2026_description wro2026_bringup && colcon test-result --verbose
 ```
 
-沒清 `build/`、`install/` 的話，`ros2 run` 可能出現 `StopIteration`（舊版的登記資料殘留，2026-10-16 遇過）。
-
-每開一個新終端機都要重新 `source` 這兩個 `setup.bash`。
+每開一個新終端機都要先 `source /opt/ros/jazzy/setup.bash` 和 `source ~/racecar_ws/install/setup.bash`。
 
 ## 3. 開機順序
 
@@ -99,19 +95,20 @@ ros2 topic echo /diagnostics --once
 
 停止：在跑 launch 的終端機按 `Ctrl+C`。
 
-### 光達、TF、Foxglove
+### 全部一起開（一個終端機）
 
-每一行各開一個終端機（都要 `source`）：
+**Orin**：
 
 ```bash
-ros2 launch wro2026_lidar_n10p scan.launch.py port:=/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0001-if00
-ros2 launch wro2026_description description.launch.py
-ros2 run foxglove_bridge foxglove_bridge --ros-args -p port:=8765 -p "capabilities:=['connectionGraph','assets']" -p "client_topic_whitelist:=['^$']"
+ros2 launch wro2026_bringup sensors.launch.py
 ```
 
-- 光達串口**一次只能給一個程式**：`listen` 和 node 同時開會出現 `multiple access on port?`。用 `pgrep -af n10p` 找、`pkill -f wro2026_lidar_n10p` 關。
+這一行會啟動底盤回授（`/odom`、`/imu/data`、`/battery`）、光達（`/scan`）、URDF（TF）和唯讀的 Foxglove bridge。全部都只讀，馬達不會轉。按 `Ctrl+C` 全部一起停。
+
+- 不要 Foxglove：加 `foxglove:=false`。串口不一樣時：加 `stm32_port:=...`、`lidar_port:=...`。
+- 光達串口**一次只能給一個程式**：`listen` 和 node 同時開，會出現 `multiple access on port?`。用 `pgrep -af n10p` 找出來、`pkill -f wro2026_lidar_n10p` 關掉。
 - TF 檢查：`ros2 run tf2_ros tf2_echo base_link laser_link` 應該是 `[0.130, 0.000, 0.115]`。
-- Windows 瀏覽器開 app.foxglove.dev，連 `ws://192.168.0.15:8765`。bridge 是唯讀的（電腦端不能發 topic）。
+- Foxglove：Windows 瀏覽器開 app.foxglove.dev，連 `ws://192.168.0.15:8765`。bridge 是唯讀的，電腦端不能發 topic。
 
 ## 7. 充電
 
