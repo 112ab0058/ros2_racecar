@@ -22,7 +22,7 @@
 - **做法**：
   - 新 package：`wro2026_description`（URDF，`base_link` = 後軸中心，光達在前 13 cm、離地 15 cm）、`wro2026_bringup`（`sensors.launch.py` 一次開全部只讀 node）
   - Windows `tools/real/deploy.cmd` / `deploy.sh`：git pull → tar 經一條 ssh 送到 Orin → build；ssh 改用金鑰
-  - Orin `tools/orin_check.sh`：自己開 launch、量頻率、TF、電池、一筆 `/scan`，結果存成檔案。這次由 Ray 電腦上的 Claude Code 執行
+  - `tools/real/orin_check.sh`（Orin 上在 `~/racecar_ws/tools/`）：自己開 launch、量頻率、TF、電池、一筆 `/scan`，結果存成檔案。這次由 Ray 電腦上的 Claude Code 執行
 - **結果**（`下載\r550_check\20261017_174524\`）：`/odom` 20.0 Hz、`/imu/data` 20.0 Hz、`/scan` 10.0 Hz、480 格、`base_link → laser_link` = 0.130 0.000 0.115、電池 12.30 V、光達壞封包 0。全部符合預期
 - **問題與判斷**：最近的回波 0.13 m，可能是車上的東西或桌面上的物品，等 Orin 裝好後再看要不要遮掉；推車錄 rosbag 要等 Orin 上車、延長線
 - **學到**：launch 檔就是 ROS 2「一次開很多 node」的方法；檢查做成腳本，結果存檔，報告可以直接引用

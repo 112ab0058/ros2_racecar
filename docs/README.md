@@ -6,7 +6,7 @@
 
 | 文件 | 用途 |
 |---|---|
-| [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md) | **專題範圍、系統架構、已決定 / 待決定的事、4 週時程、風險** |
+| [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md) | **專題規劃：模組與演算法總表、做事順序、要調的參數、實驗、風險、要買的東西** |
 | [research/LOGBOOK.md](research/LOGBOOK.md) | 研究日誌：每次工作的目的、做法、數據、問題、學到的東西 |
 | [research/R550_STUDY_NOTES.md](research/R550_STUDY_NOTES.md) | 廠商資料研讀筆記：C30D、開機流程、阿克曼運動學、馬達 PI、電源、**串口協定**、Orin 怎麼接車子 |
 | [research/LEARNING_PATH.md](research/LEARNING_PATH.md) | 各階段要懂的觀念和小練習（時程以 PROJECT_PLAN 為準） |

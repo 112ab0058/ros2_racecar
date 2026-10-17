@@ -19,12 +19,12 @@
 | URDF / TF | **2026-10-17 實車通過**：`base_link → laser_link` = 0.130, 0, 0.115（光達在後軸前 13 cm、離地 15 cm；左右偏移、IMU 位置 UNKNOWN）。`sensors.launch.py` 一次啟動全部只讀 node | [../src/wro2026_description/README.md](../src/wro2026_description/README.md) |
 | 相機 C70 | 未開始 | |
 | Orin 裝上車、電池供電 | 未解決。廠商作法是電池（10–12.6 V）直接接主控 | [real/R550_HARDWARE.md](real/R550_HARDWARE.md) |
-| 套件 robot-localization、slam-toolbox、foxglove-bridge | **2026-10-17 已安裝**（新增 204、移除 0）。Nav2 還沒裝：會換掉 OpenCV，要另外處理 | [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md) 第 7 節 |
+| 套件 robot-localization、slam-toolbox、foxglove-bridge | **2026-10-17 已安裝**（新增 204、移除 0）。Nav2 還沒裝：會換掉 OpenCV，要另外處理 | [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md) 第 8 節 |
 | Foxglove 看資料 | 唯讀 bridge，Windows 連 `ws://192.168.0.15:8765` | [real/NETWORK.md](real/NETWORK.md) |
 
 ## 下一步
 
-完整順序和要調的參數見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md) 第 8、9 節。
+完整規劃（模組總表、順序、要調的參數、實驗）見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，順序在第 4 節。
 
 1. 底盤指令端 + 架空測試（現在就能做）
 2. Orin 用機殼的調節支架裝上車、電池供電（等延長線、需要電池接頭的照片）
