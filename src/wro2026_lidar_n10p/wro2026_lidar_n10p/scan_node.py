@@ -16,7 +16,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 
-from .protocol import BAUD_RATE, PacketStream, ScanAssembler
+from .protocol import BAUD_RATE, mask_ranges, PacketStream, parse_sectors, ScanAssembler
 
 # name, default, description. Defaults must match config/n10p.yaml.
 PARAMETERS = [
@@ -29,6 +29,8 @@ PARAMETERS = [
     ('range_max', 25.0, 'm; farther returns are dropped'),
     ('angle_offset_deg', 0.0, 'added to every angle (lidar zero vs laser_link x axis)'),
     ('scan_timeout', 1.0, '/diagnostics ERROR when no scan for this long (s)'),
+    ('mask_sectors_deg', '', 'hide our own car: "start:end,..." in ROS degrees '
+     '(0 = front, CCW); beams inside become inf'),
 ]
 
 
@@ -46,6 +48,7 @@ class N10PScan(Node):
         self.stream = PacketStream()
         self.scans = ScanAssembler(self.p['bins'], self.p['range_min'], self.p['range_max'],
                                    self.p['angle_offset_deg'])
+        self.mask = parse_sectors(self.p['mask_sectors_deg'])
         self.pub = self.create_publisher(LaserScan, 'scan', 10)
         self.diag_pub = self.create_publisher(DiagnosticArray, 'diagnostics', 10)
         self.lock = threading.Lock()
@@ -88,7 +91,7 @@ class N10PScan(Node):
         msg.time_increment = period / self.p['bins']
         msg.range_min = float(self.p['range_min'])
         msg.range_max = float(self.p['range_max'])
-        msg.ranges = [float(r) for r in ranges]
+        msg.ranges = [float(r) for r in mask_ranges(ranges, self.mask)]
         try:
             self.pub.publish(msg)
         except Exception:

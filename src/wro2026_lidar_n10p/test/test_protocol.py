@@ -168,3 +168,20 @@ def test_parameters_match_yaml():
             assert raw.strip("'") == default, key
         else:
             assert float(raw) == pytest.approx(float(default)), key
+
+
+def test_parse_sectors():
+    from wro2026_lidar_n10p.protocol import parse_sectors
+    assert parse_sectors('') == []
+    assert parse_sectors('150:210, 350:10') == [(150.0, 210.0), (350.0, 10.0)]
+
+
+def test_mask_ranges_plain_and_wrapping():
+    from wro2026_lidar_n10p.protocol import mask_ranges
+    ranges = [1.0] * 8  # beams at 0, 45, 90, ..., 315 deg
+    out = mask_ranges(ranges, [(130.0, 230.0)])
+    assert [math.isinf(r) for r in out] == [False, False, False, True, True, True, False, False]
+    out = mask_ranges(ranges, [(300.0, 50.0)])  # wraps past 360
+    assert [math.isinf(r) for r in out] == [True, True, False, False, False, False, False, True]
+    assert ranges == [1.0] * 8  # input not modified
+    assert mask_ranges(ranges, []) == ranges

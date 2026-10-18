@@ -42,3 +42,7 @@ LSLIDAR N10P 光達的 ROS 2 driver（純 Python），**只讀**：不會送任�
 ```bash
 cd src/wro2026_lidar_n10p && python3 -m pytest
 ```
+
+## 遮掉自己的車（`mask_sectors_deg`）
+
+Orin 裝在光達後上方，會擋到光達正後方一段角度。在 `config/n10p.yaml` 設 `mask_sectors_deg: '150:210'` 這種格式（ROS 角度：0° = 車頭、逆時針為正，可以跨過 360°，例如 `350:10`；多段用逗號分開），範圍內的光束一律送 inf（沒有回波），slam_toolbox 和 Nav2 就不會把自己的車當成障礙物。角度要等 Orin 裝好後，看 `/scan` 裡離光達很近（< 0.3 m）的點在哪些角度再決定。

@@ -11,3 +11,4 @@ n10p_scan:
     range_max: 25.0              # m (N10P spec: 25 m on white targets)
     angle_offset_deg: 0.0        # lidar zero vs laser_link x axis: check with /scan
     scan_timeout: 1.0            # s
+    mask_sectors_deg: ''         # hide our own car, e.g. '150:210' (ROS deg, 0 = front, CCW). Set after the Orin is mounted

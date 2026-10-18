@@ -188,3 +188,39 @@ class ScanAssembler:
             k = int(round(lidar_deg_to_ros_rad(deg, self.offset_deg) / width)) % self.bins
             ranges[k] = min(ranges[k], rng)
         return ranges
+
+
+def parse_sectors(text):
+    """
+    Parse "start:end,start:end" (ROS degrees: 0 = front, counter-clockwise).
+
+    A sector may wrap past 360 (e.g. "350:10"). Empty text means no sectors.
+    """
+    sectors = []
+    for part in text.replace(' ', '').split(','):
+        if not part:
+            continue
+        a, b = part.split(':')
+        sectors.append((float(a) % 360.0, float(b) % 360.0))
+    return sectors
+
+
+def mask_ranges(ranges, sectors):
+    """
+    Return a copy of ranges with every beam inside a sector set to inf.
+
+    Used to hide parts of our own car (Orin, bracket) that the lidar sees.
+    Beam k points at k * 360 / len(ranges) degrees (ROS frame).
+    """
+    if not sectors:
+        return list(ranges)
+    n = len(ranges)
+    out = list(ranges)
+    for k in range(n):
+        deg = k * 360.0 / n
+        for a, b in sectors:
+            inside = a <= deg <= b if a <= b else (deg >= a or deg <= b)
+            if inside:
+                out[k] = math.inf
+                break
+    return out
