@@ -18,10 +18,12 @@ r550_feedback:
     expected_rate: 20.0          # Hz (firmware RATE_20_HZ); WARN below half
     low_battery_voltage: 10.8    # V; vendor: charge below 10.8 V
     diagnostics_period: 1.0      # s
-    # covariances: placeholders until measured (stage 2 of LEARNING_PATH)
+    # covariances: odom ones are placeholders until measured; IMU measured still
+    # 2026-10-19 (60 s + 300 s, ~/r550_calib): gyro variance 1.2-1.7e-7, accel ~4e-5,
+    # set a few times larger for vibration while driving.
     odom_pose_covariance_xy: 0.01
     odom_pose_covariance_yaw: 0.05
     odom_twist_covariance_vx: 0.001
     odom_twist_covariance_wz: 0.01
-    imu_gyro_covariance: 0.0001
-    imu_accel_covariance: 0.01
+    imu_gyro_covariance: 1.0e-6
+    imu_accel_covariance: 1.0e-4

@@ -16,6 +16,25 @@
 
 ---
 
+## 2026-10-19（深夜）　步驟 7-1：IMU 靜止校正
+
+- **目的**：量 gyro 偏差和雜訊，確認 `imu_link` 朝向，給 EKF 用。
+- **做法**：`orin_calib.sh static` 跑 60 秒和 300 秒（Claude Code 自動執行，只讀），Windows `下載\r550_calib\20261019_230938_static\`、`20261019_231057_static\`
+- **結果**：
+  - IMU 20.0 Hz（只有啟動時斷一次 0.33 s）；重力在 **+z、9.772** → `imu_link` z 朝上，和 URDF 假設一致
+  - gyro z 偏差 +0.00007～+0.00009 rad/s（**每分鐘飄 0.24～0.29°**），5 分鐘內逐分鐘 0.07～0.47°/min，穩定
+  - gyro x / y 偏差 −0.0022 / +0.0018 rad/s，比 z 大約 25 倍（2D 只用 z，不影響）
+  - 雜訊：gyro std 約 0.00037 rad/s（約 1.4 個量化刻度，1 刻度 0.000266 rad/s），variance 1.2～1.7e-7；accel std 約 0.005 m/s²，variance 約 4e-5
+  - 靜止時 odom 0 m、0°
+  - 光達 USB 沒插，`scan_node` 找不到序列埠就結束，不影響這次
+- **問題與判斷**：
+  - 讀韌體原始碼：開機第 10 秒把 gyro **三軸**和 accel 都各取**一個樣本**當零點（不是只歸零 z）。所以偏差大小看開機那一瞬間：只取一個樣本、沒有平均，x / y 比較大可能是開機後溫度變化或那一刻剛好偏，原因 UNKNOWN
+  - accel 也被歸零（z 再加 1 g），所以 accel x / y 永遠以「開機時的姿勢」為水平，−0.026 / +0.033 **不是**真正的傾斜，不能拿來量
+  - covariance 改成 gyro 1e-6、accel 1e-4（比靜止實測大幾倍，留給行駛時的震動）
+  - EKF 方向：`two_d_mode`；IMU 只融合 vyaw（accel 不用）；odom 先融合 vx，vyaw 等 `wz_scale` 驗證後再決定；EKF 發 `odom → base_link` 時，`publish_odom_tf` 改 false
+- **學到**：感測器「出廠校正」做了什麼要看原始碼；雜訊用 variance（std 的平方）填進 covariance，而且要比靜止時大，因為行駛時有震動
+- **下一步**：手推直走（`vx_scale`）、手推左彎（`wz_scale`、gyro 正負號）
+
 ## 2026-10-19（深夜，第二次）　鍵盤遙控架空數據
 
 - **目的**：用 `record_node` 留下停車時間和轉向正負號的數據。

@@ -53,8 +53,8 @@ PARAMETERS = [
     ('odom_pose_covariance_yaw', 0.05, 'yaw variance (rad^2); placeholder until measured'),
     ('odom_twist_covariance_vx', 0.001, 'vx variance ((m/s)^2); placeholder until measured'),
     ('odom_twist_covariance_wz', 0.01, 'wz variance ((rad/s)^2); placeholder until measured'),
-    ('imu_gyro_covariance', 0.0001, 'gyro variance ((rad/s)^2); placeholder until measured'),
-    ('imu_accel_covariance', 0.01, 'accel variance ((m/s^2)^2); placeholder until measured'),
+    ('imu_gyro_covariance', 1e-06, 'gyro variance ((rad/s)^2); still: 1.2-1.7e-7 (2026-10-19), x7 margin'),
+    ('imu_accel_covariance', 0.0001, 'accel variance ((m/s^2)^2); still: about 4e-5 (2026-10-19)'),
 ]
 
 

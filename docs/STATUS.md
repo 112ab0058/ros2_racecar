@@ -27,7 +27,7 @@
 
 完整規劃（模組總表、順序、要調的參數、實驗）見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，順序在第 4 節。
 
-1. 步驟 7 的校正先用「手推」做（只讀）：IMU 靜止 → IMU 軸向 + `wz_scale`（手轉）→ `vx_scale`（手推直走）。工具 `orin_calib.sh`（RUNBOOK 6d）
+1. 步驟 7 的校正先用「手推」做（只讀）：~~IMU 靜止~~（10-19 完成）→ `vx_scale`（手推直走）→ IMU 軸向 + `wz_scale`（手推左彎）。工具 `orin_calib.sh`（RUNBOOK 6d）
 2. EKF 設定（robot_localization），一樣先用手推驗證
 3. Orin 用機殼的調節支架裝上車、電池供電（線材已買；**缺三用電表**，接上 Orin 前要先量電池接頭極性）
 4. 場地的牆加高到約 25 cm
