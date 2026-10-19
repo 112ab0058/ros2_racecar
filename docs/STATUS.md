@@ -11,7 +11,7 @@
 | 項目 | 狀態 | 文件 |
 |---|---|---|
 | 硬體盤點 | 大致完成。軸距約 15 cm、輪胎周長約 21.5 cm、光達中心離地約 15 cm；最大轉向角、輪距、外形尺寸 UNKNOWN | [real/R550_HARDWARE.md](real/R550_HARDWARE.md) |
-| 廠商資料研讀 | 協定、運動學、開機流程、接線完成；STM32 原始碼、Mini 硬體說明還沒下載到 | [research/R550_STUDY_NOTES.md](research/R550_STUDY_NOTES.md) |
+| 廠商資料研讀 | 協定、運動學、開機流程、接線完成；**STM32 原始碼已找到**（無線燒錄工具資料夾裡的 zip，2026-10-19）；Mini 硬體說明還沒下載到 | [research/R550_STUDY_NOTES.md](research/R550_STUDY_NOTES.md) |
 | STM32 通訊（只讀） | **2026-10-16 實車通過**：CH9102、115200、約 20 Hz、壞幀 0 | [real/RUNBOOK.md](real/RUNBOOK.md) |
 | ROS node（只讀）`/odom`、`/imu/data`、`/battery` | **2026-10-16 實車通過**：20 Hz；里程計比例校正 0.814（架空手轉測的，暫定） | [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) |
 | 指令端（會讓馬達轉） | **2026-10-19 架空部分通過**：0.1 m/s 指令 → 後輪 0.100 m/s；`/cmd_vel` 停止後 0.3 s 逾時、輪子再 0.8 s 停（共約 1.1 s）。**還沒測**：Ctrl+C 停 node、低電壓拒絕、轉向正負號、倒車、限速、不原地轉。STM32 韌體沒有指令逾時。2026-10-17 寫好：`base_node`（`enable_commands` 預設 false）、逾時 0.3 s、限速、回授遺失、低電壓、限時、不原地轉；架空測試腳本 `orin_air_test.sh` | [real/RUNBOOK.md](real/RUNBOOK.md) 6b 節 |
@@ -33,7 +33,8 @@
 
 ## 已知問題
 
-- `flag_stop` 不代表 Motor 開關（開關 OFF 時也是 0），意義要看 STM32 原始碼
+- `flag_stop` 不代表 Motor 開關：原始碼裡是「軟體失能標誌」，自檢錯誤才會變 1（2026-10-19 讀原始碼）
+- STM32 韌體沒有指令逾時：node 當掉時車子會照最後的指令跑，只能靠 Motor 開關
 - Jetson 沒有 Python 的 OpenCV（`python3-opencv`）和 cv_bridge；相機程式開始前要決定怎麼裝
 - WSL 在 NAT 模式下看不到 Orin 的 topic，用 Foxglove 看（[real/NETWORK.md](real/NETWORK.md)）
 - Orin 的 `~/racecar_ws/src/` 裡還有舊 package（WAVE ROVER 時期），不影響 `--packages-select` 的 build，要清的話 Ray 自己在 Orin 刪；`~/ros2_ws` 是舊 driver 的備份，不要動

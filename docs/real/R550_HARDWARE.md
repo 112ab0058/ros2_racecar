@@ -27,6 +27,8 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 | 輪距 | 廠商程式註解 0.162 m，還沒量 | 廠商程式註解 |
 | 最大轉向角 | UNKNOWN：用手量不出來。之後從 STM32 原始碼查，或第 3 階段打滿方向盤開一圈、量轉彎圓反推 | |
 | 外形尺寸 | UNKNOWN。廠商頁面的 271 × 189 × 151 mm 是 R550 一般版，**mini 版不一定相同** | 待量測 / 待產品資料 |
+| STM32 韌體原始碼 | `D:\BaiduNetdiskDownload\2.WHEELTEC R550-V550…\5.无线烧录教程与工具\2.烧录工具\已配置无线烧录R550_C30D(2.0)_Mini小车STM32源码_GMR编码器_2024.11.15.zip`（廠商程式，不放進 repo）。2026-10-19 讀到的重點：①`balance.c` 219–221 行的指令逾時（約 1 秒沒收到就歸零）被註解掉 → **STM32 不會自己停**；②`Turn_Off()`：電壓 < 10 V、`EN==0` 或 `Flag_Stop==1` 時 PWM 全關；③回授 byte 1 `flag_stop` = `Flag_Stop`，註解「小車軟件失能標誌位」，自檢錯誤超過 6 次會設成 1（**不是 Motor 開關**）；④開機 10 秒內不處理串口指令（`CONTROL_DELAY`） | 廠商原始碼 |
+| 阿克曼參數（韌體） | `Akm_wheelspacing` 0.162 m、`Akm_axlespacing` 0.144 m、輪徑參數 `Black_WheelDiameter` 0.065 m（實物約 7 cm，所以里程計要另外校正）；**最小轉彎半徑 `MINI_AKM_MIN_TURN_RADIUS` 0.35 m**：`Vz_to_Akm_Angle()` 把轉彎半徑小於 0.35 m 的指令自動放大到 0.35 m；右前輪轉角限制在 −0.49～+0.32 rad（約 −28°～+18°），舵機 PWM 限 800–2200 | 廠商原始碼 `balance.c`、`usartx.c`、`robot_select_init.h` |
 | 馬達、encoder | **2 顆，在後輪，接 MotorA / MotorB；MotorC / D 沒接**。韌體在阿克曼模式只驅動 A、B（C、D 固定 0），前輪只靠舵機轉向、不出力（2026-10-19 架空測試＋實物確認）。型號 UNKNOWN（廠商頁面寫 MG513 + 500 線 GMR encoder，一般版） | 實物、韌體原始碼 |
 
 ## 控制板
