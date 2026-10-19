@@ -2,7 +2,7 @@
 <package format="3">
   <name>wro2026_bringup</name>
   <version>0.1.0</version>
-  <description>One-terminal launch files for the R550. sensors.launch.py: all read-only nodes (chassis feedback, lidar, URDF, read-only Foxglove bridge).</description>
+  <description>One-terminal launch files for the R550. sensors.launch.py: all read-only nodes (chassis feedback, lidar, URDF, read-only Foxglove bridge). localization.launch.py: sensors + robot_localization EKF.</description>
   <maintainer email="t112ab0058@ntut.org.tw">112ab0058</maintainer>
   <license>MIT</license>
 
@@ -10,6 +10,7 @@
   <exec_depend>wro2026_lidar_n10p</exec_depend>
   <exec_depend>wro2026_description</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>

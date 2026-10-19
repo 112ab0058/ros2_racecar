@@ -230,6 +230,18 @@ bash ~/racecar_ws/tools/orin_teleop.sh 0.1 120    # 最高 0.1 m/s、120 秒
 - 推的時候輪子要**滾動**。Motor OFF 時馬達經過減速齒輪會有點緊，如果輪子推不動、在地上滑，那次數據不能用。
 - 量距離：在地上貼一條膠帶當起點，對齊後輪軸（車身側面的後輪中心），推完量後輪中心到起點的距離。
 
+## 6e. EKF（只讀，馬達不會轉）
+
+```bash
+ros2 launch wro2026_bringup localization.launch.py            # sensors + EKF（+ Foxglove）
+bash ~/racecar_ws/tools/orin_check.sh --ekf                   # 自動檢查（Claude Code 可以自己跑）
+```
+
+- `localization.launch.py` = `sensors.launch.py`（`publish_odom_tf:=false`）+ robot_localization 的 `ekf_filter_node`。
+- 融合：`/odom` 的 vx、vy（= 0，阿克曼不能橫移）+ `/imu/data` 的 vyaw。odom 的 vyaw 等轉圈測試（DETAILED_PLAN 7.3）驗證 `wz_scale` 後再決定要不要加。設定和理由在 `src/wro2026_bringup/config/ekf.yaml`。
+- 輸出：`/odometry/filtered`（30 Hz）和 TF `odom → base_link`。**同一個 TF 只能有一個發布者**：用這個 launch 時 feedback 不發；以後開車要用 `base.launch.py publish_odom_tf:=false` 再加 EKF。
+- `--ekf` 檢查：`/odometry/filtered` 頻率、`publish_odom_tf` 是不是 False、誰在發 `/tf`、靜止 60 秒前後的位置（不能碰車）。
+
 ## 7. 充電
 
 - 12.6 V 充電器接車身「充电口」；紅燈充電中、綠燈充滿。

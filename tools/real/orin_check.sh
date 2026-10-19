@@ -4,6 +4,9 @@
 #
 #   bash ~/racecar_ws/tools/orin_check.sh            # checks only (~1 min)
 #   bash ~/racecar_ws/tools/orin_check.sh --bag 20   # + record 20 s rosbag
+#   bash ~/racecar_ws/tools/orin_check.sh --ekf      # localization.launch.py (+ EKF):
+#                                                    # filtered rate, who publishes the
+#                                                    # odom TF, 60 s drift while still
 #
 # If sensors.launch.py is not running, this script starts it (without
 # Foxglove) and stops it at the end. Nothing here writes to the STM32 or
@@ -11,7 +14,10 @@
 set -o pipefail
 
 BAG_SECONDS=0
+EKF=0
+LAUNCH_FILE=sensors.launch.py
 if [ "$1" = "--bag" ]; then BAG_SECONDS="${2:-20}"; fi
+if [ "$1" = "--ekf" ]; then EKF=1; LAUNCH_FILE=localization.launch.py; fi
 
 STM32=/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0002-if00
 LIDAR=/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0001-if00
@@ -40,20 +46,26 @@ LAUNCH_PID=""
 # All three must be running, or none. A leftover single node (e.g. an old
 # scan.launch) gave wrong results on 2026-10-19: no /odom, 720-bin scan.
 n_running=0
-for pat in "wro2026_base_r550/(feedback_node|base_node)" "wro2026_lidar_n10p/scan_node" \
-           "robot_state_publisher"; do
+PATTERNS=("wro2026_base_r550/(feedback_node|base_node)" "wro2026_lidar_n10p/scan_node"
+          "robot_state_publisher")
+[ "$EKF" = 1 ] && PATTERNS+=("robot_localization/ekf_node")
+for pat in "${PATTERNS[@]}"; do
     pgrep -f "$pat" > /dev/null && n_running=$((n_running + 1))
 done
+if [ "$EKF" = 1 ] && [ "$n_running" -eq 3 ]; then
+    section "sensors are running WITHOUT the EKF: stop them, then run --ekf again"
+    exit 1
+fi
 if [ "$n_running" -gt 0 ] && [ "$n_running" -lt 3 ]; then
     section "SOME ROS programs are already running: stop them first, then run again"
     run pgrep -af "feedback_node|base_node|scan_node|robot_state_publisher|foxglove_bridge"
     exit 1
-elif [ "$n_running" -eq 3 ]; then
+elif [ "$n_running" -ge 3 ]; then
     section "sensors already running (not started by this script)"
     run pgrep -af "scan_node|feedback_node|base_node|robot_state_publisher|foxglove_bridge"
 else
-    section "starting sensors.launch.py foxglove:=false (log: launch.log)"
-    setsid ros2 launch wro2026_bringup sensors.launch.py foxglove:=false \
+    section "starting $LAUNCH_FILE foxglove:=false (log: launch.log)"
+    setsid ros2 launch wro2026_bringup "$LAUNCH_FILE" foxglove:=false \
         > "$OUT/launch.log" 2>&1 < /dev/null &
     LAUNCH_PID=$!
     sleep 8
@@ -111,6 +123,21 @@ print('frame_id', msg['header']['frame_id'], ' bins', len(r),
 print('valid', len(ok), ' inf', len(r) - len(ok),
       ' min %.3f  max %.3f m' % (min(ok), max(ok)) if ok else '')
 PY
+
+if [ "$EKF" = 1 ]; then
+    section "EKF (expected: /odometry/filtered 30 Hz; r550_feedback publish_odom_tf False)"
+    say "\$ ros2 topic hz /odometry/filtered (6 s)"
+    timeout -s INT 6 ros2 topic hz /odometry/filtered < /dev/null 2>&1 | tail -n 5 | tee -a "$REPORT"
+    run ros2 param get /r550_feedback publish_odom_tf
+    say "who publishes /tf (only ekf_filter_node and robot_state_publisher's static parts expected):"
+    run ros2 topic info /tf --verbose
+    run ros2 topic echo --once /diagnostics --field status
+    section "EKF drift while still: pose now and after 60 s (do not touch the car)"
+    pose() { timeout 5 ros2 topic echo --once /odometry/filtered --field pose.pose < /dev/null 2>&1; }
+    pose | tee "$OUT/pose_t0.txt" | tee -a "$REPORT"
+    sleep 60
+    pose | tee "$OUT/pose_t60.txt" | tee -a "$REPORT"
+fi
 
 if [ "$BAG_SECONDS" -gt 0 ]; then
     section "rosbag ${BAG_SECONDS} s: /odom /scan /imu/data /tf /tf_static (push the car by hand now)"

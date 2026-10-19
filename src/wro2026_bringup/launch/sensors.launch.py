@@ -3,6 +3,7 @@ Start everything READ-ONLY on the car in one terminal.
 
 ros2 launch wro2026_bringup sensors.launch.py
 ros2 launch wro2026_bringup sensors.launch.py foxglove:=false
+(localization.launch.py = this + EKF, with publish_odom_tf:=false)
 
   r550_feedback          STM32 -> /odom, TF odom->base_link, /imu/data, /battery
   n10p_scan              N10P  -> /scan
@@ -37,8 +38,10 @@ def generate_launch_description():
         DeclareLaunchArgument('stm32_port', default_value=STM32_PORT),
         DeclareLaunchArgument('lidar_port', default_value=LIDAR_PORT),
         DeclareLaunchArgument('foxglove', default_value='true'),
+        DeclareLaunchArgument('publish_odom_tf', default_value='true'),
         _include('wro2026_base_r550', 'feedback.launch.py',
-                 {'port': LaunchConfiguration('stm32_port')}),
+                 {'port': LaunchConfiguration('stm32_port'),
+                  'publish_odom_tf': LaunchConfiguration('publish_odom_tf')}),
         _include('wro2026_lidar_n10p', 'scan.launch.py',
                  {'port': LaunchConfiguration('lidar_port')}),
         _include('wro2026_description', 'description.launch.py'),
