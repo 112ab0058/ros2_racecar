@@ -213,6 +213,20 @@ bash ~/racecar_ws/tools/orin_teleop.sh 0.1 120    # 最高 0.1 m/s、120 秒
 - **停止**：放開按鍵、`s`、空白鍵、Ctrl+C，或把 Motor 開關扳到 OFF。
 - **結果**：`~/r550_teleop/<時間>/drive.csv`，一個檔案記三個 topic，每列是 `t`（收到的時間，秒）、`topic`、`vx`、`wz`：`cmd_vel`（按鍵送出的）、`cmd_vel_out`（實際送給 STM32 的）、`odom`（輪子）。放開到停車 = `cmd_vel` 第一個 0 → `odom` 的 vx 回到 0。另有 `base.log`、`record.log`。
 
+## 6d. 校正錄製：里程計、IMU（只讀，馬達不會轉）
+
+`orin_calib.sh` 會自己開 `sensors.launch.py`（沒在跑的話），用 `sensor_log_node` 錄 `/odom`、`/imu/data`，最後用 `analyze_calib.py` 算結果。不會發 `/cmd_vel`；`base_node` 在跑時會拒絕執行。
+
+| 測試 | Orin 指令 | 你要做什麼 | 算出什麼 |
+|---|---|---|---|
+| 靜止 | `bash ~/racecar_ws/tools/orin_calib.sh static 60` | 什麼都不做（Claude Code 可以自己跑） | gyro 偏差和雜訊、accel 雜訊、哪個軸朝上、靜止時 odom 會不會飄 |
+| 直走 | `bash ~/racecar_ws/tools/orin_calib.sh straight` | Motor OFF；先靜止 3 秒，沿捲尺**用手推**車直走（例如 2 m），按 Enter，輸入捲尺距離 | 新的 `vx_scale` |
+| 轉圈 | `bash ~/racecar_ws/tools/orin_calib.sh turn` | Motor OFF；先靜止 3 秒，用手把車**往左**（從上面看逆時針）轉整圈，後輪要滾動不要拖，按 Enter，輸入圈數 | gyro z 正負號（驗證 `imu_link` 方向）、新的 `wz_scale`（以 IMU 為準） |
+
+- **結果**：`~/r550_calib/<時間>_<測試>/` 裡的 `odom.csv`、`imu.csv`、`analysis_<測試>.txt`。
+- 之後在 Windows 也能重算：`python tools\real\analyze_calib.py straight <資料夾> --distance 2.0`
+- Orin 還沒上車時線會拉到：推的距離以線夠長為準（1 m 也可以，誤差會比較大）。
+
 ## 7. 充電
 
 - 12.6 V 充電器接車身「充电口」；紅燈充電中、綠燈充滿。

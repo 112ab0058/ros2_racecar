@@ -27,15 +27,16 @@
 
 完整規劃（模組總表、順序、要調的參數、實驗）見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，順序在第 4 節。
 
-1. 決定「STM32 沒有指令逾時」的處理方式（改韌體，或第一次上地面時用操作上的防護）；這要在第一次地面行駛前定案
-2. Orin 用機殼的調節支架裝上車、電池供電（線材已買；**缺三用電表**，接上 Orin 前要先量電池接頭極性）
-3. 場地的牆加高到約 25 cm
-4. 地面校正里程計、量最大轉向角
+1. 步驟 7 的校正先用「手推」做（只讀）：IMU 靜止 → IMU 軸向 + `wz_scale`（手轉）→ `vx_scale`（手推直走）。工具 `orin_calib.sh`（RUNBOOK 6d）
+2. EKF 設定（robot_localization），一樣先用手推驗證
+3. Orin 用機殼的調節支架裝上車、電池供電（線材已買；**缺三用電表**，接上 Orin 前要先量電池接頭極性）
+4. 場地的牆加高到約 25 cm
+5. Orin 上車後：用馬達在地面開，複驗 `vx_scale`、量實際轉彎半徑
 
 ## 已知問題
 
 - `flag_stop` 不代表 Motor 開關：原始碼裡是「軟體失能標誌」，自檢錯誤才會變 1（2026-10-19 讀原始碼）
-- STM32 韌體沒有指令逾時：node 當掉時車子會照最後的指令跑，只能靠 Motor 開關
+- STM32 韌體沒有指令逾時：node 當掉時車子會照最後的指令跑，只能靠 Motor 開關。**2026-10-19 決定先不改韌體**，上地面時靠操作防護（限速 ≤ 0.15 m/s、有牆的場地、手在 Motor 開關旁、USB 線固定）；Orin 上車前不在地面用馬達開車（拖線會扯掉 USB）
 - Jetson 沒有 Python 的 OpenCV（`python3-opencv`）和 cv_bridge；相機程式開始前要決定怎麼裝
 - WSL 在 NAT 模式下看不到 Orin 的 topic，用 Foxglove 看（[real/NETWORK.md](real/NETWORK.md)）
 - Orin 的 `~/racecar_ws/src/` 裡還有舊 package（WAVE ROVER 時期），不影響 `--packages-select` 的 build，要清的話 Ray 自己在 Orin 刪；`~/ros2_ws` 是舊 driver 的備份，不要動

@@ -11,6 +11,8 @@ WHEELTEC R550 mini akm 的底盤 package。有：協定 module、**只讀**的�
 
 `ros2 run wro2026_base_r550 teleop_node`（要在真的終端機裡跑，例如 ssh），或用 `tools/real/orin_teleop.sh` 一個終端機全部開好。只發布 `/cmd_vel`，不碰序列埠；要 `base_node` 開了 `enable_commands` 才會動。按住 `w`/`q`/`e` 前進、`x`/`z`/`c` 倒車，放開就送 0。用 timer 固定 20 Hz 發布（`ros2 topic pub` 曾停頓超過 0.3 秒）。邏輯在 `teleop.py`，測試在 `test/test_teleop.py`。操作說明見 `docs/real/RUNBOOK.md` 6c 節。
 
+`sensor_log_node`：只讀，把 `/odom`（x、y、yaw、vx、wz）和 `/imu/data`（gyro、accel）各寫成一個 csv（`-p dir:=資料夾`），給 `tools/real/analyze_calib.py` 算校正值；`tools/real/orin_calib.sh` 會自動開它。
+
 `record_node`：只讀，把 `/cmd_vel`、`/cmd_vel_out`、`/odom` 連同收到的時間寫進同一個 csv（`-p out:=檔名`），用來量「放開到停車」的時間。
 
 ## 指令端的安全規則（`command.py` 的 `CommandGate`，每一條都有測試）
