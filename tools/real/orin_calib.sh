@@ -5,7 +5,7 @@
 #   bash ~/racecar_ws/tools/orin_calib.sh static [60]   # car still 60 s (no questions:
 #                                                         Claude Code can run this one)
 #   bash ~/racecar_ws/tools/orin_calib.sh straight      # you PUSH the car straight
-#   bash ~/racecar_ws/tools/orin_calib.sh turn          # you TURN the car LEFT by hand
+#   bash ~/racecar_ws/tools/orin_calib.sh turn          # you PUSH the car along a LEFT curve
 #
 # straight / turn: keep the car still for the first 3 s (gyro bias), then push,
 # then press Enter. Motor switch OFF so the wheels roll freely.
@@ -66,8 +66,9 @@ else
     if [ "$TEST" = straight ]; then
         echo "NOW push the car slowly STRAIGHT along the tape measure, stop, then press Enter."
     else
-        echo "NOW turn the car LEFT (counter-clockwise seen from above) by hand,"
-        echo "whole turns if you can, keep the rear wheels rolling, then press Enter."
+        echo "NOW push the car FORWARD along a LEFT curve (counter-clockwise seen from"
+        echo "above, radius >= 0.5 m, like driving). Do NOT spin it on the spot: the rear"
+        echo "wheels would slide and wz_scale would be wrong. Stop, then press Enter."
     fi
     read -r _
     sleep 1

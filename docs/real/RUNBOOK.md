@@ -221,11 +221,13 @@ bash ~/racecar_ws/tools/orin_teleop.sh 0.1 120    # 最高 0.1 m/s、120 秒
 |---|---|---|---|
 | 靜止 | `bash ~/racecar_ws/tools/orin_calib.sh static 60` | 什麼都不做（Claude Code 可以自己跑） | gyro 偏差和雜訊、accel 雜訊、哪個軸朝上、靜止時 odom 會不會飄 |
 | 直走 | `bash ~/racecar_ws/tools/orin_calib.sh straight` | Motor OFF；先靜止 3 秒，沿捲尺**用手推**車直走（例如 2 m），按 Enter，輸入捲尺距離 | 新的 `vx_scale` |
-| 轉圈 | `bash ~/racecar_ws/tools/orin_calib.sh turn` | Motor OFF；先靜止 3 秒，用手把車**往左**（從上面看逆時針）轉整圈，後輪要滾動不要拖，按 Enter，輸入圈數 | gyro z 正負號（驗證 `imu_link` 方向）、新的 `wz_scale`（以 IMU 為準） |
+| 轉圈 | `bash ~/racecar_ws/tools/orin_calib.sh turn` | Motor OFF；先靜止 3 秒，把車**往前推、沿著往左的弧線走**（從上面看逆時針，半徑 ≥ 0.5 m，像在開車），**不要原地轉**（後輪會滑、`wz_scale` 會錯），按 Enter，輸入圈數（例如 0.25） | gyro z 正負號（驗證 `imu_link` 方向）、新的 `wz_scale`（以 IMU 為準） |
 
 - **結果**：`~/r550_calib/<時間>_<測試>/` 裡的 `odom.csv`、`imu.csv`、`analysis_<測試>.txt`。
 - 之後在 Windows 也能重算：`python tools\real\analyze_calib.py straight <資料夾> --distance 2.0`
 - Orin 還沒上車時線會拉到：推的距離以線夠長為準（1 m 也可以，誤差會比較大）。
+- 推的時候輪子要**滾動**。Motor OFF 時馬達經過減速齒輪會有點緊，如果輪子推不動、在地上滑，那次數據不能用。
+- 量距離：在地上貼一條膠帶當起點，對齊後輪軸（車身側面的後輪中心），推完量後輪中心到起點的距離。
 
 ## 7. 充電
 
