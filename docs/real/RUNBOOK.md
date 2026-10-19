@@ -245,6 +245,19 @@ bash ~/racecar_ws/tools/orin_check.sh --ekf                   # 自動檢查（C
 - **gyro 零速更新（ZUPT）**：後輪靜止超過 1 秒，`r550_feedback` 就把 gyro 讀數當成偏差慢慢學起來、從 `/imu/data` 扣掉（`zupt.py`，參數在 `r550_feedback.yaml`）。`/diagnostics` 裡看得到 `gyro_bias_z`、`zupt_learning`。所以開車途中**停下來 1–2 秒**，gyro 就會重新歸零。
 - `--ekf` 檢查：`/odometry/filtered` 頻率、`publish_odom_tf` 是不是 False、誰在發 `/tf`、靜止 60 秒前後的位置（不能碰車）。
 
+## 6f. 長時間測試和啟停循環（只讀，馬達不會轉）
+
+```bash
+bash ~/racecar_ws/tools/orin_cycle.sh 30                                  # 啟停 30 次，約 15 分鐘
+nohup setsid bash ~/racecar_ws/tools/orin_soak.sh 120 > ~/soak.out 2>&1 &   # 2 小時，ssh 斷了也繼續
+touch ~/r550_soak/STOP                                                    # 提早、乾淨地停
+```
+
+- `orin_cycle.sh`：每圈啟動 `localization.launch.py`、等 `/odometry/filtered`、檢查 topic、Ctrl+C、看有沒有殘留和序列埠。結果 `~/r550_cycle/<時間>/summary.txt`。
+- `orin_soak.sh`：`localization.launch.py` + `soak_log_node`，每分鐘記 CPU、記憶體、溫度、電池；電池 < 11.0 V 或 node 掛掉會自己停。跑完自動 `analyze_soak.py`：頻率 / 間隔、gyro 的 Allan deviation、ZUPT（和離線重算比對）、EKF 漂移、記憶體洩漏、光達雜訊。結果 `~/r550_soak/<時間>/report_soak.txt`。
+- `/imu/data_raw`：跟 `/imu/data` 一樣，但 gyro 是 STM32 原本送的（沒扣 ZUPT），給 Allan variance 和比對用。
+- Claude Code 的完整任務說明：[tasks/2026-10-20_soak_and_cycle.md](tasks/2026-10-20_soak_and_cycle.md)。
+
 ## 7. 充電
 
 - 12.6 V 充電器接車身「充电口」；紅燈充電中、綠燈充滿。

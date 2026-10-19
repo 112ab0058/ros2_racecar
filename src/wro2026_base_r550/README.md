@@ -17,6 +17,8 @@ WHEELTEC R550 mini akm 的底盤 package。有：協定 module、**只讀**的�
 
 `sensor_log_node`：只讀，把 `/odom`（x、y、yaw、vx、wz）和 `/imu/data`（gyro、accel）各寫成一個 csv（`-p dir:=資料夾`），給 `tools/real/analyze_calib.py` 算校正值；`tools/real/orin_calib.sh` 會自動開它。
 
+`soak_log_node`：只讀，長時間測試用（`tools/real/orin_soak.sh` 會開它）：`/imu/data_raw`、`/imu/data`、`/odom`、`/odometry/filtered`、`/battery`、`/diagnostics` 的 ZUPT 偏差各寫一個 csv；`/scan` 每一格算平均和標準差（不存原始資料）。
+
 `record_node`：只讀，把 `/cmd_vel`、`/cmd_vel_out`、`/odom` 連同收到的時間寫進同一個 csv（`-p out:=檔名`），用來量「放開到停車」的時間。
 
 ## 指令端的安全規則（`command.py` 的 `CommandGate`，每一條都有測試）

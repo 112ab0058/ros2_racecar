@@ -7,7 +7,8 @@ This node never writes to the serial port and does not subscribe to
 
 Publishes:
   /odom + TF odom->base_link  nav_msgs/Odometry  (STM32 vx, wz from encoders)
-  /imu/data                   sensor_msgs/Imu    (raw gyro + accel; no orientation)
+  /imu/data                   sensor_msgs/Imu    (gyro minus ZUPT bias + accel; no orientation)
+  /imu/data_raw               sensor_msgs/Imu    (same, gyro as the STM32 sends it)
   /battery                    sensor_msgs/BatteryState
   /diagnostics                diagnostic_msgs/DiagnosticArray
 
@@ -127,6 +128,7 @@ class R550Feedback(Node):
 
         self.odom_pub = self.create_publisher(Odometry, 'odom', 10)
         self.imu_pub = self.create_publisher(Imu, 'imu/data', 10)
+        self.imu_raw_pub = self.create_publisher(Imu, 'imu/data_raw', 10)
         self.bat_pub = self.create_publisher(BatteryState, 'battery', 10)
         self.diag_pub = self.create_publisher(DiagnosticArray, 'diagnostics', 10)
         self.tf_pub = TransformBroadcaster(self) if self.p['publish_odom_tf'] else None
@@ -214,6 +216,10 @@ class R550Feedback(Node):
         m.linear_acceleration_covariance[0] = m.linear_acceleration_covariance[4] = a
         m.linear_acceleration_covariance[8] = a
         self.imu_pub.publish(m)
+        # same message with the gyro as the STM32 sent it (Allan variance, ZUPT checks)
+        m.angular_velocity.x, m.angular_velocity.y = fb.gyro_x, fb.gyro_y
+        m.angular_velocity.z = fb.gyro_z
+        self.imu_raw_pub.publish(m)
 
     def _publish_battery(self, stamp, fb):
         b = BatteryState()

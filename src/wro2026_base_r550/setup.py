@@ -24,6 +24,7 @@ setup(
             'listen = wro2026_base_r550.listen:main',
             'teleop_node = wro2026_base_r550.teleop_node:main',
             'record_node = wro2026_base_r550.record_node:main',
+            'soak_log_node = wro2026_base_r550.soak_log_node:main',
             'sensor_log_node = wro2026_base_r550.sensor_log_node:main',
         ],
     },
