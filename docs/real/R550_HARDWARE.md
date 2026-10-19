@@ -7,7 +7,7 @@
 
 ```text
 Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
-   ├─ USB ── C30D 控制板（STM32）── 4 顆馬達 + encoder、轉向、IMU、電池
+   ├─ USB ── C30D 控制板（STM32）── 2 顆後輪馬達 + encoder（MotorA/B，C/D 沒接）、前輪舵機轉向、IMU、電池
    ├─ USB ── LSLIDAR N10P 光達（另一條 USB 只供電）
    └─ USB ── WHEELTEC C70 相機
 ```
@@ -27,7 +27,7 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 | 輪距 | 廠商程式註解 0.162 m，還沒量 | 廠商程式註解 |
 | 最大轉向角 | UNKNOWN：用手量不出來。之後從 STM32 原始碼查，或第 3 階段打滿方向盤開一圈、量轉彎圓反推 | |
 | 外形尺寸 | UNKNOWN。廠商頁面的 271 × 189 × 151 mm 是 R550 一般版，**mini 版不一定相同** | 待量測 / 待產品資料 |
-| 馬達、encoder | UNKNOWN。廠商頁面寫 MG513 + 500 線 GMR encoder（一般版） | 待確認 |
+| 馬達、encoder | **2 顆，在後輪，接 MotorA / MotorB；MotorC / D 沒接**。韌體在阿克曼模式只驅動 A、B（C、D 固定 0），前輪只靠舵機轉向、不出力（2026-10-19 架空測試＋實物確認）。型號 UNKNOWN（廠商頁面寫 MG513 + 500 線 GMR encoder，一般版） | 實物、韌體原始碼 |
 
 ## 控制板
 

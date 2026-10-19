@@ -24,7 +24,7 @@ WHEELTEC R550 mini akm 的底盤 package。有：協定 module、**只讀**的�
 - 單位換算：STM32 以為輪子一圈 26.4 cm，實際 21.5 cm（`vx_scale` 0.814）。`/odom` 乘 0.814，指令就除以 0.814，所以 `/cmd_vel` 0.1 m/s 實際就是 0.1 m/s。
 - 按 Ctrl+C 停 node 時，先送 5 個停車封包再關串口。
 - 額外發 `cmd_vel_out`（實際送出的速度，實際單位）和 `/diagnostics` 的 `r550_base: command`（目前的狀態）。
-- **還不知道**：node 被強制結束（沒送停車封包）時，STM32 會不會自己停。架空測試第 10 步會測；在知道之前，硬體停車就是 **Motor 開關**。
+- **已知**：node 被強制結束（沒送停車封包）時，STM32 **不會**自己停（韌體沒有指令逾時）。硬體停車就是 **Motor 開關**。
 
 ## 內容
 
@@ -73,7 +73,7 @@ STM32 → 主機，24 bytes，預設 20 Hz：`0x7B`、flag_stop（0 = 馬達使�
 - 錄到的實際封包是不是 24 bytes、電壓欄位和電池相符。
 - 速度和 IMU 的正負方向、`base_link` 的定義。
 - 序列埠的裝置名稱（USB 轉串口晶片 CH9102 或 CP2102，`lsusb` 確認）。
-- **STM32 自己有沒有指令逾時停車**：官方文件沒寫，driver 一定要自己做逾時停車。
+- ~~STM32 自己有沒有指令逾時停車~~：**沒有**。韌體 `balance.c` 的逾時判斷被註解掉（2026-10-19 讀原始碼），STM32 會一直執行最後收到的指令。所以 `base_node` 的 `cmd_timeout` 是唯一的軟體停車；node 被強制結束（`kill -9`、當機）時車子會繼續跑，只能靠 Motor 開關。
 
 研讀筆記見 `docs/research/R550_STUDY_NOTES.md`，操作步驟見 `docs/real/RUNBOOK.md`。
 

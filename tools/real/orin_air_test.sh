@@ -43,14 +43,14 @@ cleanup() { pkill -INT -f "ros2 topic pub" 2>/dev/null; stop_base; }
 trap cleanup EXIT
 trap 'echo; log "Ctrl+C: stopping"; exit 130' INT
 
-pub() {  # seconds vx wz
-    timeout -s INT "$1" ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
+pub() {  # seconds vx wz  (seconds of actual commands; +1.5 s for ros2 topic pub start-up)
+    timeout -s INT "$(awk "BEGIN{print $1 + 1.5}")" ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
         "{linear: {x: $2}, angular: {z: $3}}" > /dev/null 2>&1 < /dev/null
 }
-record() {  # seconds (background csv of what was sent and what the wheels did)
-    timeout -s INT "$1" ros2 topic echo --csv /cmd_vel_out > "$OUT/step${STEP}_cmd_out.csv" \
+record() {  # seconds (+1.5 s, matches pub) (background csv of what was sent and what the wheels did)
+    timeout -s INT "$(awk "BEGIN{print $1 + 1.5}")" ros2 topic echo --csv /cmd_vel_out > "$OUT/step${STEP}_cmd_out.csv" \
         2>/dev/null < /dev/null &
-    timeout -s INT "$1" ros2 topic echo --csv /odom > "$OUT/step${STEP}_odom.csv" \
+    timeout -s INT "$(awk "BEGIN{print $1 + 1.5}")" ros2 topic echo --csv /odom > "$OUT/step${STEP}_odom.csv" \
         2>/dev/null < /dev/null &
 }
 ask() { read -r -p "$1  [Enter = go, q = quit] " a; [ "$a" = q ] && exit 0; }
@@ -76,22 +76,22 @@ observe "wheels did NOT move (Motor OFF)"
 log "  sent (cmd_vel_out csv): step1_cmd_out.csv, expect 0.05"
 
 STEP=2
-log; log "== 2. forward 0.05 m/s for 3 s, then the publisher stops =="
+log; log "== 2. forward 0.08 m/s for 3 s, then the publisher stops =="
 ask "Set the Motor switch to ON (wheels in the air)."
-record 5; pub 3 0.05 0.0; sleep 2
+record 5; pub 3 0.08 0.0; sleep 2
 observe "wheels turned FORWARD slowly, then stopped within about 0.3 s"
 
 STEP=3
-log; log "== 3. reverse -0.05 m/s for 2 s =="
+log; log "== 3. reverse -0.08 m/s for 2 s =="
 ask "Next: reverse."
-record 4; pub 2 -0.05 0.0; sleep 2
+record 4; pub 2 -0.08 0.0; sleep 2
 observe "wheels turned BACKWARD, then stopped"
 
 STEP=4
 log; log "== 4. ask for 1.0 m/s: must be limited to $MAX_VX =="
 ask "Next: speed limit."
 record 4; pub 2 1.0 0.0; sleep 2
-observe "only slightly faster than step 2 (not full speed)"
+observe "only slightly faster than step 2 (not full speed); /odom csv should show ~0.10"
 
 STEP=5
 log; log "== 5. forward 0.05 m/s with wz +0.1 (left turn, radius 0.5 m) =="
@@ -131,20 +131,10 @@ record 4; pub 3 0.05 0.0; sleep 1
 observe "wheels did NOT move"
 stop_base
 
-STEP=10
-log; log "== 10. node KILLED (no stop frames): does the STM32 stop by itself? =="
-log "  Unknown (no STM32 source yet). If the wheels keep turning, Motor switch OFF."
-ask "Next: kill -9 while driving. Hand on the Motor switch."
-start_base
-pub 15 0.05 0.0 &
-PUB=$!
-sleep 3
-pkill -9 -f "wro2026_base_r550/base_node"
-log "  killed at $(date +%T)"
-sleep 4
-observe "wheels stopped BY THEMSELVES after the kill (n = kept turning)"
-kill -INT "$PUB" 2>/dev/null
-stop_base
+# Step 10 (kill -9: does the STM32 stop by itself?) is not run any more.
+# 2026-10-19: the command timeout in the firmware (balance.c) is commented out,
+# so the STM32 keeps the last command until it gets a new one. Only our node's
+# cmd_timeout and the Motor switch can stop the car.
 
 log; log "done. Motor switch OFF now."
 log "RESULT_DIR=$OUT"
