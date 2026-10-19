@@ -17,7 +17,7 @@
    colcon test-result --verbose
    ```
    包含 ament 的 flake8 / pep257（這兩個在 chat 的環境沒辦法用 ament 跑）。**有失敗就記下來，不要自己改程式**，繼續做下一步。
-3. 電池電壓 ≥ 11.5 V 才繼續（`ros2 topic echo --once /battery --field voltage`，要先開 sensors；或看第 2 步之後的 check）。低於 11.5 V 就停下來跟 Ray 說要先充電。
+3. 電池電壓 ≥ 11.3 V 才繼續（`ros2 topic echo --once /battery --field voltage`，要先開 sensors）。低於就停下來跟 Ray 說要先充電。**不要邊充電邊跑**：廠商說明書寫充電時不要使用車子，而且充電器會把電壓撐在 12.6 V 附近，電池那一項數據就沒有意義。馬達關著時只有 STM32 和光達在用電（估計 0.3–0.5 A，2.5 小時約 1 Ah，電池 5.1 Ah），`orin_soak.sh` 低於 11.0 V 會自己停，離電池的保護電壓 9 V 還很遠。
 
 ## 2. A：啟停循環 30 次（約 15–20 分鐘）
 ```bash
