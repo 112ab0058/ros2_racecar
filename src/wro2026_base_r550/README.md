@@ -73,7 +73,7 @@ STM32 → 主機，24 bytes，預設 20 Hz：`0x7B`、flag_stop（0 = 馬達使�
 - 錄到的實際封包是不是 24 bytes、電壓欄位和電池相符。
 - 速度和 IMU 的正負方向、`base_link` 的定義。
 - 序列埠的裝置名稱（USB 轉串口晶片 CH9102 或 CP2102，`lsusb` 確認）。
-- ~~STM32 自己有沒有指令逾時停車~~：**沒有**。韌體 `balance.c` 的逾時判斷被註解掉（2026-10-19 讀原始碼），STM32 會一直執行最後收到的指令。所以 `base_node` 的 `cmd_timeout` 是唯一的軟體停車；node 被強制結束（`kill -9`、當機）時車子會繼續跑，只能靠 Motor 開關。
+- ~~STM32 自己有沒有指令逾時停車~~：**沒有**。韌體 `BALANCE/balance.c` 第 219–221 行的「`command_lost_count` 超過 `RATE_100_HZ`（約 1 秒）就把 `Move_X/Y/Z` 歸零」整段被註解掉（2026-10-19 讀原始碼；`usartx.c` 收到指令時仍會把計數歸零，但沒有地方檢查它），STM32 會一直執行最後收到的指令。所以 `base_node` 的 `cmd_timeout` 是唯一的軟體停車；node 被強制結束（`kill -9`、當機）時車子會繼續跑，只能靠 Motor 開關。
 
 研讀筆記見 `docs/research/R550_STUDY_NOTES.md`，操作步驟見 `docs/real/RUNBOOK.md`。
 
