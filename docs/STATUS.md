@@ -25,7 +25,7 @@
 
 ## 下一步
 
-完整規劃（模組總表、順序、要調的參數、實驗）見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，順序在第 4 節。
+完整規劃（模組總表、順序、要調的參數、實驗）見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，順序在第 4 節；**每一步的小步驟、誰做、完成標準見 [research/DETAILED_PLAN.md](research/DETAILED_PLAN.md)**。
 
 1. 步驟 7 的校正先用「手推」做（只讀）：~~IMU 靜止~~（10-19 完成）→ `vx_scale`（手推直走）→ IMU 軸向 + `wz_scale`（手推左彎）。工具 `orin_calib.sh`（RUNBOOK 6d）
 2. EKF 設定（robot_localization），一樣先用手推驗證
