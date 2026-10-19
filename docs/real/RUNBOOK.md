@@ -240,6 +240,7 @@ bash ~/racecar_ws/tools/orin_check.sh --ekf                   # 自動檢查（C
 - `localization.launch.py` = `sensors.launch.py`（`publish_odom_tf:=false`）+ robot_localization 的 `ekf_filter_node`。
 - 融合：`/odom` 的 vx、vy（= 0，阿克曼不能橫移）+ `/imu/data` 的 vyaw。odom 的 vyaw 等轉圈測試（DETAILED_PLAN 7.3）驗證 `wz_scale` 後再決定要不要加。設定和理由在 `src/wro2026_bringup/config/ekf.yaml`。
 - 輸出：`/odometry/filtered`（30 Hz）和 TF `odom → base_link`。**同一個 TF 只能有一個發布者**：用這個 launch 時 feedback 不發；以後開車要用 `base.launch.py publish_odom_tf:=false` 再加 EKF。
+- **gyro 零速更新（ZUPT）**：後輪靜止超過 1 秒，`r550_feedback` 就把 gyro 讀數當成偏差慢慢學起來、從 `/imu/data` 扣掉（`zupt.py`，參數在 `r550_feedback.yaml`）。`/diagnostics` 裡看得到 `gyro_bias_z`、`zupt_learning`。所以開車途中**停下來 1–2 秒**，gyro 就會重新歸零。
 - `--ekf` 檢查：`/odometry/filtered` 頻率、`publish_odom_tf` 是不是 False、誰在發 `/tf`、靜止 60 秒前後的位置（不能碰車）。
 
 ## 7. 充電

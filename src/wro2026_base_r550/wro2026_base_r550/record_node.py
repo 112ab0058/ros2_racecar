@@ -1,7 +1,8 @@
 """
-Records /cmd_vel, /cmd_vel_out (Twist) and /odom (Odometry) into ONE csv with
-the time each message ARRIVED, so "key released -> wheels stopped" can be
-measured (Twist has no time stamp; `ros2 topic echo --csv` prints none).
+Record /cmd_vel, /cmd_vel_out and /odom into one csv with arrival times.
+
+The time each message ARRIVED is written, so "key released -> wheels stopped"
+can be measured (Twist has no time stamp; `ros2 topic echo --csv` prints none).
 
     ros2 run wro2026_base_r550 record_node --ros-args -p out:=/path/drive.csv
 

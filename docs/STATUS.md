@@ -15,7 +15,7 @@
 | STM32 通訊（只讀） | **2026-10-16 實車通過**：CH9102、115200、約 20 Hz、壞幀 0 | [real/RUNBOOK.md](real/RUNBOOK.md) |
 | ROS node（只讀）`/odom`、`/imu/data`、`/battery` | **2026-10-16 實車通過**：20 Hz；里程計比例校正 0.814（架空手轉測的，暫定） | [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) |
 | 指令端（會讓馬達轉） | **2026-10-19 架空測試全部通過（步驟 1–9）**：Motor OFF 不動、前進／倒車、限速 0.1、轉向正負號（左轉 wz 為正）、不原地轉、停 node 立刻停、限時、低電壓拒絕。0.1 m/s 指令 → 後輪 0.100 m/s；停止發布後 0.3 s 逾時 + 0.8 s 減速。`max_run_time` 新版（從第一個指令算）同晚重測 5.00 s 觸發。**STM32 韌體沒有指令逾時**，上地面前要決定怎麼處理 | [real/RUNBOOK.md](real/RUNBOOK.md) 6b 節 |
-| EKF（robot_localization） | 2026-10-20 寫好 `localization.launch.py` + `config/ekf.yaml`（odom vx、vy + IMU vyaw，2D）。**還沒上車跑**：下一步 `orin_check.sh --ekf` | [real/RUNBOOK.md](real/RUNBOOK.md) 6e 節 |
+| EKF（robot_localization） | 2026-10-20 寫好 `localization.launch.py` + `config/ekf.yaml`（odom vx、vy + IMU vyaw，2D）。**8.2 第一次上車**：TF 只有 EKF 發、靜止位置不動；但輸出只有 20 Hz、開機後 yaw 每分鐘飄 0.61° → 加 `predict_to_current_time` 和 gyro 零速更新（ZUPT），**待重測** | [real/RUNBOOK.md](real/RUNBOOK.md) 6e 節 |
 | 鍵盤遙控 | **2026-10-19 架空通過**：放開 → 指令變 0 **0.20 s**、→ 輪子停 **0.96–1.16 s**；`q`/`e`/`z`/`c` 的 wz 正負號全對；`/cmd_vel` 最大間隔 0.052 s，沒斷過。地面行駛等 STM32 逾時定案 | [real/RUNBOOK.md](real/RUNBOOK.md) 6c 節 |
 | 光達 N10P | Python driver `wro2026_lidar_n10p`（協定照官方 driver）。**2026-10-17 實車只聽通過**：333 包/秒、每秒 10 圈、壞封包 0。光達 0° 正對車頭、左右方向正確。**`/scan` 10 Hz、480 格實車通過、Foxglove 即時看得到** | [../src/wro2026_lidar_n10p/README.md](../src/wro2026_lidar_n10p/README.md) |
 | URDF / TF | **2026-10-17 實車通過**：`base_link → laser_link` = 0.130, 0, 0.115（光達在後軸前 13 cm、離地 15 cm；左右偏移、IMU 位置 UNKNOWN）。`sensors.launch.py` 一次啟動全部只讀 node | [../src/wro2026_description/README.md](../src/wro2026_description/README.md) |

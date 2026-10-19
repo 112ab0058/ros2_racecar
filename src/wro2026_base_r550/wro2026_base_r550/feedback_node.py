@@ -29,6 +29,7 @@ from tf2_ros import TransformBroadcaster
 
 from .feedback import monotonic, OdomIntegrator, quaternion_from_yaw, RateMeter
 from .protocol import BAUD_RATE, FeedbackStream
+from .zupt import GyroBias
 
 UNUSED_COVARIANCE = 1.0e6  # z / roll / pitch are not estimated (planar odometry)
 
@@ -53,8 +54,13 @@ PARAMETERS = [
     ('odom_pose_covariance_yaw', 0.05, 'yaw variance (rad^2); placeholder until measured'),
     ('odom_twist_covariance_vx', 0.001, 'vx variance ((m/s)^2); placeholder until measured'),
     ('odom_twist_covariance_wz', 0.01, 'wz variance ((rad/s)^2); placeholder until measured'),
-    ('imu_gyro_covariance', 1e-06, 'gyro variance ((rad/s)^2); still: 1.2-1.7e-7 (2026-10-19), x7 margin'),
+    ('imu_gyro_covariance', 1e-06, 'gyro variance ((rad/s)^2); still 1.2-1.7e-7 (2026-10-19)'),
     ('imu_accel_covariance', 0.0001, 'accel variance ((m/s^2)^2); still: about 4e-5 (2026-10-19)'),
+    # zero-velocity update of the gyro bias (zupt.py); 2026-10-20 bias drifted after boot
+    ('zupt_enable', True, 'learn the gyro bias while the wheels are still, subtract it'),
+    ('zupt_still_time', 1.0, 'wheels still this long (s) before learning'),
+    ('zupt_time_constant', 5.0, 'low-pass time constant of the bias (s)'),
+    ('zupt_max_rate', 0.01, 'ignore gyro samples further than this from the bias (rad/s)'),
 ]
 
 
@@ -110,6 +116,10 @@ class R550Feedback(Node):
                              '(find it with: ls -l /dev/serial/by-id/)')
         self.lock = threading.Lock()
         self.odom = OdomIntegrator(max_gap=self.p['odom_max_gap'])
+        self.gyro_bias = GyroBias(enabled=self.p['zupt_enable'],
+                                  still_time=self.p['zupt_still_time'],
+                                  time_constant=self.p['zupt_time_constant'],
+                                  max_rate=self.p['zupt_max_rate'])
         self.rate = RateMeter(window=2.0)
         self.last_frame_time = None
         self.last_fb = None
@@ -142,13 +152,14 @@ class R550Feedback(Node):
             wz = fb.wz * self.p['wz_scale']
             self.odom.update(now, vx, wz)
             x, y, yaw = self.odom.x, self.odom.y, self.odom.yaw
+            gyro = self.gyro_bias.update(now, vx, wz, fb.gyro_x, fb.gyro_y, fb.gyro_z)
             self.rate.tick(now)
             self.last_frame_time = now
             self.last_fb = fb
         stamp = self.get_clock().now().to_msg()
         try:
             self._publish_odom(stamp, x, y, yaw, vx, wz)
-            self._publish_imu(stamp, fb)
+            self._publish_imu(stamp, fb, gyro)
             self._publish_battery(stamp, fb)
         except Exception:  # context shut down while the thread was publishing
             pass
@@ -187,14 +198,13 @@ class R550Feedback(Node):
             t.transform.rotation.z, t.transform.rotation.w = qz, qw
             self.tf_pub.sendTransform(t)
 
-    def _publish_imu(self, stamp, fb):
+    def _publish_imu(self, stamp, fb, gyro):
         m = Imu()
         m.header.stamp = stamp
         m.header.frame_id = self.p['imu_frame_id']
         m.orientation_covariance[0] = -1.0  # REP-145: no orientation estimate
-        m.angular_velocity.x = fb.gyro_x
-        m.angular_velocity.y = fb.gyro_y
-        m.angular_velocity.z = fb.gyro_z
+        # gyro minus the bias learned while standing still (zupt.py)
+        m.angular_velocity.x, m.angular_velocity.y, m.angular_velocity.z = gyro
         m.linear_acceleration.x = fb.accel_x
         m.linear_acceleration.y = fb.accel_y
         m.linear_acceleration.z = fb.accel_z
@@ -225,6 +235,7 @@ class R550Feedback(Node):
             last_t, fb = self.last_frame_time, self.last_fb
             rate = self.rate.rate(now)
             gaps = self.odom.gaps
+            bias, learning = list(self.gyro_bias.bias), self.gyro_bias.learning
         stream = self.reader.stream
         age = None if last_t is None else now - last_t
         level, msgs = DiagnosticStatus.OK, []
@@ -252,6 +263,8 @@ class R550Feedback(Node):
             'bad_frames': str(stream.bad_frames),
             'dropped_bytes': str(stream.dropped_bytes),
             'odom_gaps': str(gaps),
+            'gyro_bias_z': f'{bias[2]:+.6f}',
+            'zupt_learning': str(learning),
             'battery_v': 'unknown' if fb is None else f'{fb.voltage:.2f}',
             # not the Motor switch (reads 0 with the switch at OFF); meaning UNKNOWN
             'flag_stop': 'unknown' if fb is None else str(fb.stop_flag),

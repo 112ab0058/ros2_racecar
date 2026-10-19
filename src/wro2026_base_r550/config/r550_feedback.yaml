@@ -27,3 +27,10 @@ r550_feedback:
     odom_twist_covariance_wz: 0.01
     imu_gyro_covariance: 1.0e-6
     imu_accel_covariance: 1.0e-4
+    # Zero-velocity update (zupt.py): wheels still >= zupt_still_time -> the gyro
+    # reading is bias (Ackermann cannot turn on the spot); low-pass it and subtract.
+    # 2026-10-20: right after boot the yaw drifted 0.61 deg/min (firmware zeroes once).
+    zupt_enable: true
+    zupt_still_time: 1.0         # s
+    zupt_time_constant: 5.0      # s
+    zupt_max_rate: 0.01          # rad/s; larger = real rotation (car carried), ignored
