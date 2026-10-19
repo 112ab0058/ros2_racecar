@@ -14,7 +14,8 @@
 | 廠商資料研讀 | 協定、運動學、開機流程、接線完成；**STM32 原始碼已找到**（無線燒錄工具資料夾裡的 zip，2026-10-19）；Mini 硬體說明還沒下載到 | [research/R550_STUDY_NOTES.md](research/R550_STUDY_NOTES.md) |
 | STM32 通訊（只讀） | **2026-10-16 實車通過**：CH9102、115200、約 20 Hz、壞幀 0 | [real/RUNBOOK.md](real/RUNBOOK.md) |
 | ROS node（只讀）`/odom`、`/imu/data`、`/battery` | **2026-10-16 實車通過**：20 Hz；里程計比例校正 0.814（架空手轉測的，暫定） | [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) |
-| 指令端（會讓馬達轉） | **2026-10-19 架空測試全部通過（步驟 1–9）**：Motor OFF 不動、前進／倒車、限速 0.1、轉向正負號（左轉 wz 為正）、不原地轉、停 node 立刻停、限時、低電壓拒絕。0.1 m/s 指令 → 後輪 0.100 m/s；停止發布後 0.3 s 逾時 + 0.8 s 減速。`max_run_time` 新版（從第一個指令算）還沒上車測。**STM32 韌體沒有指令逾時**，上地面前要決定怎麼處理 | [real/RUNBOOK.md](real/RUNBOOK.md) 6b 節 |
+| 指令端（會讓馬達轉） | **2026-10-19 架空測試全部通過（步驟 1–9）**：Motor OFF 不動、前進／倒車、限速 0.1、轉向正負號（左轉 wz 為正）、不原地轉、停 node 立刻停、限時、低電壓拒絕。0.1 m/s 指令 → 後輪 0.100 m/s；停止發布後 0.3 s 逾時 + 0.8 s 減速。`max_run_time` 新版（從第一個指令算）同晚重測 5.00 s 觸發。**STM32 韌體沒有指令逾時**，上地面前要決定怎麼處理 | [real/RUNBOOK.md](real/RUNBOOK.md) 6b 節 |
+| 鍵盤遙控 | 2026-10-19 寫好 `teleop_node`（固定 20 Hz 發布、放開按鍵送 0）和 `orin_teleop.sh`（一個終端機）。**還沒上車測** | [real/RUNBOOK.md](real/RUNBOOK.md) 6c 節 |
 | 光達 N10P | Python driver `wro2026_lidar_n10p`（協定照官方 driver）。**2026-10-17 實車只聽通過**：333 包/秒、每秒 10 圈、壞封包 0。光達 0° 正對車頭、左右方向正確。**`/scan` 10 Hz、480 格實車通過、Foxglove 即時看得到** | [../src/wro2026_lidar_n10p/README.md](../src/wro2026_lidar_n10p/README.md) |
 | URDF / TF | **2026-10-17 實車通過**：`base_link → laser_link` = 0.130, 0, 0.115（光達在後軸前 13 cm、離地 15 cm；左右偏移、IMU 位置 UNKNOWN）。`sensors.launch.py` 一次啟動全部只讀 node | [../src/wro2026_description/README.md](../src/wro2026_description/README.md) |
 | 相機 C70 | 未開始 | |
@@ -26,10 +27,11 @@
 
 完整規劃（模組總表、順序、要調的參數、實驗）見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，順序在第 4 節。
 
-1. 決定「STM32 沒有指令逾時」的處理方式（改韌體，或第一次上地面時用操作上的防護）；這要在第一次地面行駛前定案
-2. Orin 用機殼的調節支架裝上車、電池供電（等延長線、需要電池接頭的照片）
-3. 場地的牆加高到約 25 cm
-4. 地面校正里程計、量最大轉向角
+1. 鍵盤遙控架空測試（`orin_teleop.sh`，先跟 Claude 確認）
+2. 決定「STM32 沒有指令逾時」的處理方式（改韌體，或第一次上地面時用操作上的防護）；這要在第一次地面行駛前定案
+3. Orin 用機殼的調節支架裝上車、電池供電（等延長線、需要電池接頭的照片）
+4. 場地的牆加高到約 25 cm
+5. 地面校正里程計、量最大轉向角
 
 ## 已知問題
 

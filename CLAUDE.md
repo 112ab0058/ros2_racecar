@@ -25,7 +25,7 @@ Codex 時期的專案規則在 AGENTS.md，模擬（`src/wro2026_sim`）相關�
 - `src/wro2026_description`：URDF（感測器位置、TF 樹，`base_link` = 後軸中心），不碰硬體。
 - `src/wro2026_bringup`：一次啟動的 launch。`sensors.launch.py` 只能放只讀的 node；會讓馬達轉的另開 launch，照安全規則。
 - 部署：Windows 跑 `tools/real/deploy.cmd`（git pull → tar 經 ssh 送到 Orin → `tools/real/orin_build.sh` build）。
-- Ray 電腦上的 Claude Code 在 **Windows**（Git Bash / PowerShell）跑，repo 在 `C:\Users\chaon\ros2_racecar`；WSL 的 `~/ros2_racecar` 是舊副本（別的分支），不要用。它可以 ssh / scp 到 Orin（金鑰），但**不能回答互動式提示、看不到輪子**：`orin_air_test.sh` 這類腳本由 Ray 自己在 ssh 跑。結果放 Windows `下載\r550_check\`、`下載\r550_airtest\`。
+- Ray 電腦上的 Claude Code 在 **Windows**（Git Bash / PowerShell）跑，repo 在 `C:\Users\chaon\ros2_racecar`；WSL 的 `~/ros2_racecar` 是舊副本（別的分支），不要用。它可以 ssh / scp 到 Orin（金鑰），但**不能回答互動式提示、看不到輪子**：`orin_air_test.sh` 這類腳本由 Ray 自己在 ssh 跑。結果放 Windows `下載\r550_check\`、`下載\r550_airtest\`、`下載\r550_teleop\`。每支新腳本交給 Ray 時附上：位置、啟動指令、做什麼、怎麼看結果。自己測試要發 `/cmd_vel` 時用 rclpy node 的 timer 發布，不用 `ros2 topic pub`。
 - Jetson 上用 `~/racecar_ws`（不是 git repo）build / test；操作步驟在 `docs/real/RUNBOOK.md`。Jetson 的 `~/ros2_ws/src/wave_rover_driver` 是舊 driver 的備份，不要修改。
 
 ### 安全規則（實車）

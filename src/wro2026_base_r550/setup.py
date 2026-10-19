@@ -22,6 +22,7 @@ setup(
             'feedback_node = wro2026_base_r550.feedback_node:main',
             'base_node = wro2026_base_r550.base_node:main',
             'listen = wro2026_base_r550.listen:main',
+            'teleop_node = wro2026_base_r550.teleop_node:main',
         ],
     },
 )

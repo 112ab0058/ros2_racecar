@@ -7,6 +7,10 @@ WHEELTEC R550 mini akm 的底盤 package。有：協定 module、**只讀**的�
 - `feedback_node`、`listen`：只讀，不訂閱 `/cmd_vel`、不寫序列埠（有測試檢查）。`sensors.launch.py` 用的是這個。
 - `base_node`：回授 + 指令端。`enable_commands` 預設 **false**（等於只讀）；設成 true 才會把 `/cmd_vel` 送到 STM32。兩個 node 開同一個串口，**不要同時跑**。
 
+## 鍵盤遙控（`teleop_node`）
+
+`ros2 run wro2026_base_r550 teleop_node`（要在真的終端機裡跑，例如 ssh），或用 `tools/real/orin_teleop.sh` 一個終端機全部開好。只發布 `/cmd_vel`，不碰序列埠；要 `base_node` 開了 `enable_commands` 才會動。按住 `w`/`q`/`e` 前進、`x`/`z`/`c` 倒車，放開就送 0。用 timer 固定 20 Hz 發布（`ros2 topic pub` 曾停頓超過 0.3 秒）。邏輯在 `teleop.py`，測試在 `test/test_teleop.py`。操作說明見 `docs/real/RUNBOOK.md` 6c 節。
+
 ## 指令端的安全規則（`command.py` 的 `CommandGate`，每一條都有測試）
 
 每 1/20 秒決定一次要送什麼，第一個成立的規則勝出：

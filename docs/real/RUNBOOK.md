@@ -173,7 +173,7 @@ bash ~/racecar_ws/tools/orin_air_test.sh
 | 9 | 電壓下限設 13 V | 不動，gate reason = `battery_low` | ✓ |
 | 10 | （不測）node 被強制結束時 STM32 會不會自己停 | **不會**：韌體 `balance.c` 的指令逾時被註解掉，STM32 會一直執行最後一個指令。只能靠我們 node 的逾時和 Motor 開關 | — |
 
-2026-10-19 那次 Orin 上跑的是 `e3cb0ad` 之前的版本：`max_run_time` 從 node 啟動開始算（設 11 秒）。新版改成從第一個 `/cmd_vel` 開始算，單元測試有涵蓋，實車下次部署後重跑步驟 8 確認即可。
+2026-10-19 第一輪 Orin 上跑的是 `e3cb0ad` 之前的版本（`max_run_time` 從 node 啟動算）；同晚部署新版後重測，從第一個指令算，**5.00 秒**觸發。
 
 - **限制**：最高 0.1 m/s、每步 2–8 秒、逾時 0.3 秒。`ros2 topic pub` 啟動要 1 秒多，腳本已自動多算 1.5 秒。
 - **停止**：`Ctrl+C`（node 會送停車封包），或 Motor 開關 OFF。
@@ -185,6 +185,33 @@ bash ~/racecar_ws/tools/orin_air_test.sh
 ros2 launch wro2026_base_r550 base.launch.py enable_commands:=true max_vx:=0.1 max_run_time:=120
 ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.05}}"   # Ctrl+C 停止發布 → 0.3 s 後停車
 ```
+
+## 6c. 鍵盤遙控（會讓馬達轉；目前只在架空狀態用）
+
+**Orin**（自己在 ssh 跑，一個終端機就好）：
+
+```bash
+bash ~/racecar_ws/tools/orin_teleop.sh            # 最高 0.15 m/s、300 秒
+bash ~/racecar_ws/tools/orin_teleop.sh 0.1 120    # 最高 0.1 m/s、120 秒
+```
+
+腳本會在背景開 `base.launch.py`（指令開啟、限速、限時），前景跑鍵盤 node，按 Ctrl+C 全部一起關。
+
+| 按鍵 | 動作 |
+|---|---|
+| `w` / `q` / `e`（按住） | 前進 / 前進左轉 / 前進右轉 |
+| `x` / `z` / `c`（按住） | 倒車 / 倒車、前輪往左 / 倒車、前輪往右 |
+| `s` 或空白鍵 | 停 |
+| `+` / `-` | 加速 / 減速（每次 0.02 m/s，0.04 到上限之間） |
+| `a` / `d` | 沒有作用（阿克曼不能原地轉） |
+| Ctrl+C | 送出 0 之後離開，背景的 base node 也一起關 |
+
+- **放開按鍵就停**：終端機沒有「放開」事件，只有按住時的連發（Windows 預設先等約 0.5 秒，之後每秒約 30 次）。所以 node 的判斷是：還沒開始連發時等 0.6 秒，開始連發後 0.25 秒沒收到按鍵就送 0。之後輪子再約 1 秒停下（0.8 秒是 STM32 減速）。
+- **一次只能按一個鍵**：終端機只會連發最後按下的鍵，所以轉彎要用 `q`/`e`，不能 `w`+`a`。
+- node 用 timer **固定 20 Hz 發布**，送 0 也照樣發。不用 `ros2 topic pub`，因為它曾經停頓超過 0.3 秒，觸發逾時（2026-10-19）。
+- **限制**：最高 0.15 m/s（腳本不接受更高）、轉彎半徑 0.5 m、逾時 0.3 秒、限時預設 300 秒。
+- **停止**：放開按鍵、`s`、空白鍵、Ctrl+C，或把 Motor 開關扳到 OFF。
+- **結果**：`~/r550_teleop/<時間>/` 裡有 `cmd_vel.csv`（按鍵送出的指令）、`cmd_vel_out.csv`（實際送給 STM32 的）、`odom.csv`（輪子）、`base.log`。
 
 ## 7. 充電
 
