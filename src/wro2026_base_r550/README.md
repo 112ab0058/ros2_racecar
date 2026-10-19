@@ -14,7 +14,7 @@ WHEELTEC R550 mini akm 的底盤 package。有：協定 module、**只讀**的�
 | 規則 | 結果 |
 |---|---|
 | `enable_commands` 是 false | 不訂閱、不送任何東西 |
-| 啟動後超過 `max_run_time` 秒（> 0 時） | 送 0，直到重開（測試時用來限時） |
+| 收到第一個 `/cmd_vel` 之後超過 `max_run_time` 秒（> 0 時） | 送 0，直到重開（測試時用來限時） |
 | 超過 `feedback_timeout`（0.5 s）沒收到 STM32 回授 | 送 0 |
 | 濾波後的電壓低於 `min_battery_voltage`（10.5 V） | 送 0，回升 0.2 V 才恢復（瞬間掉壓不會觸發） |
 | 還沒收過 `/cmd_vel`，或最新一筆超過 `cmd_timeout`（0.3 s） | 送 0 |
@@ -23,6 +23,7 @@ WHEELTEC R550 mini akm 的底盤 package。有：協定 module、**只讀**的�
 - 安全停車是**立刻送 0**，不經過加速度限制。
 - 單位換算：STM32 以為輪子一圈 26.4 cm，實際 21.5 cm（`vx_scale` 0.814）。`/odom` 乘 0.814，指令就除以 0.814，所以 `/cmd_vel` 0.1 m/s 實際就是 0.1 m/s。
 - 按 Ctrl+C 停 node 時，先送 5 個停車封包再關串口。
+- 指令封包的 byte 1 **一定送 0**：韌體收到 1、2、3 會進入自動回充／紅外對接模式（`usartx.c`）。有測試檢查。
 - 額外發 `cmd_vel_out`（實際送出的速度，實際單位）和 `/diagnostics` 的 `r550_base: command`（目前的狀態）。
 - **已知**：node 被強制結束（沒送停車封包）時，STM32 **不會**自己停（韌體沒有指令逾時）。硬體停車就是 **Motor 開關**。
 

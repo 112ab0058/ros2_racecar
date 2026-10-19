@@ -143,7 +143,9 @@ bash ~/racecar_ws/tools/orin_check.sh --bag 20   # 另外錄 20 秒 rosbag（錄
 - 結果存在 `~/r550_check/<時間>/`：`report.txt`、`launch.log`、`scan_once.yaml`，加 `--bag` 時還有 `bag/`。
 - 全部只讀，不會讓馬達轉，也不用 sudo。
 
-Windows 的 `tools/real/deploy.sh` 是 `deploy.cmd` 的 bash 版，給 Git Bash、WSL、Claude Code 用。
+Windows 的 `tools/real/deploy.sh` 是 `deploy.cmd` 的 bash 版，給 Git Bash、Claude Code 用。兩個都是先 `git pull`，再啟動 `deploy_send.*`（送檔和 build），所以 pull 下來的新版腳本這一次就會生效（2026-10-19 以前的版本要跑兩次）。
+
+**檢查前**：Orin 上不能留著其他 ROS 程式（舊的 scan.launch、foxglove 等）。`orin_check.sh` 看到「只有一部分在跑」會直接停下來，請先關掉再跑。
 
 ## 6b. 架空測試指令端（會讓馬達轉，先跟 Claude 確認）
 

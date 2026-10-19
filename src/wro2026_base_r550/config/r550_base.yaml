@@ -14,5 +14,5 @@ r550_base:
     max_accel: 0.5               # m/s^2 ramp on vx; safety stops are immediate
     min_turn_speed: 0.02         # m/s; below this wz = 0 (Ackermann cannot turn on the spot)
     min_battery_voltage: 10.5    # V filtered; vendor buzzer warns at 10.5 V
-    max_run_time: 0.0            # s; 0 = no limit (tests pass a limit on the command line)
+    max_run_time: 0.0            # s after the first /cmd_vel; 0 = no limit (tests pass one)
     stop_frames_on_exit: 5

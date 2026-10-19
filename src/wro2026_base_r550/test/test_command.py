@@ -105,6 +105,17 @@ def test_battery_low_with_filter_and_hysteresis():
     assert not g2.battery_low
 
 
+def test_max_run_time_counts_from_first_command():
+    g = armed(max_run_time=10.0)
+    assert g.update(6.0, 6.0)[2] == c.NO_CMD     # idle time before the first command
+    g.set_cmd(8.0, 0.1, 0.0)
+    assert g.update(8.0, 8.0)[2] == c.OK
+    g.set_cmd(17.9, 0.1, 0.0)
+    assert g.update(17.9, 17.9)[2] == c.OK       # 9.9 s after the first command
+    g.set_cmd(18.5, 0.1, 0.0)
+    assert g.update(18.5, 18.5)[2] == c.RUN_TIME_OVER
+
+
 def test_max_run_time_latches():
     g = armed(max_run_time=10.0)
     g.set_cmd(0.0, 0.1, 0.0)
@@ -156,3 +167,15 @@ def test_base_parameters_match_yaml():
 def test_gate_defaults_match_claude_md():
     g = CommandGate()
     assert g.enabled is False and g.cmd_timeout == 0.3
+
+
+def test_command_byte1_is_always_zero():
+    """byte 1 = 1/2/3 switches the firmware to auto-charging modes (usartx.c)."""
+    from wro2026_base_r550.protocol import encode_twist_command, stop_command
+    assert encode_twist_command(0.1, 0.2)[1] == 0 and stop_command()[1] == 0
+    tree = ast.parse(open(os.path.join(PKG, 'wro2026_base_r550', 'base_node.py'),
+                          encoding='utf-8').read())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, 'id', '') in (
+                'encode_twist_command', 'stop_command'):
+            assert not node.keywords, 'base_node must not set byte1/byte2'

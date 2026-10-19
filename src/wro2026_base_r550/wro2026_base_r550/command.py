@@ -6,7 +6,8 @@ car. Everything is in real units (m/s, rad/s); base_node converts to the
 STM32's units. Rules, checked in this order (first one that fires wins):
 
   disabled       commands not enabled                      -> 0, 0
-  run_time_over  armed longer than max_run_time (if > 0)    -> 0, 0 (latched)
+  run_time_over  longer than max_run_time (if > 0) since the -> 0, 0 (latched)
+                 first /cmd_vel
   feedback_lost  no valid STM32 frame for feedback_timeout  -> 0, 0
   battery_low    filtered voltage below min_battery_voltage -> 0, 0 (until it
                  recovers by battery_hysteresis)
@@ -79,6 +80,8 @@ class CommandGate:
         if not (math.isfinite(vx) and math.isfinite(wz)):
             self.rejected_cmds += 1
             return False
+        if self.start_time is None:  # max_run_time counts from the first command
+            self.start_time = t
         self.cmd_time, self.cmd_vx, self.cmd_wz = t, vx, wz
         return True
 
@@ -119,9 +122,8 @@ class CommandGate:
     def _stop_reason(self, now, last_feedback_time):
         if not self.enabled:
             return DISABLED
-        if self.start_time is None:
-            self.start_time = now
-        if self.max_run_time > 0 and now - self.start_time > self.max_run_time:
+        if (self.max_run_time > 0 and self.start_time is not None
+                and now - self.start_time > self.max_run_time):
             self.run_time_over = True
         if self.run_time_over:
             return RUN_TIME_OVER

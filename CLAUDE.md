@@ -20,11 +20,12 @@ Codex 時期的專案規則在 AGENTS.md，模擬（`src/wro2026_sim`）相關�
 
 ### Package 規劃
 - `src/wro2026_sim`：模擬，保持原樣，不得部署到 Jetson。
-- `src/wro2026_base_r550`：R550 底盤（協定、只讀回授 node、`listen`；指令端之後加）。不得依賴 Gazebo / ros_gz / turtlebot3。
+- `src/wro2026_base_r550`：R550 底盤（協定、只讀回授 node、`listen`、指令端 `base_node`（`enable_commands` 預設 false）；STM32 韌體沒有指令逾時）。不得依賴 Gazebo / ros_gz / turtlebot3。
 - `src/wro2026_lidar_n10p`：N10P 光達 driver（純 Python、只讀，協定照 LSLIDAR 官方 driver）。
 - `src/wro2026_description`：URDF（感測器位置、TF 樹，`base_link` = 後軸中心），不碰硬體。
 - `src/wro2026_bringup`：一次啟動的 launch。`sensors.launch.py` 只能放只讀的 node；會讓馬達轉的另開 launch，照安全規則。
 - 部署：Windows 跑 `tools/real/deploy.cmd`（git pull → tar 經 ssh 送到 Orin → `tools/real/orin_build.sh` build）。
+- Ray 電腦上的 Claude Code 在 **Windows**（Git Bash / PowerShell）跑，repo 在 `C:\Users\chaon\ros2_racecar`；WSL 的 `~/ros2_racecar` 是舊副本（別的分支），不要用。它可以 ssh / scp 到 Orin（金鑰），但**不能回答互動式提示、看不到輪子**：`orin_air_test.sh` 這類腳本由 Ray 自己在 ssh 跑。結果放 Windows `下載\r550_check\`、`下載\r550_airtest\`。
 - Jetson 上用 `~/racecar_ws`（不是 git repo）build / test；操作步驟在 `docs/real/RUNBOOK.md`。Jetson 的 `~/ros2_ws/src/wave_rover_driver` 是舊 driver 的備份，不要修改。
 
 ### 安全規則（實車）

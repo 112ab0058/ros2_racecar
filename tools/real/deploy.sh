@@ -10,9 +10,7 @@ cd "$(dirname "$0")/../.."
 echo "[1/2] git pull"
 git pull --ff-only
 
-echo "[2/2] send to $ORIN and build"
-tar --exclude=__pycache__ -cf - tools/real \
-    src/wro2026_base_r550 src/wro2026_lidar_n10p src/wro2026_description src/wro2026_bringup \
-    | ssh "$ORIN" "rm -rf ~/racecar_ws/.deploy && mkdir -p ~/racecar_ws/.deploy && tar -xf - -C ~/racecar_ws/.deploy && bash ~/racecar_ws/.deploy/tools/real/orin_build.sh"
-
-echo "OK. On the Orin: ros2 launch wro2026_bringup sensors.launch.py"
+# The send step lives in its own file and is started only now, so a pull that
+# changed it takes effect in this run (bash reads a running script lazily;
+# 2026-10-19 the first deploy ran the old version and skipped a file).
+exec bash tools/real/deploy_send.sh

@@ -37,9 +37,20 @@ for d in "$STM32" "$LIDAR"; do
 done
 
 LAUNCH_PID=""
-if pgrep -f "wro2026_lidar_n10p/scan_node|wro2026_base_r550/feedback_node" > /dev/null; then
+# All three must be running, or none. A leftover single node (e.g. an old
+# scan.launch) gave wrong results on 2026-10-19: no /odom, 720-bin scan.
+n_running=0
+for pat in "wro2026_base_r550/(feedback_node|base_node)" "wro2026_lidar_n10p/scan_node" \
+           "robot_state_publisher"; do
+    pgrep -f "$pat" > /dev/null && n_running=$((n_running + 1))
+done
+if [ "$n_running" -gt 0 ] && [ "$n_running" -lt 3 ]; then
+    section "SOME ROS programs are already running: stop them first, then run again"
+    run pgrep -af "feedback_node|base_node|scan_node|robot_state_publisher|foxglove_bridge"
+    exit 1
+elif [ "$n_running" -eq 3 ]; then
     section "sensors already running (not started by this script)"
-    run pgrep -af "scan_node|feedback_node|robot_state_publisher|foxglove_bridge"
+    run pgrep -af "scan_node|feedback_node|base_node|robot_state_publisher|foxglove_bridge"
 else
     section "starting sensors.launch.py foxglove:=false (log: launch.log)"
     setsid ros2 launch wro2026_bringup sensors.launch.py foxglove:=false \

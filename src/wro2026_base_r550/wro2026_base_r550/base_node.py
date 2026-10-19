@@ -13,7 +13,7 @@ What it sends comes from command.CommandGate:
   - /cmd_vel older than cmd_timeout (0.3 s)   -> stop
   - no STM32 feedback for feedback_timeout    -> stop
   - battery below min_battery_voltage         -> stop
-  - armed longer than max_run_time (if > 0)   -> stop until restart
+  - max_run_time (if > 0) after the first /cmd_vel -> stop until restart
   - speeds clamped to max_vx / max_reverse_vx / max_wz, vx ramped by max_accel
   - no turning on the spot (Ackermann)
 On shutdown (Ctrl+C) it sends stop frames before closing the port.
@@ -50,7 +50,7 @@ COMMAND_PARAMETERS = [
     ('max_accel', 0.5, 'vx ramp (m/s^2); safety stops are immediate'),
     ('min_turn_speed', 0.02, 'below this |vx| (m/s) wz is forced to 0 (no turning on the spot)'),
     ('min_battery_voltage', 10.5, 'refuse to move below this filtered voltage (V)'),
-    ('max_run_time', 0.0, 'stop for good after this many seconds armed (0 = no limit)'),
+    ('max_run_time', 0.0, 'stop for good this many seconds after the first /cmd_vel (0 = off)'),
     ('stop_frames_on_exit', 5, 'stop frames sent when the node shuts down'),
 ]
 
