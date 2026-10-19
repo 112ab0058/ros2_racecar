@@ -211,7 +211,7 @@ bash ~/racecar_ws/tools/orin_teleop.sh 0.1 120    # 最高 0.1 m/s、120 秒
 - node 用 timer **固定 20 Hz 發布**，送 0 也照樣發。不用 `ros2 topic pub`，因為它曾經停頓超過 0.3 秒，觸發逾時（2026-10-19）。
 - **限制**：最高 0.15 m/s（腳本不接受更高）、轉彎半徑 0.5 m、逾時 0.3 秒、限時預設 300 秒。
 - **停止**：放開按鍵、`s`、空白鍵、Ctrl+C，或把 Motor 開關扳到 OFF。
-- **結果**：`~/r550_teleop/<時間>/` 裡有 `cmd_vel.csv`（按鍵送出的指令）、`cmd_vel_out.csv`（實際送給 STM32 的）、`odom.csv`（輪子）、`base.log`。
+- **結果**：`~/r550_teleop/<時間>/drive.csv`，一個檔案記三個 topic，每列是 `t`（收到的時間，秒）、`topic`、`vx`、`wz`：`cmd_vel`（按鍵送出的）、`cmd_vel_out`（實際送給 STM32 的）、`odom`（輪子）。放開到停車 = `cmd_vel` 第一個 0 → `odom` 的 vx 回到 0。另有 `base.log`、`record.log`。
 
 ## 7. 充電
 

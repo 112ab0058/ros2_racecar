@@ -15,8 +15,9 @@
 #         max_run_time (default 300 s after the first key), turn radius 0.5 m.
 # Stop:   let go of the key (0 within ~0.25 s, wheels stop ~1 s later),
 #         s / space, Ctrl+C (quits), or the Motor switch OFF.
-# Result: ~/r550_teleop/<time>/ : csv of /cmd_vel (keys), /cmd_vel_out (sent),
-#         /odom (wheels), base.log. Gaps in cmd_vel.csv show publishing pauses.
+# Result: ~/r550_teleop/<time>/drive.csv : t (arrival, s), topic, vx, wz for
+#         /cmd_vel (keys), /cmd_vel_out (sent), /odom (wheels); base.log.
+#         Release -> stop = first 0 on cmd_vel -> odom vx back to 0.
 set -o pipefail
 
 MAX_VX="${1:-0.15}"
@@ -54,10 +55,11 @@ trap cleanup EXIT
 setsid ros2 launch wro2026_base_r550 base.launch.py enable_commands:=true \
     max_vx:="$MAX_VX" max_run_time:="$RUN_TIME" > "$OUT/base.log" 2>&1 < /dev/null &
 PIDS+=($!)
-for t in cmd_vel cmd_vel_out odom; do
-    setsid ros2 topic echo --csv "/$t" > "$OUT/$t.csv" 2>/dev/null < /dev/null &
-    PIDS+=($!)
-done
+# One recorder for all three topics, with arrival times (echo --csv gave up
+# on 2026-10-19 because the topics did not exist yet, and Twist has no stamp).
+setsid ros2 run wro2026_base_r550 record_node --ros-args -p out:="$OUT/drive.csv" \
+    > "$OUT/record.log" 2>&1 < /dev/null &
+PIDS+=($!)
 echo "starting the base node (6 s) ..."
 sleep 6
 if ! grep -q "COMMANDS ENABLED" "$OUT/base.log"; then
