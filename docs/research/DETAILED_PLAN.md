@@ -55,7 +55,7 @@
 | # | 做什麼 | 誰 | 完成的標準 / 產出 |
 |---|---|---|---|
 | 8.1 | ✅（2026-10-20）寫 `wro2026_bringup/config/ekf.yaml` + `localization.launch.py`：`ekf_node`、`two_d_mode`、odom 給 vx（vyaw 看 7.3 的結果決定）、IMU 給 vyaw、30 Hz；feedback 的 `publish_odom_tf: false` | chat | 單元測試：設定檔欄位、TF 只有一個發布者 |
-| 8.2 | `orin_check.sh --ekf`：部署，車子靜止跑 1 分鐘：`/odometry/filtered` 的頻率、`odom → base_link` 只有 EKF 在發 | CC | 30 Hz；靜止時位置不飄 |
+| 8.2 | ✅（2026-10-20，ZUPT 之後）`orin_check.sh --ekf`：部署，車子靜止跑 1 分鐘：`/odometry/filtered` 的頻率、`odom → base_link` 只有 EKF 在發 | CC | 30 Hz；靜止時位置不飄 |
 | 8.3 | 寫 E1 的錄製和分析：同時錄 `/odom`、`/imu/data`、`/odometry/filtered`，算三種位置估計（只用輪子、輪子 + gyro 角度、EKF）最後離原點多遠 | chat | `orin_calib.sh loop` + `analyze_calib.py loop` |
 | 8.4 | **E1**：在地上貼一個 1 × 1 m 的正方形，手推繞一圈回到原點，**做 5 次**（Orin 上車後再用遙控做 5 次） | Ray 推、CC 錄 | 三種方法的終點誤差（cm）和角度誤差（°），平均 ± 標準差 |
 | 8.5 | 如果 EKF 沒有比較好：調 covariance，或者改成融合哪些量 | chat | 調整的過程寫進 LOGBOOK（報告用） |

@@ -16,6 +16,18 @@
 
 ---
 
+## 2026-10-20（凌晨，重測）　步驟 8.2 通過：30 Hz、ZUPT 有效
+
+- **做法**：`4c06563` 部署，**剛開機**就跑 `orin_check.sh --ekf`（Claude Code）；Windows `下載\r550_check\20261020_032543\`
+- **結果**：
+  - `/odometry/filtered` **30.0 Hz**（自己寫的監看程式 20 s：收到時間和時間戳都是 30.0 Hz，最長間隔 0.035 s；`ros2 topic hz` 顯示的 0.334 s 是 CLI 工具本身的停頓）
+  - 靜止 60 s：yaw 0.164° → 0.163°（**−0.001°**），位置 0 m；沒有 ZUPT 時是 +0.61°
+  - `gyro_bias_z` 學到 **+0.000538 rad/s**（約 1.85°/min，是 10-19 那次的 5 倍以上）、`zupt_learning` True
+  - `publish_odom_tf` False；`/tf` 發布者 `robot_state_publisher` + `ekf_filter_node`；CPU：feedback、scan、ekf 各約 8%；電池 11.51 V
+- **問題與判斷**：每次開機的 gyro 偏差差很多（0.00008～0.00054 rad/s），只靠韌體開機那一個樣本不夠；ZUPT 停車就重新學，所以不管開機時偏差多少都能修掉
+- **學到**：量測工具本身也會有誤差（`ros2 topic hz` 的停頓），重要的數字要用自己的程式交叉驗證
+- **下一步**：7.2 直走、7.3 左彎手推
+
 ## 2026-10-20（凌晨）　步驟 8.2：EKF 第一次上車；加入零速更新（ZUPT）
 
 - **目的**：確認 `localization.launch.py` 在 Orin 上能跑、TF 只有一個發布者、靜止時不會飄。
