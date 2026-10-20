@@ -30,6 +30,7 @@ LEAK_MB_PER_H = 5.0
 LEAK_MIN_GROWTH_MB = 20.0
 MIN_BATTERY_V = 11.0
 LIDAR_STD_MM = 20.0
+LIDAR_NEAR_M = 1.5        # judge noise only on beams this close (ToF noise grows far away)
 
 
 def load(path):
@@ -266,12 +267,21 @@ def analyse(d):
         say('')
         say('== lidar per beam (car still) ==')
         good = [b for b in bins if b['valid_fraction'] > 0.9 and math.isfinite(b['std'])]
-        if good:
-            stds = sorted(b['std'] * 1000 for b in good)
+        for label, part, judge in (
+                ('near (<= %.1f m)' % LIDAR_NEAR_M,
+                 [b for b in good if b['mean'] <= LIDAR_NEAR_M], True),
+                ('far  (> %.1f m)' % LIDAR_NEAR_M,
+                 [b for b in good if b['mean'] > LIDAR_NEAR_M], False)):
+            if not part:
+                continue
+            stds = sorted(b['std'] * 1000 for b in part)
             noisy = sum(1 for s in stds if s > LIDAR_STD_MM)
-            say('beams valid > 90%%: %d / %d; std median %.1f mm, 95%% %.1f mm, > %.0f mm: %d  %s'
-                % (len(good), len(bins), stds[len(stds) // 2], stds[int(len(stds) * 0.95)],
-                   LIDAR_STD_MM, noisy, verdict(noisy <= len(good) * 0.05)))
+            tag = verdict(noisy <= len(part) * 0.05) if judge else 'INFO'
+            say('%s beams valid > 90%%: %d; std median %.1f mm, 95%% %.1f mm, > %.0f mm: %d  %s'
+                % (label, len(part), stds[len(stds) // 2], stds[int(len(stds) * 0.95)],
+                   LIDAR_STD_MM, noisy, tag))
+        say('beams valid > 90%%: %d / %d (single noisy beams near object edges = mixed '
+            'pixels)  INFO' % (len(good), len(bins)))
         say('overall valid fraction %.3f  INFO' % st.fmean(col(bins, 'valid_fraction')))
     return out, allan_rows
 

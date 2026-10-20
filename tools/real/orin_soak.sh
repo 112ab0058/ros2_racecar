@@ -76,8 +76,11 @@ while [ "$(date +%s)" -lt "$END" ]; do
         echo "$now,$name,$ctime,$rss" >> "$OUT/resources.csv"
     done
     for z in /sys/class/thermal/thermal_zone*; do
-        [ -r "$z/temp" ] || continue
-        echo "$now,$(cat "$z/type"),$(awk '{printf "%.1f", $1/1000}' "$z/temp")" >> "$OUT/thermal.csv"
+        # some zones (cv0/cv1/cv2-thermal) answer "No data available": skip them
+        raw=$(cat "$z/temp" 2>/dev/null) || continue
+        [ -n "$raw" ] || continue
+        echo "$now,$(cat "$z/type"),$(awk -v r="$raw" 'BEGIN{printf "%.1f", r/1000}')" \
+            >> "$OUT/thermal.csv"
     done
     echo "$now,$(awk '/MemAvailable/ {printf "%d", $2/1024}' /proc/meminfo)" >> "$OUT/mem.csv"
     v=$(tail -n 1 "$OUT/battery.csv" 2>/dev/null | cut -d, -f2)

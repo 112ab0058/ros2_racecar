@@ -83,3 +83,15 @@ Jetson Orin Nano（Ubuntu 24.04、ROS 2 Jazzy）
 4. ~~STM32 的 baud 與協定~~（官方文件已找到，2026-10-16）；還要只「聽」STM32 送來的封包，和文件比對
 5. N10P 的資料走 USB 序列還是網路；用哪個 driver
 6. C70 的 FOV、幀率、可用解析度（`v4l2-ctl --list-formats-ext`）
+
+## 實測特性（2026-10-20，2 小時靜止，`analyze_soak.py`）
+
+| 項目 | 數值 |
+|---|---|
+| gyro z 角度隨機漫步（ARW） | 0.42 °/√h（Allan deviation 在 τ = 1 s） |
+| gyro z 偏差不穩定性 | 7.9 °/h（Allan 最低點 2.53e-5 rad/s，τ = 246 s） |
+| gyro z 量化刻度 | 0.000266 rad/s |
+| gyro z 偏差變化 | 開機後 40 分鐘內上升約 0.0003 rad/s（溫度），之後大致穩定；每次開機也不同 → 用 ZUPT |
+| 光達靜止雜訊（std） | 0.43 m 左右約 6 mm；2.3～3.7 m 約 41 mm；物體邊緣會跳（混合像素） |
+| 只開感測器的耗電 | 電池約 −0.07 V/h（STM32 + 光達，馬達關） |
+| Orin 溫度（只開感測器） | 最高 53.3 °C |

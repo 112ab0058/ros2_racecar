@@ -35,14 +35,18 @@ for i in $(seq "$CYCLES"); do
         > "$OUT/launch_$i.log" 2>&1 < /dev/null &
     lp=$!
     startup=NA
-    if timeout 40 ros2 topic echo --once /odometry/filtered --field header.stamp \
-            > /dev/null 2>&1 < /dev/null; then
+    # the message TYPE makes echo wait for the topic (without it echo gives up at
+    # once: "Could not determine the type", 2026-10-20 first run)
+    if timeout 40 ros2 topic echo --once /odometry/filtered nav_msgs/msg/Odometry \
+            --field header.stamp > /dev/null 2>&1 < /dev/null; then
         startup=$(awk "BEGIN{printf \"%.1f\", $(date +%s.%N) - $t0}")
     fi
     topics=0
-    for t in /odom /imu/data_raw /scan; do
-        timeout 8 ros2 topic echo --once "$t" --field header.stamp > /dev/null 2>&1 < /dev/null \
-            && topics=$((topics + 1))
+    for tt in "/odom nav_msgs/msg/Odometry" "/imu/data_raw sensor_msgs/msg/Imu" \
+              "/scan sensor_msgs/msg/LaserScan"; do
+        set -- $tt
+        timeout 8 ros2 topic echo --once "$1" "$2" --field header.stamp > /dev/null 2>&1 \
+            < /dev/null && topics=$((topics + 1))
     done
     t1=$(date +%s.%N)
     kill -INT -- "-$lp" 2>/dev/null

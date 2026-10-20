@@ -12,7 +12,7 @@ PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def armed(**kw):
-    """A gate that is enabled, has fresh feedback and a good battery at t=0."""
+    """Return a gate that is enabled, has fresh feedback and a good battery at t=0."""
     g = CommandGate(enabled=True, max_accel=100.0, **kw)
     g.set_voltage(0.0, 12.0)
     g.update(0.0, 0.0)  # first tick: starts the ramp clock
@@ -170,7 +170,7 @@ def test_gate_defaults_match_claude_md():
 
 
 def test_command_byte1_is_always_zero():
-    """byte 1 = 1/2/3 switches the firmware to auto-charging modes (usartx.c)."""
+    """Check byte 1 is 0 (1/2/3 switch the firmware to auto-charging, usartx.c)."""
     from wro2026_base_r550.protocol import encode_twist_command, stop_command
     assert encode_twist_command(0.1, 0.2)[1] == 0 and stop_command()[1] == 0
     tree = ast.parse(open(os.path.join(PKG, 'wro2026_base_r550', 'base_node.py'),
