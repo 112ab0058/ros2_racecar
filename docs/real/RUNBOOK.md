@@ -258,6 +258,19 @@ touch ~/r550_soak/STOP                                                    # 提�
 - `/imu/data_raw`：跟 `/imu/data` 一樣，但 gyro 是 STM32 原本送的（沒扣 ZUPT），給 Allan variance 和比對用。
 - Claude Code 的完整任務說明：[tasks/2026-10-20_soak_and_cycle.md](tasks/2026-10-20_soak_and_cycle.md)。
 
+## 6g. Gazebo 模擬（`wro2026_sim_r550`，馬達不會轉）
+
+```bash
+export ROS_DOMAIN_ID=42                                  # 每個終端機都要，和實車隔開
+ros2 launch wro2026_sim_r550 sim.launch.py               # Gazebo（無畫面）+ EKF + Foxglove
+ros2 run wro2026_base_r550 teleop_node                   # 鍵盤開模擬的車（另一個終端機）
+bash ~/racecar_ws/tools/orin_sim_check.sh                # 自動檢查，約 3 分鐘（Claude Code 可以跑）
+```
+
+- 實車的 node 在跑時 `sim.launch.py` 會拒絕啟動；模擬和實車不能同時開。
+- `orin_sim_check.sh`：即時倍率（real-time factor）、CPU、每個 topic、`/scan` 480 格、TF，再跑 `drive_test_node`（固定路線：直走 → 左轉 90° → 直走 → 停 → 原地轉指令），拿 `/odom`、EKF 和 Gazebo 的真實位置比。結果 `~/r550_sim/<時間>/report.txt`。
+- 車子規格、跟實車的差別：`src/wro2026_sim_r550/README.md`。
+
 ## 7. 充電
 
 - 12.6 V 充電器接車身「充电口」；紅燈充電中、綠燈充滿。

@@ -8,7 +8,7 @@ set -eo pipefail
 
 WS="$HOME/racecar_ws"
 STAGE="$WS/.deploy"
-PKGS=(wro2026_base_r550 wro2026_lidar_n10p wro2026_description wro2026_bringup)
+PKGS=(wro2026_base_r550 wro2026_lidar_n10p wro2026_description wro2026_bringup wro2026_sim_r550)
 
 for p in "${PKGS[@]}"; do
     if [ ! -d "$STAGE/src/$p" ]; then

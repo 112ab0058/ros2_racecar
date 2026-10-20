@@ -9,7 +9,7 @@ Codex 時期的專案規則在 AGENTS.md，模擬（`src/wro2026_sim`）相關�
 ## 實車開發（2026-10 起）
 
 ### 現況
-- 實車主機：Jetson Orin Nano，Ubuntu 24.04 + ROS 2 **Jazzy**（L4T R39.2.1，ssh `user2@112ab-jno`）。模擬端也是 Jazzy，但 Jetson 只裝了 `ros-base`，不要假設有 Gazebo 或 GUI 套件。
+- 實車主機：Jetson Orin Nano，Ubuntu 24.04 + ROS 2 **Jazzy**（L4T R39.2.1，ssh `user2@112ab-jno`）。模擬端也是 Jazzy。Jetson 原本只有 `ros-base`；2026-10-20 **暫時**加裝了 `ros-jazzy-ros-gz`、`navigation2`、`nav2-bringup`（給 `wro2026_sim_r550`），沒有螢幕，Gazebo 只用無畫面模式。
 - 正式的車是 **WHEELTEC R550 mini akm**（阿克曼、STM32 C30D 控制板、encoder、ICM20948 IMU、LSLIDAR N10P、WHEELTEC C70 相機），2026-10-15 到貨。硬體見 `docs/real/R550_HARDWARE.md`。過渡用的 WAVE ROVER 已收起來，相關程式和文件 2026-10-16 刪除。
   - 底盤相關（串口協定、driver）放在獨立 package（`wro2026_base_r550`）。
   - 阿克曼**不能原地旋轉**，底盤以上的程式不得依賴原地旋轉。
