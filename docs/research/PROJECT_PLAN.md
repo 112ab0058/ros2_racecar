@@ -162,6 +162,7 @@
 | 光達 driver **自己寫**（協定照官方） | 官方 driver 是 C++、只測過 Foxy / Humble，要多裝約 1.4 GB；我們只需要 `/scan`（2026-10-16） |
 | 規劃器用 Hybrid-A\* + RPP，不用 DWA / TEB | 阿克曼不能原地轉；TEB 在 Jazzy 沒有維護 |
 | WRO 規則不管 | 不比賽 |
+| **Orin 暫時裝 Gazebo + Nav2**，新開 `wro2026_sim_r550` 模擬我們的阿克曼車，先在模擬裡調建圖和 Nav2 | 2026-10-20：等三用電表期間主線不停；`apt-get -s` 檢查：新裝 384、移除 10 個（都是 OpenCV 4.6 的 `-dev`），沒有動到 NVIDIA 套件；不做 SD 卡映像（Ray 決定），要移除時照 `/var/log/apt/history.log` |
 | 3 個套件已安裝（robot-localization、slam-toolbox、foxglove-bridge） | 2026-10-17，新增 204、移除 0 |
 
 **觀念提醒**：光達不能完全取代相機。N10P 是 2D 光達，只看得到 15 cm 高的那一個水平面，也看不到顏色和地上的線。所以避障交給光達，顏色交給相機。
