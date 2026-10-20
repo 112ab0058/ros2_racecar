@@ -80,6 +80,9 @@ import sys
 import yaml
 
 msg = yaml.safe_load(open(sys.argv[1]).read().split('\n---')[0])
+if not isinstance(msg, dict) or 'ranges' not in msg:
+    print('no /scan message received')
+    sys.exit(0)
 r = [float(v) for v in msg['ranges']]
 ok = [v for v in r if math.isfinite(v)]
 print('frame_id', msg['header']['frame_id'], ' beams', len(r), ' (expect laser_link, 480)')

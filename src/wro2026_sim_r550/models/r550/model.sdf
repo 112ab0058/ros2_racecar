@@ -37,7 +37,9 @@
         <geometry><box><size>0.271 0.12 0.06</size></box></geometry>
         <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.15 0.15 0.15 1</diffuse></material>
       </visual>
-      <visual name="lidar">
+      <!-- not "lidar": a visual and a sensor with the same name in one link crash
+           gz-sim 8 (gpu_lidar render target is never created -> segfault, 2026-10-21) -->
+      <visual name="lidar_visual">
         <pose>0.13 0 0.10 0 0 0</pose>
         <geometry><cylinder><radius>0.035</radius><length>0.04</length></cylinder></geometry>
         <material><ambient>0.2 0.2 0.6 1</ambient><diffuse>0.2 0.2 0.8 1</diffuse></material>
@@ -134,7 +136,8 @@
     </link>
     <joint name="front_left_steer_joint" type="revolute">
       <parent>base_link</parent><child>front_left_steer</child>
-      <axis><xyz>0 0 1</xyz><limit><lower>-0.6</lower><upper>0.6</upper></limit></axis>
+      <axis><xyz>0 0 1</xyz><limit><lower>-0.6</lower><upper>0.6</upper>
+        <effort>1e6</effort></limit></axis>
     </joint>
     <link name="front_left_wheel">
       <pose>0.144 0.081 0 -1.5707963 0 0</pose>
@@ -163,7 +166,8 @@
     </link>
     <joint name="front_right_steer_joint" type="revolute">
       <parent>base_link</parent><child>front_right_steer</child>
-      <axis><xyz>0 0 1</xyz><limit><lower>-0.6</lower><upper>0.6</upper></limit></axis>
+      <axis><xyz>0 0 1</xyz><limit><lower>-0.6</lower><upper>0.6</upper>
+        <effort>1e6</effort></limit></axis>
     </joint>
     <link name="front_right_wheel">
       <pose>0.144 -0.081 0 -1.5707963 0 0</pose>
