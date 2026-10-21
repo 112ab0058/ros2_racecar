@@ -34,8 +34,8 @@ def test_ackermann_geometry_matches_firmware_and_measurements():
     assert float(ack['wheel_base']) == pytest.approx(0.144)          # Akm_axlespacing
     assert float(ack['wheel_separation']) == pytest.approx(0.162)    # Akm_wheelspacing
     assert float(ack['wheel_radius']) == pytest.approx(0.215 / (2 * math.pi), abs=2e-4)
-    # min turn radius 0.35 m (MINI_AKM_MIN_TURN_RADIUS) -> centre steering limit
-    assert float(ack['steering_limit']) == pytest.approx(math.atan(0.144 / 0.35), abs=0.01)
+    # min turn radius 0.35 m (MINI_AKM_MIN_TURN_RADIUS); gz-sim 8: r_min = wheel_base / sin(limit)
+    assert float(ack['steering_limit']) == pytest.approx(math.asin(0.144 / 0.35), abs=0.01)
     assert pose_of(root, 'link', 'front_left_steer')[:2] == pytest.approx([0.144, 0.081])
     assert pose_of(root, 'link', 'rear_right_wheel')[:2] == pytest.approx([0.0, -0.081])
     for c in root.iter('cylinder'):
@@ -48,8 +48,9 @@ def test_rear_wheel_drive_and_limits_match_commandgate():
     assert ack['left_joint'].startswith('rear_') and ack['right_joint'].startswith('rear_')
     with open(os.path.join(SRC, 'wro2026_base_r550', 'config', 'r550_base.yaml')) as f:
         base = yaml.safe_load(f)['r550_base']['ros__parameters']
-    assert float(ack['max_velocity']) == pytest.approx(base['max_vx'])
-    assert float(ack['min_velocity']) == pytest.approx(-base['max_reverse_vx'])
+    assert base['max_vx'] > 0                              # limits live in CommandGate only:
+    for k in ('min_velocity', 'max_velocity', 'min_acceleration', 'max_acceleration'):
+        assert k not in ack                                # gz applies them to wz too
     assert ack['topic'] == '/sim/cmd_vel'                  # only sim_base_node drives it
 
 

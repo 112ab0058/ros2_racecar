@@ -24,6 +24,7 @@ setup(
             'sim_base_node = wro2026_sim_r550.sim_base_node:main',
             'sim_sensors_node = wro2026_sim_r550.sim_sensors_node:main',
             'drive_test_node = wro2026_sim_r550.drive_test_node:main',
+            'lap_node = wro2026_sim_r550.lap_node:main',
         ],
     },
 )
