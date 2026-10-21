@@ -22,6 +22,7 @@
   <exec_depend>wro2026_base_r550</exec_depend>
   <exec_depend>wro2026_description</exec_depend>
   <exec_depend>wro2026_bringup</exec_depend>
+  <exec_depend>nav2_simple_commander</exec_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>

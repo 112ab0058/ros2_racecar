@@ -37,6 +37,21 @@ bash ~/racecar_ws/tools/orin_sim_check.sh                 # 自動檢查（Claud
 
 畫面用 Foxglove 看（ws://<Orin>:8765）：`/scan`、TF、`/odometry/filtered`。
 
+繞圈、建圖、Nav2（sim.launch.py 開著時，每個指令都在另一個終端機、先 `export ROS_DOMAIN_ID=42`）：
+
+```bash
+ros2 run wro2026_sim_r550 lap_node --ros-args -p use_sim_time:=true -p laps:=2      # pure pursuit 沿中心線
+ros2 launch wro2026_bringup slam.launch.py use_sim_time:=true                       # 邊跑邊建圖
+ros2 run nav2_map_server map_saver_cli -f ~/maps/field --ros-args -p save_map_timeout:=10.0
+ros2 launch wro2026_bringup nav2.launch.py use_sim_time:=true \
+    map:=$(ros2 pkg prefix wro2026_sim_r550)/share/wro2026_sim_r550/maps/field_sim.yaml
+ros2 run wro2026_sim_r550 nav_lap_node --ros-args -p use_sim_time:=true -p laps:=2  # Nav2 繞圈 + 檢查
+```
+
+2026-10-21 結果（Orin）：lap_node 2 圈偏離中心線最大 0.044 m；建圖所有格子離真牆 < 0.04 m（`maps/field_sim`，地圖座標 = 場地座標）；Nav2 2 圈 0 次恢復、偏離最大 0.081 m。
+
+WSL 有畫面看（跟 Orin 分開，domain 43）：`bash /mnt/c/Users/chaon/ros2_racecar/tools/wsl/sim_r550_view.sh [drive|lap|nav]`，測完 5 秒自己關。
+
 ## 安全
 
 - 實車的 `base_node`、`feedback_node`、`scan_node` 在跑時，`sim.launch.py` 會拒絕啟動。
