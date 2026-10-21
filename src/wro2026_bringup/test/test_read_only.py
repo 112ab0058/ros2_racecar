@@ -1,19 +1,22 @@
-"""sensors.launch.py must stay read only (CLAUDE.md safety rules)."""
+"""sensors.launch.py and the SLAM files must stay read only (CLAUDE.md safety rules)."""
 import os
 
-LAUNCH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                      'launch', 'sensors.launch.py')
+PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LAUNCH = os.path.join(PKG, 'launch', 'sensors.launch.py')
+READ_ONLY = [LAUNCH, os.path.join(PKG, 'launch', 'slam.launch.py'),
+             os.path.join(PKG, 'config', 'slam_toolbox.yaml')]
 
 
-def _text():
-    with open(LAUNCH) as f:
+def _text(path=LAUNCH):
+    with open(path) as f:
         return f.read()
 
 
 def test_no_motion_topics():
-    text = _text()
-    for word in ('cmd_vel', 'ackermann', 'command'):
-        assert word not in text.lower()
+    for path in READ_ONLY:
+        text = _text(path)
+        for word in ('cmd_vel', 'ackermann', 'command'):
+            assert word not in text.lower(), (path, word)
 
 
 def test_foxglove_bridge_is_read_only():
