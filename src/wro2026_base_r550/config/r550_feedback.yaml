@@ -1,0 +1,36 @@
+# R550 feedback node parameters (node name: r550_feedback). READ ONLY node.
+# Defaults in feedback_node.py PARAMETERS must stay identical to this file.
+r550_feedback:
+  ros__parameters:
+    port: ''                     # REQUIRED: C30D serial 3 (middle USB-C); ls -l /dev/serial/by-id/
+    baud: 115200                 # official WHEELTEC document
+    odom_frame_id: odom
+    base_frame_id: base_link
+    imu_frame_id: imu_link
+    battery_frame_id: base_link
+    publish_odom_tf: true        # set false when robot_localization (EKF) publishes odom -> base_link
+    odom_max_gap: 0.5            # s; do not integrate across longer gaps between frames
+    # 2026-10-16 hand test (wheels in the air, 5 turns): STM32 says 26.4 cm per turn,
+    # tyre circumference 21.5 cm -> 21.5 / 26.4 = 0.814. Provisional: redo on the floor.
+    vx_scale: 0.814
+    wz_scale: 0.814              # assumed same as vx; NOT verified (compare with IMU in a turn)
+    feedback_timeout: 0.5        # s; /diagnostics ERROR when no valid frame for this long
+    expected_rate: 20.0          # Hz (firmware RATE_20_HZ); WARN below half
+    low_battery_voltage: 10.8    # V; vendor: charge below 10.8 V
+    diagnostics_period: 1.0      # s
+    # covariances: odom ones are placeholders until measured; IMU measured still
+    # 2026-10-19 (60 s + 300 s, ~/r550_calib): gyro variance 1.2-1.7e-7, accel ~4e-5,
+    # set a few times larger for vibration while driving.
+    odom_pose_covariance_xy: 0.01
+    odom_pose_covariance_yaw: 0.05
+    odom_twist_covariance_vx: 0.001
+    odom_twist_covariance_wz: 0.01
+    imu_gyro_covariance: 1.0e-6
+    imu_accel_covariance: 1.0e-4
+    # Zero-velocity update (zupt.py): wheels still >= zupt_still_time -> the gyro
+    # reading is bias (Ackermann cannot turn on the spot); low-pass it and subtract.
+    # 2026-10-20: right after boot the yaw drifted 0.61 deg/min (firmware zeroes once).
+    zupt_enable: true
+    zupt_still_time: 1.0         # s
+    zupt_time_constant: 5.0      # s
+    zupt_max_rate: 0.01          # rad/s; larger = real rotation (car carried), ignored

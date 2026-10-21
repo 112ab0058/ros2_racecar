@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<!--
+  The 160 x 160 cm project field (docs/sim/FIELD_PLAN_160CM.md), SIMULATION ONLY.
+  Origin = field centre. Outer walls inner faces at x/y = +-0.8 m, central island
+  0.4 x 0.4 m, so every lane is 0.6 m wide. Walls 0.25 m high: the height we are
+  raising the real walls to (the lidar scan plane is at 0.15 m).
+-->
+<sdf version="1.10">
+  <world name="r550_field">
+    <physics name="5ms" type="ignored">
+      <max_step_size>0.005</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+
+    <light type="directional" name="sun">
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <direction>-0.3 0.2 -1</direction>
+    </light>
+
+    <model name="ground">
+      <static>true</static>
+      <link name="link">
+        <collision name="c">
+          <geometry><plane><normal>0 0 1</normal><size>4 4</size></plane></geometry>
+          <surface><friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction></surface>
+        </collision>
+        <visual name="v">
+          <geometry><plane><normal>0 0 1</normal><size>4 4</size></plane></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="walls">
+      <static>true</static>
+      <link name="link">
+        <collision name="north"><pose>0 0.815 0.125 0 0 0</pose>
+          <geometry><box><size>1.66 0.03 0.25</size></box></geometry></collision>
+        <visual name="north"><pose>0 0.815 0.125 0 0 0</pose>
+          <geometry><box><size>1.66 0.03 0.25</size></box></geometry></visual>
+        <collision name="south"><pose>0 -0.815 0.125 0 0 0</pose>
+          <geometry><box><size>1.66 0.03 0.25</size></box></geometry></collision>
+        <visual name="south"><pose>0 -0.815 0.125 0 0 0</pose>
+          <geometry><box><size>1.66 0.03 0.25</size></box></geometry></visual>
+        <collision name="east"><pose>0.815 0 0.125 0 0 0</pose>
+          <geometry><box><size>0.03 1.6 0.25</size></box></geometry></collision>
+        <visual name="east"><pose>0.815 0 0.125 0 0 0</pose>
+          <geometry><box><size>0.03 1.6 0.25</size></box></geometry></visual>
+        <collision name="west"><pose>-0.815 0 0.125 0 0 0</pose>
+          <geometry><box><size>0.03 1.6 0.25</size></box></geometry></collision>
+        <visual name="west"><pose>-0.815 0 0.125 0 0 0</pose>
+          <geometry><box><size>0.03 1.6 0.25</size></box></geometry></visual>
+        <collision name="island"><pose>0 0 0.125 0 0 0</pose>
+          <geometry><box><size>0.4 0.4 0.25</size></box></geometry></collision>
+        <visual name="island"><pose>0 0 0.125 0 0 0</pose>
+          <geometry><box><size>0.4 0.4 0.25</size></box></geometry></visual>
+      </link>
+    </model>
+  </world>
+</sdf>
