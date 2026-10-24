@@ -59,6 +59,12 @@ esac
 echo "[launch] Gazebo window opens in ~10 s; Ctrl+C to stop"
 ros2 launch wro2026_sim_r550 sim.launch.py gui:=true foxglove:=false &
 LAUNCH=$!
+# top-down camera once the window is up: 2.4 m above the field centre, looking straight
+# down, north (+y) up (quaternion = yaw 90 deg * pitch 90 deg)
+(sleep 15 && gz service -s /gui/move_to/pose --reqtype gz.msgs.GUICamera \
+    --reptype gz.msgs.Boolean --timeout 3000 \
+    --req 'pose: {position: {x: 0, y: 0, z: 2.4}, orientation: {x: -0.5, y: 0.5, z: 0.5, w: 0.5}}' \
+    > /dev/null 2>&1) &
 if [ -n "$NODE" ]; then
     mkdir -p "$RES"
     sleep "$WAIT"

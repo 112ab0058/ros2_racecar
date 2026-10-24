@@ -3,17 +3,28 @@ Drive full laps of the 160 cm field in the SIMULATION: pure pursuit on the EKF p
 
     ros2 run wro2026_sim_r550 lap_node --ros-args -p use_sim_time:=true -p laps:=1 -p out:=DIR
 
-Path: the lane centre line, counter-clockwise (left turns). Straight sides on x, y = +-0.5 m
-(lanes are 0.6 m wide between the walls at 0.8 m and the 0.4 m island), corners are arcs of
-`corner_radius` (default 0.45 m; the car's minimum is 0.35 m).
+Path (WRO style, counter-clockwise): a STRAIGHT along every island side and a 90 deg TURN
+in every corner section, nothing else. Straights on x, y = +-0.55 m (35 cm from the island,
+25 cm from the outer wall), 0.26 m long; corners are arcs of `corner_radius` 0.42 m (car
+minimum 0.35 m: 20 % steering margin) that start 7 cm before the island corner line. 0.385 m corners (turning
+exactly at the island corner) needed full lock all the time and the steering lag threw the
+car into the outer wall in the sim (2026-10-24).
+(2026-10-24, Ray: no circle-like line; clear straights and corners like WRO.)
 Pose: /odometry/filtered (odom frame) + the known start pose (start_x/y/yaw = the spawn pose
 of sim.launch.py) -> field frame. Same idea works on the real car if it starts at a known spot.
-Control: pure pursuit around the rear axle (base_link), lookahead 0.30 m, 0.15 m/s,
-curvature limited to the minimum turning radius. /cmd_vel (Twist, 20 Hz) goes through the
-real CommandGate (sim_base_node) like on the car; zeros for 1 s at the end.
+Control (`controller` feedforward, default): steer with the PATH curvature (0 on the
+straights, 1/R in the corners, read speed x 0.35 s ahead for the steering lag) plus a small
+correction for the lateral and heading error, so the wheels stay straight on the straights
+and turn exactly at the entry point. (`controller` pure_pursuit, lookahead 0.30 m, starts
+the turn 0.3 m early and rounds the corners off.) Curvature limited to the minimum radius.
+Speed: `speed` 0.30 m/s on the straights, `corner_speed` 0.15 m/s from `brake_dist` before a
+corner to its end, ramped with `accel` 0.4 / `decel` 0.8 m/s^2: brake, turn, speed up.
+/cmd_vel (Twist, 20 Hz) goes through the real CommandGate (sim_base_node) like on the car;
+zeros for 1 s at the end.
 Checks against /sim/ground_truth (NEVER used for control): cross-track error (counted from
 the moment the car first reaches the line: the spawn pose is in the lane corner, off the
-rounded path), wall clearance of the measured footprint, EKF vs truth at the end, lap time.
+rounded path), wall clearance of the measured footprint, EKF vs truth at the end, lap time,
+true speed on the straights vs in the corners.
 Writes DIR/lap.txt (PASS / FAIL per check) and DIR/lap.csv.
 SIMULATION ONLY: refuses to run if a real chassis node is on the ROS graph.
 """
@@ -27,7 +38,8 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
-HALF_SIDE = 0.5            # lane centre line, m from the field centre
+HALF_SIDE = 0.55           # straight sides of the path, m from the field centre
+CORNER_RADIUS = 0.42       # path corners (car minimum 0.35 m: 20 % steering margin)
 WALL = 0.8                 # inner face of the outer walls
 ISLAND = 0.2               # half size of the central island
 # measured footprint around base_link (rear axle centre): docs/real/R550_HARDWARE.md
@@ -45,7 +57,7 @@ def wrap(a):
     return math.atan2(math.sin(a), math.cos(a))
 
 
-def make_path(half_side=HALF_SIDE, radius=0.45, step=0.01):
+def make_path(half_side=HALF_SIDE, radius=CORNER_RADIUS, step=0.01):
     """Return the closed counter-clockwise rounded square, from the west end of the south side."""
     c = half_side - radius
     pts = []
@@ -68,6 +80,18 @@ def make_path(half_side=HALF_SIDE, radius=0.45, step=0.01):
     line(-half_side, c, -half_side, -c)
     arc(-c, -c, math.pi)
     return pts
+
+
+def curvature(path, k=3):
+    """Return the curvature (1/m) at every point of the closed path, from points i-k, i, i+k."""
+    n = len(path)
+    out = []
+    for i in range(n):
+        a, b, c = path[i - k], path[i], path[(i + k) % n]
+        area2 = abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
+        d = math.dist(a, b) * math.dist(b, c) * math.dist(a, c)
+        out.append(2.0 * area2 / d if d > 1e-12 else 0.0)
+    return out
 
 
 def nearest(path, x, y, start=None, window=60):
@@ -93,6 +117,18 @@ def pure_pursuit(pose, path, i_near, lookahead, speed, min_radius):
     return speed * max(-limit, min(limit, curvature)), j
 
 
+def feedforward(pose, path, curv, i, speed, min_radius, preview=7, k_y=16.0, k_h=6.4):
+    """Return wz: path curvature `preview` points ahead + lateral / heading correction."""
+    x, y, yaw = pose
+    n = len(path)
+    (px, py), (qx, qy) = path[i], path[(i + 1) % n]
+    heading = math.atan2(qy - py, qx - px)
+    lateral = -math.sin(heading) * (x - px) + math.cos(heading) * (y - py)   # + = left of path
+    k = curv[(i + preview) % n] - k_y * lateral - k_h * math.sin(wrap(yaw - heading))
+    limit = 1.0 / min_radius
+    return speed * max(-limit, min(limit, k))
+
+
 def clearance(pose):
     """Smallest distance (m) from the footprint corners to the outer walls and the island."""
     x, y, yaw = pose
@@ -113,12 +149,21 @@ class Lap(Node):
         p = self.declare_parameter
         self.out_dir = p('out', '.').value
         self.laps = int(p('laps', 1).value)
-        self.speed = float(p('speed', 0.15).value)
+        self.speed = float(p('speed', 0.30).value)
+        self.corner_speed = float(p('corner_speed', 0.15).value)
+        self.accel = float(p('accel', 0.4).value)
+        self.decel = float(p('decel', 0.8).value)
+        self.brake_dist = float(p('brake_dist', 0.15).value)   # CommandGate brakes 0.5 m/s^2
         self.lookahead = float(p('lookahead', 0.30).value)
         self.min_radius = float(p('min_radius', 0.35).value)
+        self.controller = p('controller', 'feedforward').value
         self.start_pose = (float(p('start_x', -0.60).value), float(p('start_y', -0.55).value),
                            float(p('start_yaw', 0.0).value))
-        self.path = make_path(radius=float(p('corner_radius', 0.45).value))
+        self.path = make_path(half_side=float(p('half_side', HALF_SIDE).value),
+                              radius=float(p('corner_radius', CORNER_RADIUS).value))
+        self.curv = curvature(self.path)                         # left turns: all >= 0
+        self.corner = [k > 1.25 for k in self.curv]              # radius < 0.8 m
+        self.v = 0.0
         closed = self.path[1:] + self.path[:1]
         self.length = sum(math.dist(a, b) for a, b in zip(self.path, closed))
         os.makedirs(self.out_dir, exist_ok=True)
@@ -170,8 +215,9 @@ class Lap(Node):
             pose = self._ekf_field()
             self.i_near = nearest(self.path, pose[0], pose[1])
             self.i_truth = self.i_near
-            self.get_logger().info('lap: %d x %.2f m at %.2f m/s, start index %d'
-                                   % (self.laps, self.length, self.speed, self.i_near))
+            self.get_logger().info('lap: %d x %.2f m, %.2f m/s straights, %.2f m/s corners, '
+                                   'start index %d' % (self.laps, self.length, self.speed,
+                                                       self.corner_speed, self.i_near))
         t = now - self.t0
         if self.t_end is not None:             # 1 s of zeros, then report
             self._send(0.0, 0.0)
@@ -184,19 +230,29 @@ class Lap(Node):
         i = nearest(self.path, pose[0], pose[1], self.i_near)
         self.progress += (i - self.i_near) % n
         self.i_near = i
-        wz, _ = pure_pursuit(pose, self.path, i, self.lookahead, self.speed, self.min_radius)
-        timeout = self.laps * self.length / self.speed * 2.0 + 20.0
+        ahead = any(self.corner[(i + k) % n] for k in range(int(self.brake_dist / 0.01) + 1))
+        target = self.corner_speed if ahead else self.speed
+        dv = (self.accel if target > self.v else self.decel) * 0.05
+        self.v = min(target, self.v + dv) if target > self.v else max(target, self.v - dv)
+        if self.controller == 'pure_pursuit':
+            wz, _ = pure_pursuit(pose, self.path, i, self.lookahead, self.v, self.min_radius)
+        else:
+            preview = max(3, round(self.v * 0.35 / 0.01))       # steering lag ~0.35 s
+            wz = feedforward(pose, self.path, self.curv, i, self.v, self.min_radius, preview)
+        timeout = self.laps * self.length / self.corner_speed * 2.0 + 20.0
         if self.progress >= self.laps * n or t > timeout:
             self.t_end = t
             self._send(0.0, 0.0)
             return
-        self._send(self.speed, wz)
+        self._send(self.v, wz)
         truth = self._pose('truth')
+        tw = self.last['truth'].twist.twist.linear
         self.i_truth = nearest(self.path, truth[0], truth[1], self.i_truth)
         xte = math.dist(self.path[self.i_truth], truth[:2])
         if self.t_line is None and xte < ON_LINE:
             self.t_line = t
-        self.rows.append((t, *truth, *pose, xte, clearance(truth), self.speed, wz))
+        self.rows.append((t, *truth, *pose, xte, clearance(truth), self.v, wz,
+                          math.hypot(tw.x, tw.y), float(self.corner[self.i_truth])))
 
     def _report(self, t):
         lines = []
@@ -218,6 +274,13 @@ class Lap(Node):
             clear = min(r[8] for r in self.rows)
             lines.append('closest footprint corner to a wall: %.3f m (limit %.2f)  %s'
                          % (clear, MIN_CLEARANCE, 'PASS' if clear > MIN_CLEARANCE else 'FAIL'))
+        on_line = [r for r in self.rows if self.t_line is not None and r[0] >= self.t_line]
+        st = [r[11] for r in on_line if not r[12]]
+        co = [r[11] for r in on_line if r[12]]
+        if st and co:
+            lines.append('true speed: straights max %.3f mean %.3f m/s, corners mean %.3f m/s  '
+                         '%s' % (max(st), sum(st) / len(st), sum(co) / len(co),
+                                 'PASS' if max(st) > 1.5 * sum(co) / len(co) else 'FAIL'))
         truth, ekf = self._pose('truth'), self._ekf_field()
         lines.append('ekf vs truth at the end: position %.3f m, yaw %+.2f deg  INFO'
                      % (math.dist(truth[:2], ekf[:2]), math.degrees(wrap(ekf[2] - truth[2]))))
@@ -226,7 +289,8 @@ class Lap(Node):
         with open(os.path.join(self.out_dir, 'lap.txt'), 'w') as f:
             f.write(text + '\n')
         with open(os.path.join(self.out_dir, 'lap.csv'), 'w') as f:
-            f.write('t,truth_x,truth_y,truth_yaw,ekf_x,ekf_y,ekf_yaw,xte,clearance,vx,wz\n')
+            f.write('t,truth_x,truth_y,truth_yaw,ekf_x,ekf_y,ekf_yaw,xte,clearance,vx,wz,'
+                    'truth_v,corner\n')
             for r in self.rows:
                 f.write(','.join('%.4f' % v for v in r) + '\n')
         raise SystemExit(0)
