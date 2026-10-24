@@ -6,8 +6,8 @@ Drive full laps of the 160 cm field in the SIMULATION: pure pursuit on the EKF p
 Path (WRO style, counter-clockwise): a STRAIGHT along every island side and a 90 deg TURN
 in every corner section, nothing else. Straights on x, y = +-0.55 m (35 cm from the island,
 25 cm from the outer wall), 0.26 m long; corners are arcs of `corner_radius` 0.42 m (car
-minimum 0.35 m: 20 % steering margin) that start 7 cm before the island corner line. 0.385 m corners (turning
-exactly at the island corner) needed full lock all the time and the steering lag threw the
+minimum 0.35 m: 20 % steering margin) that start 7 cm before the island corner line.
+0.385 m corners (turning exactly at the island corner) needed full lock all the time and the steering lag threw the
 car into the outer wall in the sim (2026-10-24).
 (2026-10-24, Ray: no circle-like line; clear straights and corners like WRO.)
 Pose: /odometry/filtered (odom frame) + the known start pose (start_x/y/yaw = the spawn pose
@@ -157,6 +157,9 @@ class Lap(Node):
         self.lookahead = float(p('lookahead', 0.30).value)
         self.min_radius = float(p('min_radius', 0.35).value)
         self.controller = p('controller', 'feedforward').value
+        self.k_y = float(p('k_y', 16.0).value)               # 1/m^2, lateral error gain
+        self.k_h = float(p('k_h', 6.4).value)                # 1/m, heading error gain
+        self.preview_time = float(p('preview_time', 0.35).value)   # s, steering lag
         self.start_pose = (float(p('start_x', -0.60).value), float(p('start_y', -0.55).value),
                            float(p('start_yaw', 0.0).value))
         self.path = make_path(half_side=float(p('half_side', HALF_SIDE).value),
@@ -237,8 +240,9 @@ class Lap(Node):
         if self.controller == 'pure_pursuit':
             wz, _ = pure_pursuit(pose, self.path, i, self.lookahead, self.v, self.min_radius)
         else:
-            preview = max(3, round(self.v * 0.35 / 0.01))       # steering lag ~0.35 s
-            wz = feedforward(pose, self.path, self.curv, i, self.v, self.min_radius, preview)
+            preview = max(1, round(self.v * self.preview_time / 0.01))
+            wz = feedforward(pose, self.path, self.curv, i, self.v, self.min_radius, preview,
+                             self.k_y, self.k_h)
         timeout = self.laps * self.length / self.corner_speed * 2.0 + 20.0
         if self.progress >= self.laps * n or t > timeout:
             self.t_end = t
