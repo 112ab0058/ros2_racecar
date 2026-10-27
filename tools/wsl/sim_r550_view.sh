@@ -6,6 +6,8 @@
 #   bash /mnt/c/Users/chaon/ros2_racecar/tools/wsl/sim_r550_view.sh drive   # + scripted course
 #   bash /mnt/c/Users/chaon/ros2_racecar/tools/wsl/sim_r550_view.sh lap     # + 2 laps (pure pursuit)
 #   bash /mnt/c/Users/chaon/ros2_racecar/tools/wsl/sim_r550_view.sh nav     # + Nav2, 2 laps
+#   ... lap -p controller:=lag_ff -p half_side:=0.58 -p inset:=0.02         # node parameters
+#       after the mode go to lap_node / nav_lap_node (2026-10-27 campaign recommendation)
 #
 # 1. copies wro2026_base_r550 / _description / _bringup / _sim_r550 from the Windows repo
 #    into ~/r550_sim_ws (NOT ~/ros2_ws, NOT the old ~/ros2_racecar copy) and builds them
@@ -49,8 +51,9 @@ trap 'trap - EXIT; trap "" TERM; pkill -TERM -f "gz sim" 2>/dev/null; kill -TERM
 
 case "${1:-}" in
     drive) NODE=drive_test_node; RES="$WS/drive_out"; TXT=drive_test.txt; EXTRA=() ;;
-    lap)   NODE=lap_node; RES="$WS/lap_out"; TXT=lap.txt; EXTRA=(-p laps:=2) ;;
-    nav)   NODE=nav_lap_node; RES="$WS/nav_out"; TXT=nav_lap.txt; EXTRA=(-p laps:=2); WAIT=40
+    lap)   NODE=lap_node; RES="$WS/lap_out"; TXT=lap.txt; EXTRA=(-p laps:=2 "${@:2}") ;;
+    nav)   NODE=nav_lap_node; RES="$WS/nav_out"; TXT=nav_lap.txt; WAIT=40
+           EXTRA=(-p laps:=2 "${@:2}")
            MAP="$WS/install/wro2026_sim_r550/share/wro2026_sim_r550/maps/field_sim.yaml"
            (sleep 20 && ros2 launch wro2026_bringup nav2.launch.py use_sim_time:=true \
                map:="$MAP" > "$WS/nav2.log" 2>&1 < /dev/null) & ;;
