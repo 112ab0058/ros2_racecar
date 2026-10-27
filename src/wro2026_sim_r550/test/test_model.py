@@ -98,6 +98,32 @@ def test_only_sim_cmd_vel_goes_to_gazebo():
     assert to_gz == ['/sim/cmd_vel']                       # /cmd_vel always via the gate
 
 
+def sim_launch():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'sim_launch', os.path.join(PKG, 'launch', 'sim.launch.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_launch_steer_gain_and_obstacles():
+    launch = sim_launch()
+    path = os.path.join(PKG, 'models', 'r550', 'model.sdf')
+    with open(path) as f:
+        assert launch.model_sdf(path) == f.read()             # unset: the file unchanged
+    root = ET.fromstring(launch.model_sdf(path, '5.0'))
+    ack = plugin(root, 'gz::sim::systems::AckermannSteering')
+    assert float(ack['steer_p_gain']) == 5.0 and float(ack['wheel_base']) == 0.144
+    assert launch.parse_obstacles('') == []
+    assert launch.parse_obstacles('0.0,-0.6; 0.4,0.0') == [(0.0, -0.6), (0.4, 0.0)]
+    box = ET.fromstring(launch.obstacle_sdf(1, 0.4, 0.0, (0.05, 0.05, 0.2)))
+    assert box.find('model').get('name') == 'obstacle_1'
+    assert box.find('model/static').text == 'true'
+    assert [float(v) for v in box.find('model/pose').text.split()][:3] == \
+        pytest.approx([0.4, 0.0, 0.1])                        # standing on the floor
+
+
 def test_launch_refuses_real_car_and_uses_sim_time():
     with open(os.path.join(PKG, 'launch', 'sim.launch.py')) as f:
         text = f.read()

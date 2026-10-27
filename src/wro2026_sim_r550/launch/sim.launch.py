@@ -5,6 +5,19 @@ R550 in Gazebo on the 160 cm field. SIMULATION ONLY (no hardware is touched).
     ros2 launch wro2026_sim_r550 sim.launch.py              # headless + EKF + Foxglove
     ros2 launch wro2026_sim_r550 sim.launch.py ekf:=false   # /odom publishes the TF itself
     ros2 launch wro2026_sim_r550 sim.launch.py gui:=true foxglove:=false   # WSL: Gazebo window
+    ros2 launch wro2026_sim_r550 sim.launch.py seed:=3 steer_p_gain:=5.0   # see below
+
+Optional (empty = unchanged):
+  seed          gz random seed (sensor noise, IMU bias sign): repeatable runs
+  steer_p_gain  steering servo gain of the gz Ackermann plugin (1/s): the steering angle
+                follows the command like a first-order lag with time constant 1 / gain.
+                Unset = the gz default 1.0, i.e. ~1 s, much slower than an RC servo
+                (2026-10-27 campaign); the real R550 value is UNKNOWN until measured.
+  ekf_params    another robot_localization yaml (sim experiments; default the car's ekf.yaml)
+  obstacles     boxes on the field, "x,y;x,y" in the field frame (obstacle_size, default
+                0.05 x 0.05 x 0.20 m: WRO sign footprint, tall enough for the lidar plane)
+  gyro_scale    sim_sensors_node: gyro z x this (default 1.0; 1.005 = calibrated sim gyro)
+  odom_vx_scale sim_sensors_node: /odom vx x this (default 1.0; 0.981 = calibrated sim odom)
 
 Starts:
   gz sim (server only, headless rendering for the GPU lidar; gui:=true adds the Gazebo
@@ -40,20 +53,63 @@ def _refuse_with_real_car(context):
     return []
 
 
+def model_sdf(path, steer_p_gain=''):
+    """Return the car model's SDF text, with the plugin's steer_p_gain set if given."""
+    with open(path) as f:
+        text = f.read()
+    if steer_p_gain:
+        tag = '<wheel_base>'
+        if tag not in text:
+            raise RuntimeError('no %s in %s' % (tag, path))
+        text = text.replace(tag, '<steer_p_gain>%g</steer_p_gain>\n      %s'
+                            % (float(steer_p_gain), tag), 1)
+    return text
+
+
+def obstacle_sdf(i, x, y, size):
+    """Return the SDF of one static box obstacle standing on the floor at x, y."""
+    sx, sy, sz = size
+    geometry = '<geometry><box><size>%g %g %g</size></box></geometry>' % (sx, sy, sz)
+    return ('<?xml version="1.0"?><sdf version="1.10"><model name="obstacle_%d">'
+            '<static>true</static><pose>%g %g %g 0 0 0</pose><link name="link">'
+            '<collision name="c">%s</collision><visual name="v">%s<material>'
+            '<ambient>0.8 0.1 0.1 1</ambient><diffuse>0.9 0.1 0.1 1</diffuse></material>'
+            '</visual></link></model></sdf>' % (i, x, y, sz / 2, geometry, geometry))
+
+
+def parse_obstacles(text):
+    """Return [(x, y), ...] from 'x,y;x,y' (empty text: [])."""
+    out = []
+    for item in text.replace(' ', '').split(';'):
+        if item:
+            x, y = (float(v) for v in item.split(','))
+            out.append((x, y))
+    return out
+
+
 def _sim(context):
     share = get_package_share_directory('wro2026_sim_r550')
     arg = context.launch_configurations
     world = os.path.join(share, 'worlds', 'r550_field.sdf')
     gz_flags = '-r -v 2 ' if arg['gui'].lower() == 'true' else '-r -s --headless-rendering -v 2 '
+    if arg['seed']:
+        gz_flags += '--seed %d ' % int(arg['seed'])
     gz = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(
             get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')),
         launch_arguments={'gz_args': gz_flags + world,
                           'on_exit_shutdown': 'true'}.items())
+    model = os.path.join(share, 'models', 'r550', 'model.sdf')
+    source = ['-string', model_sdf(model, arg['steer_p_gain'])] if arg['steer_p_gain'] \
+        else ['-file', model]
     spawn = Node(package='ros_gz_sim', executable='create', output='screen',
-                 arguments=['-world', 'r550_field', '-name', 'r550',
-                            '-file', os.path.join(share, 'models', 'r550', 'model.sdf'),
+                 arguments=['-world', 'r550_field', '-name', 'r550', *source,
                             '-x', arg['x'], '-y', arg['y'], '-z', '0.04', '-Y', arg['yaw']])
+    size = [float(v) for v in arg['obstacle_size'].split(',')]
+    boxes = [Node(package='ros_gz_sim', executable='create', output='screen',
+                  arguments=['-world', 'r550_field', '-name', 'obstacle_%d' % i,
+                             '-string', obstacle_sdf(i, x, y, size)])
+             for i, (x, y) in enumerate(parse_obstacles(arg['obstacles']))]
     bridge = Node(package='ros_gz_bridge', executable='parameter_bridge', output='screen',
                   parameters=[{'config_file': os.path.join(share, 'config', 'bridge.yaml'),
                                'use_sim_time': True}])
@@ -67,14 +123,16 @@ def _sim(context):
     base = Node(package='wro2026_sim_r550', executable='sim_base_node', output='screen',
                 parameters=[{'use_sim_time': True, 'max_vx': float(arg['max_vx'])}])
     sensors = Node(package='wro2026_sim_r550', executable='sim_sensors_node', output='screen',
-                   parameters=[{'use_sim_time': True, 'publish_odom_tf': not ekf_on}])
-    actions = [gz, spawn, bridge, rsp, base, sensors]
+                   parameters=[{'use_sim_time': True, 'publish_odom_tf': not ekf_on,
+                                'gyro_scale': float(arg['gyro_scale']),
+                                'odom_vx_scale': float(arg['odom_vx_scale'])}])
+    actions = [gz, spawn, *boxes, bridge, rsp, base, sensors]
     if ekf_on:
+        ekf_params = arg['ekf_params'] or os.path.join(
+            get_package_share_directory('wro2026_bringup'), 'config', 'ekf.yaml')
         actions.append(Node(
             package='robot_localization', executable='ekf_node', name='ekf_filter_node',
-            output='screen',
-            parameters=[os.path.join(get_package_share_directory('wro2026_bringup'),
-                                     'config', 'ekf.yaml'), {'use_sim_time': True}]))
+            output='screen', parameters=[ekf_params, {'use_sim_time': True}]))
     return actions
 
 
@@ -87,6 +145,13 @@ def generate_launch_description():
         DeclareLaunchArgument('max_vx', default_value='0.3'),
         DeclareLaunchArgument('foxglove', default_value='true'),
         DeclareLaunchArgument('gui', default_value='false'),
+        DeclareLaunchArgument('seed', default_value=''),
+        DeclareLaunchArgument('steer_p_gain', default_value=''),
+        DeclareLaunchArgument('ekf_params', default_value=''),
+        DeclareLaunchArgument('obstacles', default_value=''),
+        DeclareLaunchArgument('obstacle_size', default_value='0.05,0.05,0.20'),
+        DeclareLaunchArgument('gyro_scale', default_value='1.0'),
+        DeclareLaunchArgument('odom_vx_scale', default_value='1.0'),
         SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.join(
             get_package_share_directory('wro2026_sim_r550'), 'models')),
         OpaqueFunction(function=_refuse_with_real_car),

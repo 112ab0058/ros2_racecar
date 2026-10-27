@@ -9,6 +9,13 @@ Turn the Gazebo sensor topics into the REAL car's topics. SIMULATION ONLY.
       -> /imu/data:     gyro minus the ZUPT bias (same zupt.GyroBias as r550_feedback)
 So the EKF, slam_toolbox and Nav2 see exactly what they see on the car.
 Parameters and defaults come from wro2026_base_r550.feedback_node.PARAMETERS.
+Sim calibration (default 1.0 = unchanged), the same steps the real car needs (vx_scale,
+gyro scale; ICM20948 sensitivity tolerance is about +-1.5 %). The 2026-10-27 campaign
+measured, over 2 laps against the true pose:
+  odom_vx_scale  x /odom twist vx: the wheel odometry counts 1.9 % too much distance
+                 (contact sinking makes the rolling radius smaller), 0.981 corrects it
+  gyro_scale     x gyro z of /imu/data(_raw): the gyro reads 0.5 % less turning
+                 (EKF heading -3.6 deg after 2 laps), 1.005 corrects it
 """
 import sys
 
@@ -33,6 +40,8 @@ class SimSensors(Node):
         super().__init__('r550_sim_sensors')
         self.p = {name: self.declare_parameter(name, default).value
                   for name, default, _ in PARAMETERS if name in USED}
+        self.gyro_scale = float(self.declare_parameter('gyro_scale', 1.0).value)
+        self.odom_vx_scale = float(self.declare_parameter('odom_vx_scale', 1.0).value)
         self.zupt = GyroBias(enabled=self.p['zupt_enable'],
                              still_time=self.p['zupt_still_time'],
                              time_constant=self.p['zupt_time_constant'],
@@ -49,6 +58,7 @@ class SimSensors(Node):
 
     def _odom(self, m):
         self.vx, self.wz = m.twist.twist.linear.x, m.twist.twist.angular.z
+        m.twist.twist.linear.x *= self.odom_vx_scale
         m.header.frame_id = self.p['odom_frame_id']
         m.child_frame_id = self.p['base_frame_id']
         pc = [0.0] * 36
@@ -76,8 +86,9 @@ class SimSensors(Node):
         g, a = self.p['imu_gyro_covariance'], self.p['imu_accel_covariance']
         m.angular_velocity_covariance = [g, 0.0, 0.0, 0.0, g, 0.0, 0.0, 0.0, g]
         m.linear_acceleration_covariance = [a, 0.0, 0.0, 0.0, a, 0.0, 0.0, 0.0, a]
-        self.raw_pub.publish(m)
         w = m.angular_velocity
+        w.z *= self.gyro_scale
+        self.raw_pub.publish(m)
         t = m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
         w.x, w.y, w.z = self.zupt.update(t, self.vx, self.wz, w.x, w.y, w.z)
         self.imu_pub.publish(m)
