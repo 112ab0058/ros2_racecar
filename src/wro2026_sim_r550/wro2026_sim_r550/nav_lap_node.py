@@ -35,7 +35,7 @@ import rclpy
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformListener
 
-from .lap_node import (clearance, CORNER_RADIUS, curvature, HALF_SIDE, island_clearance,
+from .lap_node import (clearance, CORNER_RADIUS, curvature, HALF_SIDE, INSET, island_clearance,
                        lateral_error, make_path, MAX_XTE, MIN_CLEARANCE, nearest, ON_LINE,
                        outer_clearance, yaw_of)
 
@@ -69,7 +69,7 @@ class NavLap(BasicNavigator):
         self.path = make_path(float(p('half_side', HALF_SIDE).value),
                               float(p('corner_radius', CORNER_RADIUS).value),
                               transition=float(p('transition', 0.0).value),
-                              inset=float(p('inset', 0.0).value), ends=self.ends)
+                              inset=float(p('inset', INSET).value), ends=self.ends)
         os.makedirs(self.out_dir, exist_ok=True)
         self.corner = [k > 1.25 for k in curvature(self.path)]   # radius < 0.8 m
         self.truth = None

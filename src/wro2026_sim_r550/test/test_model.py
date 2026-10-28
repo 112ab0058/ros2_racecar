@@ -131,3 +131,10 @@ def test_launch_refuses_real_car_and_uses_sim_time():
     assert text.count("'use_sim_time': True") >= 5
     for word in ('serial', '/dev/'):
         assert word not in text
+
+
+def test_sim_steering_defaults_to_the_measured_servo():
+    """sim.launch.py: steer_p_gain 20 (tau ~0.05 s, measured 2026-10-28), not gz's 1.0."""
+    with open(os.path.join(PKG, 'launch', 'sim.launch.py')) as f:
+        text = f.read()
+    assert "DeclareLaunchArgument('steer_p_gain', default_value='20.0')" in text

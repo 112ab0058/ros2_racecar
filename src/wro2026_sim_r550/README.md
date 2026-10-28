@@ -57,12 +57,12 @@ ros2 run wro2026_sim_r550 nav_lap_node --ros-args -p use_sim_time:=true -p laps:
 | 哪裡 | 參數 | 做什麼 |
 |---|---|---|
 | sim.launch.py | `seed:=N` | gz 亂數種子（IMU 雜訊、gyro 偏差正負號），可重現 |
-| sim.launch.py | `steer_p_gain:=G` | 外掛轉向增益：轉向角是一階延遲 τ ≈ 1/G。**沒設 = gz 預設 1.0 → τ ≈ 1 s**，比 RC 伺服慢很多；實車值 UNKNOWN，量到後再設 |
+| sim.launch.py | `steer_p_gain:=G` | 外掛轉向增益：轉向角是一階延遲 τ ≈ 1/G。**預設 20（τ ≈ 0.05 s）= 2026-10-28 架空實測的真車伺服**（240 fps 影片，整個轉過去 0.10–0.13 s）；設空字串 = gz 預設 1.0（τ ≈ 1 s，太慢，是 10-27 campaign 5–8 cm 誤差的來源） |
 | sim.launch.py | `obstacles:="x,y;x,y"`、`obstacle_size` | 場上放靜態方塊（預設 5×5×20 cm：WRO 號誌的底面積，高度讓光達看得到） |
 | sim.launch.py | `gyro_scale`、`odom_vx_scale` | 模擬感測器校正（跟實車的 vx_scale / gyro 校正同一件事）；量到的值 1.005 / 0.981 |
 | sim.launch.py | `ekf_params:=FILE` | 換一份 EKF 設定做模擬實驗（預設 = 實車的 ekf.yaml） |
 | lap_node | `controller` lag_ff / stanley / rpp | lag_ff：模型化轉向延遲（`steer_tau`、`steer_delay`）並提前補償；stanley：前軸追線；rpp：像 Nav2 的 Regulated Pure Pursuit |
-| lap_node | `transition`、`inset` | 路線：彎道兩端 clothoid 長度；直道斜一點讓出彎內收（對付前懸外甩） |
+| lap_node | `transition`、`inset` | 路線：彎道兩端 clothoid 長度；直道斜一點讓出彎內收（對付前懸外甩）。**2026-10-28 起預設 `half_side` 0.58、`inset` 0.02**（真車轉向速度下模擬 3 次最差離外牆 8.4 cm） |
 | lap_node | `obstacles:=[x1,y1,...]`、`pass_inside`、`pass_outside` | 有障礙物的那一邊整條線移到內側 / 外側（預設 0.38 / 0.60，零誤差時離障礙物 7.2 / 6.9 cm） |
 | lap_node | `pose_source:=truth` | **診斷用**：控制器吃 Gazebo 真值（只有模擬有），用來把定位誤差和控制誤差分開 |
 | nav_lap_node | `goals` corners / straights / path | Nav2 的目標：4 個彎後點（原本）/ 8 個直道端點 / 直接給參考路線（FollowPath，只用 RPP） |

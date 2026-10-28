@@ -115,7 +115,8 @@ def test_every_controller_drives_two_laps_of_a_kinematic_car(controller):
     """
     path = make_path()
     ctl = LapController(path, controller, steer_tau=0.2)
-    x, y, yaw, k_act, dt = 0.0, -0.55, 0.0, 0.0, 0.05
+    j = nearest(path, 0.0, -0.6)                             # start ON the default line
+    (x, y), yaw, k_act, dt = path[j], heading(path, j), 0.0, 0.05
     ctl.start((x, y, yaw))
     lats, t = [], 0.0
     i = nearest(path, x, y)
@@ -134,3 +135,12 @@ def test_every_controller_drives_two_laps_of_a_kinematic_car(controller):
     assert ctl.progress >= 2 * len(path), controller
     assert min(lats) > -0.03, controller                     # + = island side
     assert max(lats) < (0.10 if controller == 'stanley' else 0.03), controller
+
+
+def test_defaults_follow_the_real_steering_measurement():
+    """0.58 m straights + 2 cm inset: best sim line with the measured servo (2026-10-28)."""
+    from wro2026_sim_r550 import lap_node
+    assert lap_node.HALF_SIDE == pytest.approx(0.58)
+    assert lap_node.INSET == pytest.approx(0.02)
+    assert lap_node.CORNER_RADIUS == pytest.approx(0.42)
+    assert lap_node.SETTINGS['steer_tau'] > 0.0          # lag_ff stays an option

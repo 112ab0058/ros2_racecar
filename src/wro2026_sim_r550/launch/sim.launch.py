@@ -7,12 +7,14 @@ R550 in Gazebo on the 160 cm field. SIMULATION ONLY (no hardware is touched).
     ros2 launch wro2026_sim_r550 sim.launch.py gui:=true foxglove:=false   # WSL: Gazebo window
     ros2 launch wro2026_sim_r550 sim.launch.py seed:=3 steer_p_gain:=5.0   # see below
 
-Optional (empty = unchanged):
+Optional (empty = the gz default):
   seed          gz random seed (sensor noise, IMU bias sign): repeatable runs
   steer_p_gain  steering servo gain of the gz Ackermann plugin (1/s): the steering angle
                 follows the command like a first-order lag with time constant 1 / gain.
-                Unset = the gz default 1.0, i.e. ~1 s, much slower than an RC servo
-                (2026-10-27 campaign); the real R550 value is UNKNOWN until measured.
+                Default 20 (tau ~0.05 s) = the REAL R550 servo, measured 2026-10-28 with
+                the wheels in the air (240 fps video: 0.10-0.13 s from start to end of a
+                full swing). Empty = the gz default 1.0 (~1 s, far too slow: it caused the
+                5-8 cm tracking errors of the 2026-10-27 campaign).
   ekf_params    another robot_localization yaml (sim experiments; default the car's ekf.yaml)
   obstacles     boxes on the field, "x,y;x,y" in the field frame (obstacle_size, default
                 0.05 x 0.05 x 0.20 m: WRO sign footprint, tall enough for the lidar plane)
@@ -146,7 +148,7 @@ def generate_launch_description():
         DeclareLaunchArgument('foxglove', default_value='true'),
         DeclareLaunchArgument('gui', default_value='false'),
         DeclareLaunchArgument('seed', default_value=''),
-        DeclareLaunchArgument('steer_p_gain', default_value=''),
+        DeclareLaunchArgument('steer_p_gain', default_value='20.0'),
         DeclareLaunchArgument('ekf_params', default_value=''),
         DeclareLaunchArgument('obstacles', default_value=''),
         DeclareLaunchArgument('obstacle_size', default_value='0.05,0.05,0.20'),

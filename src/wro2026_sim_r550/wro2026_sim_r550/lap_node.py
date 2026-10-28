@@ -4,14 +4,18 @@ Drive full laps of the 160 cm field in the SIMULATION: pure pursuit on the EKF p
     ros2 run wro2026_sim_r550 lap_node --ros-args -p use_sim_time:=true -p laps:=1 -p out:=DIR
 
 Path (WRO style, counter-clockwise): a STRAIGHT along every island side and a 90 deg TURN
-in every corner section, nothing else. Straights on x, y = +-0.55 m (35 cm from the island,
-25 cm from the outer wall), 0.26 m long; corners are arcs of `corner_radius` 0.42 m (car
-minimum 0.35 m: 20 % steering margin) that start 7 cm before the island corner line.
+in every corner section, nothing else. Straights on x, y = +-0.58 m (38 cm from the island,
+22 cm from the outer wall), each side tilted by `inset` 0.02 m so the car leaves every corner
+2 cm closer to the island (against the front overhang swinging out); corners are arcs of
+`corner_radius` 0.42 m (car minimum 0.35 m: 20 % steering margin). Default since 2026-10-28:
+with the MEASURED real steering speed (tau ~0.05 s, sim steer_p_gain 20) this was the best
+line in the sim (closest outer wall 8.4 cm worst of 3 runs; 0.55 m without inset: 9.5 cm but
+less room for obstacles, 0.58 m without inset: 6.5 cm).
 0.385 m corners (turning exactly at the island corner) needed full lock all the time and the
 steering lag threw the car into the outer wall in the sim (2026-10-24).
 (2026-10-24, Ray: no circle-like line; clear straights and corners like WRO.)
-Path options (2026-10-27 campaign, defaults = the path above): `transition` clothoid length
-at both ends of every corner (curvature ramps instead of jumping), `inset` turns every side
+Path options (2026-10-27 campaign; `inset` default since 2026-10-28): `transition` clothoid
+length at both ends of every corner (curvature ramps instead of jumping), `inset` turns every side
 line so the car leaves each corner closer to the island (against the front overhang swinging
 out toward the next wall), `obstacles` [x1, y1, x2, y2, ...] moves the line of a side with an
 obstacle to `pass_inside` / `pass_outside` (obstacle on the outer / inner half of the lane).
@@ -50,7 +54,8 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
-HALF_SIDE = 0.55           # straight sides of the path, m from the field centre
+HALF_SIDE = 0.58           # straight sides of the path, m from the field centre
+INSET = 0.02               # m, each side's corner exit this much closer to the island
 CORNER_RADIUS = 0.42       # path corners (car minimum 0.35 m: 20 % steering margin)
 WALL = 0.8                 # inner face of the outer walls
 ISLAND = 0.2               # half size of the central island
@@ -501,7 +506,7 @@ class Lap(Node):
         self.path = make_path(half_side=half_side,
                               radius=float(p('corner_radius', CORNER_RADIUS).value),
                               transition=float(p('transition', 0.0).value),
-                              offsets=offsets, inset=float(p('inset', 0.0).value),
+                              offsets=offsets, inset=float(p('inset', INSET).value),
                               straights=self.straights)
         settings = {name: float(p(name, value).value) for name, value in SETTINGS.items()}
         self.controller = p('controller', 'feedforward').value
