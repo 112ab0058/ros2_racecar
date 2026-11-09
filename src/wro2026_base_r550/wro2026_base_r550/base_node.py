@@ -18,8 +18,8 @@ What it sends comes from command.CommandGate:
   - no turning on the spot (Ackermann)
 On shutdown (Ctrl+C) it sends stop frames before closing the port.
 
-Unit conversion: the STM32 thinks a wheel turn is 26.4 cm, the real tyre is
-21.5 cm (vx_scale 0.814). /odom multiplies the STM32's numbers by vx_scale,
+Unit conversion: the STM32's speeds are about 3.5 % below the real ones
+(vx_scale 1.035, floor test 2026-11-10). /odom multiplies them by vx_scale,
 so commands are divided by it: /cmd_vel 0.1 m/s really moves 0.1 m/s.
 
 Publishes in addition to feedback_node:

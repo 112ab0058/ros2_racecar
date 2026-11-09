@@ -10,10 +10,11 @@ r550_feedback:
     battery_frame_id: base_link
     publish_odom_tf: true        # set false when robot_localization (EKF) publishes odom -> base_link
     odom_max_gap: 0.5            # s; do not integrate across longer gaps between frames
-    # 2026-10-16 hand test (wheels in the air, 5 turns): STM32 says 26.4 cm per turn,
-    # tyre circumference 21.5 cm -> 21.5 / 26.4 = 0.814. Provisional: redo on the floor.
-    vx_scale: 0.814
-    wz_scale: 0.814              # assumed same as vx; NOT verified (compare with IMU in a turn)
+    # 2026-11-10 floor test, driven by the motors, 3 runs of about 1.9 m against a tape:
+    # 1.036 / 1.034 / 1.034 (spread 0.2 %). The 2026-10-16 value 0.814 (hand test, wheels
+    # in the air) was wrong. base_node divides commands by vx_scale.
+    vx_scale: 1.035
+    wz_scale: 0.814              # NOT measured yet (DETAILED_PLAN 7.3); predicted 1.035 * 0.162 / 0.170 = 0.986
     feedback_timeout: 0.5        # s; /diagnostics ERROR when no valid frame for this long
     expected_rate: 20.0          # Hz (firmware RATE_20_HZ); WARN below half
     low_battery_voltage: 10.8    # V; vendor: charge below 10.8 V

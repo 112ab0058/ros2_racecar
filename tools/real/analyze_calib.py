@@ -5,7 +5,7 @@ Standard library only: runs on Windows, WSL or the Orin.
 
   python analyze_calib.py static   DIR
       car still: gyro bias and noise, accel noise, which axis is up, odom drift
-  python analyze_calib.py straight DIR --distance 2.0 [--vx-scale 0.814]
+  python analyze_calib.py straight DIR --distance 2.0 [--vx-scale 1.035]
       car pushed straight a measured distance: new vx_scale
   python analyze_calib.py turn     DIR [--turns 1] [--wz-scale 0.814]
       car turned LEFT by hand (counter-clockwise seen from above): signs of
@@ -146,7 +146,7 @@ def main(argv=None):
     ap.add_argument('dir')
     ap.add_argument('--distance', type=float, help='measured distance (m), straight test')
     ap.add_argument('--turns', type=float, default=0.0, help='full LEFT turns made, turn test')
-    ap.add_argument('--vx-scale', type=float, default=0.814)
+    ap.add_argument('--vx-scale', type=float, default=1.035)
     ap.add_argument('--wz-scale', type=float, default=0.814)
     ap.add_argument('--still', type=float, default=3.0, help='seconds still at the start')
     a = ap.parse_args(argv)

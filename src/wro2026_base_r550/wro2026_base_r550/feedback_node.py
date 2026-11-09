@@ -44,9 +44,9 @@ PARAMETERS = [
     ('battery_frame_id', 'base_link', 'frame of /battery'),
     ('publish_odom_tf', True, 'broadcast TF odom -> base_link (false when an EKF owns it)'),
     ('odom_max_gap', 0.5, 'do not integrate across a gap between frames longer than this (s)'),
-    # 2026-10-16: STM32 reports 26.4 cm per wheel turn, tyre circumference 21.5 cm
-    ('vx_scale', 0.814, 'multiply STM32 vx by this (wheels-in-the-air test, provisional)'),
-    ('wz_scale', 0.814, 'multiply STM32 wz by this (assumed same as vx; NOT verified)'),
+    # 2026-11-10: 3 motor-driven floor runs against a tape, see r550_feedback.yaml
+    ('vx_scale', 1.035, 'multiply STM32 vx by this (floor test 2026-11-10)'),
+    ('wz_scale', 0.814, 'multiply STM32 wz by this (NOT measured yet)'),
     ('feedback_timeout', 0.5, '/diagnostics ERROR when no valid frame for this long (s)'),
     ('expected_rate', 20.0, 'expected frame rate (Hz); WARN below half of it'),
     ('low_battery_voltage', 10.8, 'WARN below this voltage (vendor: charge below 10.8 V)'),
