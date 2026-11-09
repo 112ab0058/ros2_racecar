@@ -46,7 +46,7 @@ PARAMETERS = [
     ('odom_max_gap', 0.5, 'do not integrate across a gap between frames longer than this (s)'),
     # 2026-11-10: 3 motor-driven floor runs against a tape, see r550_feedback.yaml
     ('vx_scale', 1.035, 'multiply STM32 vx by this (floor test 2026-11-10)'),
-    ('wz_scale', 0.814, 'multiply STM32 wz by this (NOT measured yet)'),
+    ('wz_scale', 1.01, 'multiply STM32 wz by this (floor test 2026-11-10, gyro as reference)'),
     ('feedback_timeout', 0.5, '/diagnostics ERROR when no valid frame for this long (s)'),
     ('expected_rate', 20.0, 'expected frame rate (Hz); WARN below half of it'),
     ('low_battery_voltage', 10.8, 'WARN below this voltage (vendor: charge below 10.8 V)'),

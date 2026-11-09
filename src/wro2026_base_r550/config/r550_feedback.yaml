@@ -14,7 +14,9 @@ r550_feedback:
     # 1.036 / 1.034 / 1.034 (spread 0.2 %). The 2026-10-16 value 0.814 (hand test, wheels
     # in the air) was wrong. base_node divides commands by vx_scale.
     vx_scale: 1.035
-    wz_scale: 0.814              # NOT measured yet (DETAILED_PLAN 7.3); predicted 1.035 * 0.162 / 0.170 = 0.986
+    # 2026-11-10 gyro as reference, 9 steady left turns, 368 deg: 1.013 (per turn 0.88-1.10;
+    # geometry 1.035 * 0.162 / 0.170 = 0.986). Right turn not tested. The EKF does not use it.
+    wz_scale: 1.01
     feedback_timeout: 0.5        # s; /diagnostics ERROR when no valid frame for this long
     expected_rate: 20.0          # Hz (firmware RATE_20_HZ); WARN below half
     low_battery_voltage: 10.8    # V; vendor: charge below 10.8 V

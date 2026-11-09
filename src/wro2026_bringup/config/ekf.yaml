@@ -9,7 +9,8 @@
 # We fuse VELOCITIES, not two absolute headings (they would fight each other):
 #   odom: vx (wheels) + vy = 0 (Ackermann cannot slide sideways)
 #   imu:  vyaw (gyro z) only; accel is zeroed by the firmware at boot, not used
-# odom vyaw is OFF until the turn test (DETAILED_PLAN 7.3) verifies wz_scale.
+# odom vyaw stays OFF: in the 2026-11-10 turn test the wheel yaw rate (7.8-9.8 deg/s)
+# was much noisier than the gyro (10.5-11.0 deg/s) for the same steady turn.
 # Covariances come from the messages: odom twist (r550_feedback.yaml),
 # gyro 1e-6 (measured still 2026-10-19, x7 margin).
 ekf_filter_node:
