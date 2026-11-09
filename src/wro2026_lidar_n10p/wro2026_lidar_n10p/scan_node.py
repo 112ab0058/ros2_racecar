@@ -29,8 +29,9 @@ PARAMETERS = [
     ('range_max', 25.0, 'm; farther returns are dropped'),
     ('angle_offset_deg', 0.0, 'added to every angle (lidar zero vs laser_link x axis)'),
     ('scan_timeout', 1.0, '/diagnostics ERROR when no scan for this long (s)'),
-    ('mask_sectors_deg', '', 'hide our own car: "start:end,..." in ROS degrees '
-     '(0 = front, CCW); beams inside become inf'),
+    ('mask_sectors_deg', '168:178,195:213,228:243',
+     'hide our own car: "start:end,..." in ROS degrees (0 = front, CCW); beams inside '
+     'become inf. Measured 2026-11-08 (Orin, posts, cables)'),
 ]
 
 
