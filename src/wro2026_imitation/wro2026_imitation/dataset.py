@@ -31,6 +31,22 @@ def label_scans(scan_t, cmd_t, cmd_vx, cmd_wz, max_age=MAX_CMD_AGE):
     return labels
 
 
+def command_stats(cmd_vx, cmd_wz):
+    """
+    Return (speed, turn radius) of a recording: medians over the forward commands.
+
+    bc_node drives with the same values, so the network's left / right mean the
+    same curve as in the recording. The radius is nan if there was no turn.
+    """
+    vx, wz = np.asarray(cmd_vx, dtype=float), np.asarray(cmd_wz, dtype=float)
+    forward = vx >= MIN_FORWARD
+    if not forward.any():
+        return float('nan'), float('nan')
+    turning = forward & (np.abs(wz) > MIN_TURN)
+    radius = np.median(vx[turning] / np.abs(wz[turning])) if turning.any() else np.nan
+    return float(np.median(vx[forward])), float(radius)
+
+
 def block_split(t, block=3.0, every=5, guard=0.5):
     """
     Return boolean masks (train, val) that split one recording by time.

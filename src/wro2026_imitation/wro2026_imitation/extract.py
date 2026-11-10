@@ -3,7 +3,8 @@ Make training samples from orin_map.sh recordings. Reads files only, no motors.
 
     ros2 run wro2026_imitation bc_extract ~/r550_map/<time> [more run folders]
 
-Writes <run folder>/dataset.npz: ranges (one row per scan), label, t.
+Writes <run folder>/dataset.npz: ranges (one row per scan), label, t, and the
+speed and turn radius the driver used (bc_node drives with the same).
 """
 import argparse
 import collections
@@ -12,7 +13,7 @@ import sys
 
 import numpy as np
 
-from .dataset import label_scans, NO_LABEL
+from .dataset import command_stats, label_scans, NO_LABEL
 from .features import LABELS
 
 
@@ -54,8 +55,10 @@ def extract(folder):
         '%s %d' % (name, counts[i]) for i, name in enumerate(LABELS))))
     if not keep.any():
         return 0
+    speed, radius = command_stats(vx, wz)
+    print('%s: speed %.3f m/s, turn radius %.2f m' % (folder, speed, radius))
     np.savez(os.path.join(folder, 'dataset.npz'), ranges=np.stack(ranges)[keep],
-             label=labels[keep], t=scan_t[keep])
+             label=labels[keep], t=scan_t[keep], speed=speed, turn_radius=radius)
     return int(keep.sum())
 
 

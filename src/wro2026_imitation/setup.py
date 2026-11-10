@@ -17,6 +17,7 @@ setup(
         'console_scripts': [
             'bc_extract = wro2026_imitation.extract:main',
             'bc_train = wro2026_imitation.train:main',
+            'bc_node = wro2026_imitation.bc_node:main',
         ],
     },
 )

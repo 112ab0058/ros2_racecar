@@ -2,10 +2,11 @@
 import numpy as np
 import pytest
 from wro2026_imitation import extract
-from wro2026_imitation.dataset import block_split, label_of, label_scans, NO_LABEL
+from wro2026_imitation.dataset import block_split, command_stats, label_of, label_scans, NO_LABEL
 from wro2026_imitation.features import (bin_beams, LEFT, MAX_RANGE, mirror, N_BINS, RIGHT,
                                         scan_features, STRAIGHT)
 from wro2026_imitation.model import balanced_accuracy, confusion, MLP, train
+from wro2026_imitation.policy import check_model
 from wro2026_imitation.train import class_weights, main
 
 BEAMS = 480
@@ -69,6 +70,14 @@ def test_labels(vx, wz, expected):
 def test_scan_gets_the_last_command_before_it():
     labels = label_scans([1.0, 1.1, 2.0, 5.0], [1.05, 1.95], [0.1, 0.1], [0.3, -0.3])
     assert labels.tolist() == [NO_LABEL, LEFT, RIGHT, NO_LABEL]    # first: none yet; last: stale
+
+
+def test_command_stats_are_the_driven_speed_and_radius():
+    # stopped, ramping, then 0.1 m/s with 0.5 m turns; the ramp keeps the curvature
+    vx = [0.0, 0.05, 0.1, 0.1, 0.1, 0.1]
+    wz = [0.0, 0.1, 0.2, 0.2, 0.0, -0.2]
+    assert command_stats(vx, wz) == pytest.approx((0.1, 0.5))
+    assert np.isnan(command_stats([0.1, 0.1], [0.0, 0.0])[1])     # never turned
 
 
 def test_time_split_has_no_overlap_and_keeps_a_gap():
@@ -137,6 +146,18 @@ def test_recording_without_driving_writes_no_dataset(tmp_path, monkeypatch):
     assert not (tmp_path / 'dataset.npz').exists()
 
 
+def test_recording_stores_speed_and_radius(tmp_path, monkeypatch):
+    def driving(uri):
+        return np.array([1.0, 1.1, 1.2]), [scan()] * 3, np.array([0.95, 1.05, 1.15]), \
+            np.array([0.1, 0.1, 0.1]), np.array([0.0, 0.2, -0.2])
+
+    monkeypatch.setattr(extract, 'read_bag', driving)
+    assert extract.extract(str(tmp_path)) == 3
+    with np.load(tmp_path / 'dataset.npz') as d:
+        assert d['label'].tolist() == [STRAIGHT, LEFT, RIGHT]
+        assert (float(d['speed']), float(d['turn_radius'])) == pytest.approx((0.1, 0.5))
+
+
 def test_train_command_end_to_end(tmp_path, capsys):
     """A wall close on one side means steer away: the command must learn that."""
     rng = np.random.default_rng(6)
@@ -152,10 +173,12 @@ def test_train_command_end_to_end(tmp_path, capsys):
         labels.append(c)
     data = str(tmp_path / 'dataset.npz')
     np.savez(data, ranges=np.stack(ranges), label=np.array(labels, np.int8),
-             t=np.arange(900) * 0.1)
+             t=np.arange(900) * 0.1, speed=0.1, turn_radius=0.5)
     out = str(tmp_path / 'model.npz')
     assert main([data, '-o', out, '--epochs', '60']) == 0
-    model = MLP.load(out)[0]
+    model, meta = MLP.load(out)
+    check_model(model, meta)                    # bc_node will accept it
+    assert (meta['speed'], meta['turn_radius']) == pytest.approx((0.1, 0.5))
     r = np.full((1, BEAMS), 2.5, dtype=np.float32)
     r[0, [beam_at(d) for d in range(30, 90)]] = 0.3
     assert model.predict(scan_features(r))[0] == RIGHT

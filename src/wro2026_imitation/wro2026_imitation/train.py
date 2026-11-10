@@ -14,8 +14,12 @@ from .model import balanced_accuracy, confusion, MLP, train
 
 
 def load(paths):
-    """Return (inputs, labels, train mask, validation mask) over all recordings."""
-    xs, ys, tr, va = [], [], [], []
+    """
+    Return (inputs, labels, train mask, validation mask, driving) over all recordings.
+
+    driving has one row (speed, turn radius) per recording; nan where not stored.
+    """
+    xs, ys, tr, va, driving = [], [], [], [], []
     for path in paths:
         with np.load(path) as d:
             xs.append(scan_features(d['ranges']))
@@ -23,7 +27,22 @@ def load(paths):
             is_train, is_val = block_split(d['t'])
             tr.append(is_train)
             va.append(is_val)
-    return np.concatenate(xs), np.concatenate(ys), np.concatenate(tr), np.concatenate(va)
+            driving.append([float(d[k]) if k in d.files else np.nan
+                            for k in ('speed', 'turn_radius')])
+    return (np.concatenate(xs), np.concatenate(ys), np.concatenate(tr), np.concatenate(va),
+            np.array(driving))
+
+
+def recorded(values, name):
+    """Return the median of a driving value over the recordings, or None if none stored it."""
+    v = values[np.isfinite(values)]
+    if not len(v):
+        print('%s: not in the datasets; bc_node will need it as a parameter' % name)
+        return None
+    if v.max() > 1.1 * v.min():
+        print('WARNING: %s differs between recordings: %s'
+              % (name, ', '.join('%.3f' % a for a in v)))
+    return float(np.median(v))
 
 
 def class_weights(y, n=3):
@@ -51,10 +70,12 @@ def main(argv=None):
     ap.add_argument('--seed', type=int, default=0)
     args = ap.parse_args(argv)
 
-    x, y, is_train, is_val = load(args.datasets)
+    x, y, is_train, is_val, driving = load(args.datasets)
     counts = np.bincount(y, minlength=len(LABELS))
     print('samples: %d from %d recording(s): %s' % (len(y), len(args.datasets), ', '.join(
         '%s %d' % (name, c) for name, c in zip(LABELS, counts))))
+    speed = recorded(driving[:, 0], 'speed')
+    radius = recorded(driving[:, 1], 'turn radius')
     if not is_train.any() or not is_val.any():
         print('not enough data to split into training and validation')
         return 1
@@ -83,7 +104,7 @@ def main(argv=None):
         print('%10s' % name + ''.join('%10d' % v for v in row))
 
     model.save(args.output, half_fov_deg=HALF_FOV_DEG, bin_deg=BIN_DEG, max_range=MAX_RANGE,
-               labels=LABELS, hidden=hidden)
+               labels=LABELS, hidden=hidden, speed=speed, turn_radius=radius)
     print('saved %s' % args.output)
     return 0
 
