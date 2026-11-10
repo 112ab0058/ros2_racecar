@@ -29,7 +29,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);overflow:hid
 button{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);
   border-radius:var(--radius);touch-action:none;cursor:pointer}
 button:active{background:var(--press)}
-.app{height:100%;display:grid;gap:var(--gap);
+.app{height:100%;height:100dvh;display:grid;gap:var(--gap);
   padding:max(12px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right))
           max(12px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
   grid-template-rows:auto auto 1fr auto;grid-template-areas:"head" "tabs" "ctrl" "info"}
@@ -53,9 +53,10 @@ header{grid-area:head;display:grid;gap:6px}
 .chip.good b{color:var(--good)}.chip.warn b{color:var(--warn)}.chip.bad b{color:var(--bad)}
 nav{grid-area:tabs;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px;
   background:var(--panel);border:1px solid var(--line);border-radius:12px}
-nav button{border:0;border-radius:9px;padding:8px 0;font-weight:600;color:var(--dim);background:transparent}
+nav button{border:0;border-radius:9px;min-height:42px;font-weight:600;color:var(--dim);background:transparent}
 nav button.on{background:var(--accent);color:var(--accent-fg)}
-.ctrl{grid-area:ctrl;min-height:0;position:relative}
+/* the control area is a size container: dials fit the space that is left, not the screen */
+.ctrl{grid-area:ctrl;min-height:0;position:relative;container-type:size}
 section{position:absolute;inset:0;display:none}
 section.on{display:grid}
 /* keys */
@@ -66,8 +67,8 @@ section.on{display:grid}
 .key.held{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 #k-back{grid-column:2}
 /* joystick and tilt dial */
-#stick,#tilt{place-items:center;align-content:center;gap:12px}
-.dial{position:relative;width:min(86vw,46vh,420px);aspect-ratio:1;border-radius:50%;
+#stick,#tilt{place-items:center;align-content:center;gap:10px}
+.dial{position:relative;width:min(80vw,36vh,420px);aspect-ratio:1;border-radius:50%;
   background:var(--panel);border:1px solid var(--line);touch-action:none}
 .dial::before{content:"";position:absolute;inset:37.5%;border-radius:50%;border:1px dashed var(--line)}
 .dial .lbl{position:absolute;transform:translate(-50%,-50%);font-size:12px;color:var(--dim);
@@ -76,10 +77,14 @@ section.on{display:grid}
 .knob{position:absolute;left:50%;top:50%;width:24%;aspect-ratio:1;margin:-12% 0 0 -12%;
   border-radius:50%;background:var(--line);pointer-events:none;transition:background .1s}
 .knob.on{background:var(--accent)}
-.hint{font-size:13px;color:var(--dim);text-align:center;max-width:34em}
-#deadman{width:min(86vw,420px);padding:16px;font-size:17px;font-weight:700}
+@supports (width:1cqh){
+  #stick .dial{width:min(100cqw,calc(100cqh - 50px),420px)}
+  #tilt .dial{width:min(100cqw,calc(100cqh - 112px),420px)}
+}
+.hint{font-size:12px;line-height:1.3;color:var(--dim);text-align:center;max-width:34em}
+#deadman,#sensor-btn{width:min(100%,420px);min-height:52px;padding:0 12px;font-size:16px;font-weight:700}
 #deadman.held{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
-#sensor-btn{padding:10px 18px;font-weight:600}
+#deadman:disabled{opacity:.45}
 /* wave */
 #wave{grid-template-rows:1fr auto;gap:6px}
 canvas{width:100%;height:100%;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
@@ -105,11 +110,18 @@ dialog li{margin:6px 0}
 dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 dialog .row a,dialog .row button{padding:9px 14px;border-radius:10px;font-weight:600}
 dialog .row a{background:var(--accent);color:var(--accent-fg);text-decoration:none}
+/* short screens (small iPhones with Safari's bars): tighter info area */
+@media (max-height:620px){
+  :root{--gap:8px}
+  .status{padding:7px 12px}#action{font-size:19px}
+  .speed button{height:40px}
+  .gauge{padding:3px 10px}.gauge b{font-size:15px}
+}
+/* landscape phone: controls left, everything else right */
 @media (orientation:landscape) and (max-height:560px){
-  .app{grid-template-columns:1.4fr 1fr;grid-template-rows:auto auto 1fr;
-    grid-template-areas:"ctrl head" "ctrl tabs" "ctrl info"}
-  .dial{width:min(46vw,80vh)}
-  #deadman{width:min(46vw,420px)}
+  .app{grid-template-columns:1.25fr 1fr;grid-template-rows:auto auto 1fr;
+    grid-template-areas:"ctrl head" "ctrl tabs" "ctrl info";align-content:start}
+  .info{align-self:end}
 }
 </style></head><body>
 <div class="app">
@@ -131,11 +143,11 @@ dialog .row a{background:var(--accent);color:var(--accent-fg);text-decoration:no
   <button class="key drive" id="k-back" data-a="back"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M24 6v34"/><path d="M12 28l12 12 12-12"/></svg>後退</button>
 </section>
 <section id="stick"><div class="dial" id="pad"><div class="knob" id="knob"></div></div>
-  <div class="hint">手指拖到哪個方向就往哪開，回到中心或放開就停（方向照廠商 APP 阿克曼表）</div></section>
+  <div class="hint">拖到哪個方向就往哪開；回中心或放開就停</div></section>
 <section id="tilt"><div class="dial" id="ball-dial"><div class="knob" id="ball"></div></div>
   <button id="sensor-btn">啟用動作感測器</button>
-  <button id="deadman">按住才走 · 傾斜手機控制方向</button>
-  <div class="hint" id="tilt-hint">直拿手機。按下時的角度當作「不動」，往前傾＝前進，左右傾＝轉彎</div></section>
+  <button id="deadman" hidden>按住才走 · 傾斜控制方向</button>
+  <div class="hint" id="tilt-hint">直拿手機。按下時的角度＝不動；前傾＝前進，左右傾＝轉彎</div></section>
 <section id="wave"><canvas id="plot"></canvas>
   <div class="legend"><span><i style="background:var(--accent)"></i>角速度 Z（±1 rad/s）</span>
   <span><i style="background:var(--warn)"></i>速度（±0.2 m/s）</span><span>最近 10 秒</span></div></section>
@@ -288,11 +300,12 @@ let tiltHeld = false, sensorOn = false, neutral = null, lastTilt = null;
 const TILT_FULL = 20;   // degrees for full deflection
 function tiltReady() {
   if (!window.isSecureContext) {
-    $('sensor-btn').hidden = true; $('deadman').disabled = true;
+    $('sensor-btn').hidden = true; $('deadman').hidden = false; $('deadman').disabled = true;
     $('tilt-hint').textContent = '重力模式需要 https 網址（iPhone 只給 https 網頁動作感測器）';
     return;
   }
-  $('sensor-btn').hidden = sensorOn; $('deadman').disabled = !sensorOn;
+  // one slot: "enable sensors" first, then the hold button
+  $('sensor-btn').hidden = sensorOn; $('deadman').hidden = !sensorOn; $('deadman').disabled = !sensorOn;
 }
 $('sensor-btn').addEventListener('click', async () => {
   try {
