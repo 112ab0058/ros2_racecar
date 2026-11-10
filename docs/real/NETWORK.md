@@ -43,10 +43,21 @@
 
 ## 3. NetBird 現況
 
-Orin 上（2026-10-14 唯讀檢查 `netbird status`）：Daemon 0.79.0、Management / Signal 都已連線、**Peers 0/3 connected**（主機名稱 `112ab-jno`；NetBird 內部 IP 不寫進 repo）。
+**2026-11-10 起：Orin 用 Ray 的 NetBird 帳號**，Ray 的電腦和 iPhone 在同一個網路，在學校也能從家裡電腦 ssh 到 Orin（NetBird 內部 IP 不寫進 repo，用電腦的 `netbird status -d` 看 `112ab-jno` 那一筆）。
 
-- Orin 在**組員的 NetBird 帳號**下。Ray 的電腦還沒加入，要請組員從 NetBird 管理頁面邀請 Ray（或給一把 setup key），Ray 在自己電腦安裝 NetBird 並登入後，才能在不同網路下用 `112ab-jno.netbird.cloud` 連 Orin。
-- 這次沒有改任何 NetBird 設定。
+- Orin 有兩個 NetBird 設定檔：`default`（組員的帳號，2026-10-14 的狀態）和 `ray`（Ray 的帳號，目前使用中，SSO 登入）。切回組員的網路：`netbird down; netbird up --profile default`（user2 不用 sudo）。
+- SSO 登入的裝置會過期（Ray 的電腦顯示 24 h），過期要重新登入。
+- 2026-10-14 那次只做唯讀檢查：Daemon 0.79.0、Management / Signal 已連線、Peers 0/3。
+
+### Wi-Fi（Orin 存的連線，都會自動連）
+
+| 名稱 | 用途 |
+|---|---|
+| 家裡的 5 GHz 路由器 | 在家 |
+| Ray 的 iPhone 熱點 | 到學校用（2026-11-10 加入，熱點要開「最大化相容性」= 2.4 GHz；Orin 的無線地區設定是 `00`，5 GHz 掃描很保守） |
+| `305-2F` | 來源不確定，可能是學校某間教室 |
+
+學校網路有擋 Tailscale；用手機熱點時 Orin 走行動網路，不經過學校網路。NetBird 直連被擋時會改走 443 埠的中繼。
 
 ## 4. Foxglove（建議的視覺化方式）
 
