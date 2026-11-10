@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>wro2026_imitation</name>
+  <version>0.1.0</version>
+  <description>Imitation learning for the R550: lidar scan to left / straight / right, trained from teleoperation recordings, in plain numpy.</description>
+  <maintainer email="t112ab0058@ntut.org.tw">112ab0058</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>rosbag2_py</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
