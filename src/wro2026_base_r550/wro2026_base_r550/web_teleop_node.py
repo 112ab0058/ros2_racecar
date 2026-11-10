@@ -1,13 +1,17 @@
 """
-Phone teleop node: a web page with hold-to-drive keys / joystick -> /cmd_vel (Twist).
+Phone teleop node: a web page with hold-to-drive keys / joystick / tilt -> /cmd_vel.
 
     ros2 run wro2026_base_r550 web_teleop_node        (normally started by orin_field.sh)
 
 Open the URL from the log on the phone (same WiFi / hotspot as the Orin). See
 web_teleop.py for the page (the vendor app's functions, through ROS) and the
-rules: the car drives only while a key or the joystick is held and the phone
-keeps sending; otherwise 0 within hold_timeout (0.35 s). Reads /battery, /odom,
-/imu/data and /diagnostics for the page's gauges.
+rules: the car drives only while a key, the joystick or the tilt hold button
+is pressed and the phone keeps sending; otherwise 0 within hold_timeout
+(0.35 s). Reads /battery, /odom, /imu/data and /diagnostics for the gauges.
+
+https:=true serves https only, with a certificate signed by the Orin's own CA
+in cert_dir for the addresses it has at start (web_cert.py). The phone trusts
+that CA once (the page's 憑證 link); https also enables the tilt mode.
 
 Publishes /cmd_vel at a FIXED rate from a timer, 0 included (like teleop_node).
 It does not touch the serial port: only base_node with enable_commands:=true
@@ -15,8 +19,10 @@ moves the motors, and its limits still apply. SIGINT and SIGTERM publish a few
 zeros, then exit (own handlers: a program started in the background by a
 script inherits "ignore SIGINT").
 """
+import os
 import secrets
 import signal
+import ssl
 import sys
 import threading
 import time
@@ -30,6 +36,7 @@ from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from sensor_msgs.msg import BatteryState, Imu
 
+from .web_cert import ensure_ca, local_addresses, make_server_cert
 from .web_teleop import make_server, NAMES, WebTeleop
 
 # name, default, description
@@ -42,6 +49,9 @@ PARAMETERS = [
     ('rate', 20.0, '/cmd_vel messages per second'),
     ('port', 8080, 'web server port'),
     ('token', '', 'secret in the URL (?k=); empty = a new random one'),
+    ('https', False, 'true = https only, certificate from the CA in cert_dir'),
+    ('cert_dir', '~/.r550_web', 'CA and page certificate (CA key stays here, mode 600)'),
+    ('dns_names', '112ab-jno.netbird.cloud', 'comma-separated names for the certificate'),
 ]
 
 
@@ -63,13 +73,22 @@ class WebTeleopNode(Node):
         self.create_subscription(Odometry, 'odom', self._on_odom, 10)
         self.create_subscription(Imu, 'imu/data', self._on_imu, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self._on_diagnostics, 10)
+        context, ca_cert, scheme = None, None, 'http'
+        if p['https']:
+            cert_dir = os.path.expanduser(p['cert_dir'])
+            ca_cert = ensure_ca(cert_dir)
+            names = [n.strip() for n in p['dns_names'].split(',') if n.strip()]
+            crt, key = make_server_cert(cert_dir, local_addresses(), names)
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(crt, key)
+            scheme = 'https'
         self.server = make_server(self.teleop, self.token, p['port'], time.monotonic,
-                                  self._status)
+                                  self._status, context, ca_cert)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.create_timer(1.0 / p['rate'], self._tick)
         self.get_logger().warn(
-            'phone page: http://<orin ip>:%d/?k=%s  speed %.2f (max %.2f) m/s, turn radius '
-            '%.2f m, hold timeout %.2f s' % (p['port'], self.token, p['speed'],
+            'phone page: %s://<orin ip>:%d/?k=%s  speed %.2f (max %.2f) m/s, turn radius '
+            '%.2f m, hold timeout %.2f s' % (scheme, p['port'], self.token, p['speed'],
                                              self.teleop.max_speed, p['turn_radius'],
                                              p['hold_timeout']))
 

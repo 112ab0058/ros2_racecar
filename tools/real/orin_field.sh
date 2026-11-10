@@ -5,9 +5,10 @@
 #
 # orin_map.sh without a keyboard, for the field when there is only a phone. Claude Code
 # starts it over ssh in the background ONLY AFTER Ray confirmed in chat (CONFIRM=YES
-# replaces typing YES). Ray drives with the phone page (web_teleop_node): hold a button
-# to drive, let go to stop. The script prints PHONE_URL lines; open the one on the
-# phone's network (hotspot) in the phone's browser.
+# replaces typing YES). Ray drives with the phone page (web_teleop_node, https): hold a
+# key / the joystick / the tilt hold button to drive, let go to stop. The script prints
+# PHONE_URL lines; open the one on the phone's network (hotspot) in the phone's browser.
+# First time on a phone: the page's 憑證 link installs the Orin's CA (~/.r550_web).
 #
 # Limits: as orin_map.sh: max_vx <= 0.15 m/s, 10-600 s, turn radius 0.35-2.0 m,
 #         cmd_timeout 0.3 s, firmware timeout ~1.3 s; the page stops 0.35 s after the
@@ -98,18 +99,18 @@ sleep 6
 
 setsid ros2 run wro2026_base_r550 web_teleop_node --ros-args \
     -p speed:="$SPEED" -p max_speed:="$(awk "BEGIN{printf \"%.3f\", $MAX_VX}")" \
-    -p turn_radius:="$RADIUS" > "$OUT/web.log" 2>&1 < /dev/null &
+    -p turn_radius:="$RADIUS" -p https:=true > "$OUT/web.log" 2>&1 < /dev/null &
 WEB_PID=$!
-for _ in $(seq 40); do grep -q "phone page" "$OUT/web.log" && break; sleep 0.25; done
+for _ in $(seq 80); do grep -q "phone page" "$OUT/web.log" && break; sleep 0.25; done
 TOKEN=$(grep -o 'k=[0-9a-f]*' "$OUT/web.log" | head -n 1)
 if [ -z "$TOKEN" ]; then
     echo "phone page did not start, see $OUT/web.log"
     exit 1
 fi
 for ip in $(hostname -I); do
-    case "$ip" in *:*) ;; *) echo "PHONE_URL http://$ip:8080/?$TOKEN" ;; esac
+    case "$ip" in *:*) ;; *) echo "PHONE_URL https://$ip:8080/?$TOKEN" ;; esac
 done
-echo "READY: hold a button on the phone page to drive. Time limit $RUN_TIME s."
+echo "READY: hold a key / the joystick on the phone page to drive. Time limit $RUN_TIME s."
 
 END=$((SECONDS + RUN_TIME + 5))
 while [ "$SECONDS" -lt "$END" ]; do
