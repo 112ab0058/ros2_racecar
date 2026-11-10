@@ -1,11 +1,13 @@
 """
-Phone teleop node: a web page with hold-to-drive buttons -> /cmd_vel (Twist).
+Phone teleop node: a web page with hold-to-drive keys / joystick -> /cmd_vel (Twist).
 
     ros2 run wro2026_base_r550 web_teleop_node        (normally started by orin_field.sh)
 
 Open the URL from the log on the phone (same WiFi / hotspot as the Orin). See
-web_teleop.py for the rules: the car drives only while a button is held and the
-phone keeps sending; otherwise 0 within hold_timeout (0.35 s).
+web_teleop.py for the page (the vendor app's functions, through ROS) and the
+rules: the car drives only while a key or the joystick is held and the phone
+keeps sending; otherwise 0 within hold_timeout (0.35 s). Reads /battery, /odom,
+/imu/data and /diagnostics for the page's gauges.
 
 Publishes /cmd_vel at a FIXED rate from a timer, 0 included (like teleop_node).
 It does not touch the serial port: only base_node with enable_commands:=true
@@ -19,19 +21,22 @@ import sys
 import threading
 import time
 
+from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
-from sensor_msgs.msg import BatteryState
+from sensor_msgs.msg import BatteryState, Imu
 
 from .web_teleop import make_server, NAMES, WebTeleop
 
 # name, default, description
 PARAMETERS = [
-    ('speed', 0.1, 'forward speed (m/s), fixed: clean training labels'),
-    ('back_speed', 0.08, 'reverse speed (m/s), straight back only'),
+    ('speed', 0.1, 'forward speed at start (m/s); keep 0.1 for training data'),
+    ('max_speed', 0.0, 'the page may raise the speed up to this (m/s, <= 0.15); 0 = speed'),
+    ('back_speed', 0.08, 'reverse speed (m/s), at most the forward speed'),
     ('turn_radius', 0.5, 'turn radius of left / right (m), >= 0.35'),
     ('hold_timeout', 0.35, 'stop when the phone has not sent for this long (s)'),
     ('rate', 20.0, '/cmd_vel messages per second'),
@@ -48,26 +53,43 @@ class WebTeleopNode(Node):
         p = {name: self.declare_parameter(name, default).value
              for name, default, _ in PARAMETERS}
         self.teleop = WebTeleop(speed=p['speed'], turn_radius=p['turn_radius'],
-                                hold_timeout=p['hold_timeout'], back_speed=p['back_speed'])
+                                hold_timeout=p['hold_timeout'], back_speed=p['back_speed'],
+                                max_speed=p['max_speed'] or p['speed'])
         self.token = p['token'] or secrets.token_hex(3)
-        self.voltage = None
+        self.state = {'battery': None, 'odom_vx': None, 'gyro_z': None, 'base': None}
         self.last_action = 'none'
         self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.create_subscription(BatteryState, 'battery', self._on_battery, 10)
+        self.create_subscription(Odometry, 'odom', self._on_odom, 10)
+        self.create_subscription(Imu, 'imu/data', self._on_imu, 10)
+        self.create_subscription(DiagnosticArray, 'diagnostics', self._on_diagnostics, 10)
         self.server = make_server(self.teleop, self.token, p['port'], time.monotonic,
                                   self._status)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.create_timer(1.0 / p['rate'], self._tick)
         self.get_logger().warn(
-            'phone page: http://<orin ip>:%d/?k=%s  speed %.2f m/s, turn radius %.2f m, '
-            'hold timeout %.2f s'
-            % (p['port'], self.token, p['speed'], p['turn_radius'], p['hold_timeout']))
+            'phone page: http://<orin ip>:%d/?k=%s  speed %.2f (max %.2f) m/s, turn radius '
+            '%.2f m, hold timeout %.2f s' % (p['port'], self.token, p['speed'],
+                                             self.teleop.max_speed, p['turn_radius'],
+                                             p['hold_timeout']))
 
+    # Gauges for the page (read only; a dict update is atomic for the web thread).
     def _on_battery(self, msg):
-        self.voltage = float(msg.voltage)
+        self.state['battery'] = round(float(msg.voltage), 2)
+
+    def _on_odom(self, msg):
+        self.state['odom_vx'] = round(float(msg.twist.twist.linear.x), 3)
+
+    def _on_imu(self, msg):
+        self.state['gyro_z'] = round(float(msg.angular_velocity.z), 3)
+
+    def _on_diagnostics(self, msg):
+        for status in msg.status:
+            if status.name == 'r550_base: command':
+                self.state['base'] = status.message
 
     def _status(self):
-        return {'battery': self.voltage}
+        return dict(self.state)
 
     def _tick(self):
         now = time.monotonic()

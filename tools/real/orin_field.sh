@@ -97,7 +97,8 @@ fi
 sleep 6
 
 setsid ros2 run wro2026_base_r550 web_teleop_node --ros-args \
-    -p speed:="$SPEED" -p turn_radius:="$RADIUS" > "$OUT/web.log" 2>&1 < /dev/null &
+    -p speed:="$SPEED" -p max_speed:="$(awk "BEGIN{printf \"%.3f\", $MAX_VX}")" \
+    -p turn_radius:="$RADIUS" > "$OUT/web.log" 2>&1 < /dev/null &
 WEB_PID=$!
 for _ in $(seq 40); do grep -q "phone page" "$OUT/web.log" && break; sleep 0.25; done
 TOKEN=$(grep -o 'k=[0-9a-f]*' "$OUT/web.log" | head -n 1)

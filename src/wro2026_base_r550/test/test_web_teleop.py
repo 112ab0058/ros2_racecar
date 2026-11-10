@@ -14,11 +14,27 @@ def test_nothing_pressed_is_stop():
 
 @pytest.mark.parametrize('action, expected', [
     ('straight', (0.1, 0.0)), ('left', (0.1, 0.2)), ('right', (0.1, -0.2)),
-    ('back', (-0.08, 0.0)), ('stop', (0.0, 0.0)), ('spin', (0.0, 0.0))])
+    ('full_left', (0.1, 0.1 / 0.35)), ('full_right', (0.1, -0.1 / 0.35)),
+    ('back', (-0.08, 0.0)),
+    ('back_left', (-0.08, -0.16)), ('back_right', (-0.08, 0.16)),   # wheels left, reversing
+    ('stop', (0.0, 0.0)), ('spin', (0.0, 0.0))])
 def test_actions(action, expected):
+    # Ackermann table 3-1 of the vendor app manual; never turning on the spot
     t = WebTeleop(speed=0.1, turn_radius=0.5)
     t.press(1.0, action)
-    assert t.command(1.1) == pytest.approx(expected)
+    vx, wz = t.command(1.1)
+    assert (vx, wz) == pytest.approx(expected)
+    assert wz == 0.0 or abs(vx) > 0.0
+
+
+def test_speed_buttons_stay_within_limits():
+    t = WebTeleop(speed=0.1, max_speed=0.15)
+    assert t.change_speed(1) == pytest.approx(0.15)
+    assert t.change_speed(1) == pytest.approx(0.15)         # max_speed (orin_field max_vx)
+    assert [t.change_speed(-1) for _ in range(3)] == pytest.approx([0.1, 0.05, 0.05])
+    t.press(0.0, 'back')
+    assert t.command(0.1)[0] == pytest.approx(-0.05)        # reverse never faster than forward
+    assert WebTeleop(speed=0.1).change_speed(1) == pytest.approx(0.1)   # default max = speed
 
 
 def test_letting_go_stops_within_the_hold_timeout():
@@ -33,7 +49,7 @@ def test_letting_go_stops_within_the_hold_timeout():
 
 @pytest.mark.parametrize('kwargs', [
     {'speed': 0.2}, {'speed': 0.0}, {'back_speed': 0.3}, {'turn_radius': 0.3},
-    {'hold_timeout': 0.0}])
+    {'hold_timeout': 0.0}, {'max_speed': 0.2}, {'speed': 0.1, 'max_speed': 0.05}])
 def test_refuses_unsafe_settings(kwargs):
     with pytest.raises(ValueError):
         WebTeleop(**kwargs)
@@ -42,7 +58,7 @@ def test_refuses_unsafe_settings(kwargs):
 @pytest.fixture
 def server():
     clock = {'t': 10.0}
-    teleop = WebTeleop()
+    teleop = WebTeleop(max_speed=0.15)
     srv = make_server(teleop, 'abc123', 0, lambda: clock['t'], lambda: {'battery': 11.8})
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield 'http://127.0.0.1:%d' % srv.server_address[1], teleop, clock
@@ -75,3 +91,16 @@ def test_page_and_driving_over_http(server):
     clock['t'] += 0.5                                   # phone stopped sending
     state = json.loads(request(base + '/state?k=abc123')[1])
     assert (state['action'], state['vx']) == ('stop', 0.0)
+
+
+def test_speed_and_joystick_over_http(server):
+    base, teleop, _ = server
+    s = json.loads(request(base + '/speed?k=abc123&d=up', post=True)[1])
+    assert s['speed'] == pytest.approx(0.15) and s['max_speed'] == pytest.approx(0.15)
+    s = json.loads(request(base + '/cmd?k=abc123&a=full_right', post=True)[1])
+    assert (s['action'], s['vx'], s['wz']) == ('full_right', 0.15, round(-0.15 / 0.35, 3))
+    s = json.loads(request(base + '/speed?k=abc123&d=down', post=True)[1])
+    assert s['speed'] == pytest.approx(0.1)
+    with pytest.raises(urllib.error.HTTPError) as e:
+        request(base + '/speed?d=up', post=True)
+    assert e.value.code == 403 and teleop.speed == pytest.approx(0.1)
