@@ -1,0 +1,21 @@
+image_width: 1280
+image_height: 720
+camera_name: c70
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [822.81496, 0, 584.22601, 0, 819.18716, 400.34584, 0, 0, 1]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [-0.42435401, 0.19541575, -0.00017136702, 0.0044616257, -0.048002669]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1, 0, 0, 0, 1, 0, 0, 0, 1]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [695.42261, 0, 690.94928, 0, 0, 818.04938, 399.7898, 0, 0, 0, 1, 0]
+# rms_reprojection_error_px: 0.4668  photos: 15

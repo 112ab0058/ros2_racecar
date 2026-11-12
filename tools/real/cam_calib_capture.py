@@ -6,9 +6,10 @@ Orin: take checkerboard photos for camera calibration (READ ONLY: camera only, n
     python3 ~/racecar_ws/tools/cam_calib_capture.py floor       # board flat on the floor
 
 Board: docs/real/calib/checkerboard_9x6_25mm_A4.pdf (9 x 6 inner corners, 25 mm squares).
-intrinsic: keeps a photo only when the whole board is found AND it differs from every
+intrinsic: keeps a photo only when the whole board is found, still, AND it differs from every
            photo kept so far (position, size or tilt), until --count photos (25).
-floor:     keeps 3 photos of the board lying still on the floor, 1 s apart.
+floor:     saves 3 photos, 1 s apart, without looking for the board (OpenCV 4.6 on the
+           Orin cannot find a board lying flat); calibrate_camera.py floor on the PC.
 Photos are saved unchanged (no drawing on them) to ~/r550_calib/cam_<mode>_<time>/,
 then calibrate_camera.py computes the result. Progress lines go to stdout.
 """
@@ -38,8 +39,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument('mode', choices=['intrinsic', 'floor'])
     ap.add_argument('--device', default='/dev/video0')
-    ap.add_argument('--width', type=int, default=640)
-    ap.add_argument('--height', type=int, default=480)
+    ap.add_argument('--width', type=int, default=1280)
+    ap.add_argument('--height', type=int, default=720)
     ap.add_argument('--cols', type=int, default=9, help='inner corners per row')
     ap.add_argument('--rows', type=int, default=6, help='inner corners per column')
     ap.add_argument('--count', type=int, default=0, help='photos to keep (intrinsic 25, floor 3)')
@@ -50,11 +51,20 @@ def main():
     out = os.path.expanduser('~/r550_calib/cam_%s_%s' % (a.mode, time.strftime('%Y%m%d_%H%M%S')))
     os.makedirs(out, exist_ok=True)
 
-    cap = cv2.VideoCapture(a.device, cv2.CAP_V4L2)
+    # OpenCV 4.6 on the Orin: opening by path gave no frames, by index works (2026-11-12);
+    # and after re-plugging, only MJPG 1280x720 delivered frames.
+    dev = a.device
+    if dev.startswith('/dev/video') and dev[10:].isdigit():
+        dev = int(dev[10:])
+    cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, a.width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, a.height)
-    ok, frame = cap.read()
+    ok, frame = False, None
+    for _ in range(30):
+        ok, frame = cap.read()
+        if ok:
+            break
     if not ok:
         print('相機打不開：%s' % a.device, flush=True)
         return 1
@@ -70,21 +80,36 @@ def main():
     kept, poses = 0, []
     start = last_save = last_note = time.monotonic()
     seen = 0
+    previous = None                  # pose in the previous frame: the board must be still
     while kept < count and time.monotonic() - start < a.seconds:
         ok, frame = cap.read()
         if not ok:
             continue
+        now = time.monotonic()
+        if a.mode == 'floor':
+            # The board lies flat and looks very thin; OpenCV 4.6 on the Orin does not
+            # find it there (4.13 on the PC does), so save without looking. Calculate on
+            # the PC: calibrate_camera.py floor.
+            if now - last_save >= 1.0:
+                kept += 1
+                last_save = now
+                cv2.imwrite(os.path.join(out, '%02d.jpg' % kept), frame,
+                            [cv2.IMWRITE_JPEG_QUALITY, 95])
+                print('已收 %d/%d 張' % (kept, count), flush=True)
+            continue
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         found, corners = cv2.findChessboardCorners(gray, (a.cols, a.rows), flags)
-        now = time.monotonic()
         seen += found
+        if not found:
+            previous = None
         if found:
             pose = board_pose(corners, w, h)
-            if a.mode == 'floor':
-                take = now - last_save >= 1.0
-            else:
-                change = min((np.abs(pose - p).max() for p in poses), default=1.0)
-                take = change >= a.min_change and now - last_save >= 0.6
+            # moving boards gave blurred photos (2-4 px error, 2026-11-12): only keep a
+            # photo when the board hardly moved since the previous frame
+            still = previous is not None and np.abs(pose - previous).max() < 0.01
+            previous = pose
+            change = min((np.abs(pose - p).max() for p in poses), default=1.0)
+            take = still and change >= a.min_change and now - last_save >= 0.6
             if take:
                 kept += 1
                 last_save = now
