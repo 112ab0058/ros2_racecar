@@ -47,6 +47,37 @@ def test_letting_go_stops_within_the_hold_timeout():
     assert t.command(1.46) == (0.0, 0.0)
 
 
+def test_auto_button_does_nothing_unless_enabled():
+    t = WebTeleop()
+    t.set_auto(1.0, 0.1, 0.0)
+    t.press(1.0, 'auto')
+    assert t.command(1.05) == (0.0, 0.0) and t.current(1.05) is None
+
+
+def test_auto_passes_the_policy_only_while_held_and_fresh():
+    t = WebTeleop(speed=0.1, hold_timeout=0.35, auto=True, auto_timeout=0.3)
+    t.press(1.0, 'auto')
+    assert t.command(1.0) == (0.0, 0.0)                     # no policy command yet
+    t.set_auto(1.0, 0.1, 0.2)
+    assert t.command(1.1) == pytest.approx((0.1, 0.2))
+    assert t.command(1.31) == (0.0, 0.0)                    # policy silent > auto_timeout
+    t.set_auto(1.3, 0.1, 0.2)
+    assert t.command(1.36) == (0.0, 0.0)                    # button released (hold_timeout)
+
+
+@pytest.mark.parametrize('cmd, expected', [
+    ((0.3, 0.0), (0.1, 0.0)),                               # never above max_speed
+    ((-0.1, 0.0), (0.0, 0.0)),                              # never backwards
+    ((0.1, 1.0), (0.1, 0.1 / 0.35)),                        # never tighter than full lock
+    ((0.1, -1.0), (0.1, -0.1 / 0.35)),
+    ((0.0, 0.5), (0.0, 0.0))])                              # never turning on the spot
+def test_auto_commands_are_clamped(cmd, expected):
+    t = WebTeleop(speed=0.1, auto=True)
+    t.press(1.0, 'auto')
+    t.set_auto(1.0, *cmd)
+    assert t.command(1.05) == pytest.approx(expected)
+
+
 @pytest.mark.parametrize('kwargs', [
     {'speed': 0.2}, {'speed': 0.0}, {'back_speed': 0.3}, {'turn_radius': 0.3},
     {'hold_timeout': 0.0}, {'max_speed': 0.2}, {'speed': 0.1, 'max_speed': 0.05}])

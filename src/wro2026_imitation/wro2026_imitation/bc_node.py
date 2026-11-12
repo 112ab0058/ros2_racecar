@@ -3,6 +3,8 @@ Drive from /scan with the imitation network, or with the keep-centred baseline.
 
     ros2 run wro2026_imitation bc_node --ros-args -p model:=$HOME/r550_map/model.npz
     ros2 run wro2026_imitation bc_node --ros-args -p policy:=center
+    ros2 run wro2026_imitation bc_node --ros-args -p policy:=corner -p direction:=ccw \
+        -r scan:=scan_filled                      (orin_auto.sh; needs scan_memory_node)
 
 By default (publish_cmd false) it only shows what it WOULD do on bc/decision and
 never publishes /cmd_vel: safe next to sensors.launch.py, the motors cannot turn.
@@ -16,32 +18,44 @@ bad scan -> stop). Ctrl+C, kill -INT and kill -TERM publish a few zeros, then ex
 Speed and turn radius default to the ones of the recordings (stored in the model
 by bc_train), so left / right drive the same curve the network learned from.
 
+policy corner (corner.py, Ray's corner technique) also uses full lock
+(full_turn_radius) and odometry (odom_topic, the EKF); without fresh odometry
+it stops. It needs the filled scan (scan_memory_node), so remap scan:=scan_filled.
+cmd_topic:=bc/cmd_vel publishes the commands there instead of cmd_vel: then only
+the phone page's 自動 hold button passes them on (web_teleop_node auto_topic).
+
 Publishes:
-  bc/decision  std_msgs/Int8               -1 stop, 0 left, 1 straight, 2 right
+  bc/decision  std_msgs/Int8               -1 stop, 0 left, 1 straight, 2 right,
+                                           3 full left, 4 full right
+  bc/state     std_msgs/String             policy corner: state, corners; else the reason
   bc/probs     std_msgs/Float32MultiArray  network output for each scan (policy model)
-  cmd_vel      geometry_msgs/Twist         only with publish_cmd true
+  cmd_vel      geometry_msgs/Twist         only with publish_cmd true (topic cmd_topic)
 """
 import collections
+import math
 import signal
 import sys
 import time
 
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.signals import SignalHandlerOptions
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Float32MultiArray, Int8
+from std_msgs.msg import Float32MultiArray, Int8, String
 
+from .corner import CornerPolicy, FULL_LEFT, FULL_RIGHT
 from .features import LABELS
 from .model import MLP
 from .policy import center_policy, check_model, Driver, model_policy, OK, STOP
 
 # name, default, description
 PARAMETERS = [
-    ('policy', 'model', "'model' = network from bc_train, 'center' = keep-centred baseline"),
+    ('policy', 'model', "'model' = network from bc_train, 'center' = keep-centred baseline, "
+                        "'corner' = Ray's corner technique (corner.py)"),
     ('model', '', 'model file from bc_train (policy model)'),
     ('publish_cmd', False, 'false = only bc/decision, no /cmd_vel; true = drive'),
     ('speed', 0.0, 'm/s; 0 = speed of the recordings (model) or 0.1 (center)'),
@@ -54,6 +68,13 @@ PARAMETERS = [
     ('rate', 20.0, 'bc/decision and cmd_vel messages per second'),
     ('front_dist', 0.5, 'center: turn to the open side when the front is closer (m)'),
     ('side_margin', 0.05, 'center: steer when one side is this much closer (m)'),
+    ('direction', 'ccw', "corner: 'ccw' turns left at corners, 'cw' right"),
+    ('corner_ahead', 0.11, 'corner: full lock when the inner wall ends this far ahead (m)'),
+    ('entry_offset', 0.05, 'corner: before a corner aim this far towards the outer wall (m)'),
+    ('turn_deg', 80.0, 'corner: full lock until the heading changed this much (deg)'),
+    ('full_turn_radius', 0.35, 'corner: radius of full lock (m), >= min_turn_radius'),
+    ('odom_topic', '/odometry/filtered', 'corner: odometry (EKF, gyro heading)'),
+    ('cmd_topic', 'cmd_vel', "where publish_cmd goes; 'bc/cmd_vel' = only via the phone"),
 ]
 
 
@@ -76,28 +97,46 @@ class BcNode(Node):
         elif p['policy'] == 'center':
             decide = center_policy(p['front_dist'], p['side_margin'])
             speed, radius = speed or 0.1, radius or 0.5
+        elif p['policy'] == 'corner':
+            decide = CornerPolicy(p['direction'], corner_ahead=p['corner_ahead'],
+                                  turn_deg=p['turn_deg'], entry_offset=p['entry_offset'])
+            speed, radius = speed or 0.1, radius or 0.5
         else:
-            raise ValueError("policy must be 'model' or 'center', not %r" % p['policy'])
+            raise ValueError("policy must be 'model', 'center' or 'corner', not %r"
+                             % p['policy'])
         if not 0.0 < speed <= p['max_speed']:
             raise ValueError('speed %.3f m/s is not in (0, max_speed %.2f]; set speed:='
                              % (speed, p['max_speed']))
-        if radius < p['min_turn_radius']:
-            raise ValueError('turn radius %.2f m is below min_turn_radius %.2f; set turn_radius:='
-                             % (radius, p['min_turn_radius']))
-        self.driver = Driver(decide, speed, radius, p['stop_margin'], p['scan_timeout'])
+        if min(radius, p['full_turn_radius']) < p['min_turn_radius']:
+            raise ValueError('turn radius %.2f / %.2f m is below min_turn_radius %.2f'
+                             % (radius, p['full_turn_radius'], p['min_turn_radius']))
+        self.driver = Driver(decide, speed, radius, p['stop_margin'], p['scan_timeout'],
+                             p['full_turn_radius'])
+        self.policy = decide
+        self.events_seen = 0
         self.publish_cmd = bool(p['publish_cmd'])
         self.counts = collections.Counter()
         self.last_reason = None
 
         self.decision_pub = self.create_publisher(Int8, 'bc/decision', 10)
         self.probs_pub = self.create_publisher(Float32MultiArray, 'bc/probs', 10)
-        self.cmd_pub = self.create_publisher(Twist, 'cmd_vel', 10) if self.publish_cmd else None
+        self.state_pub = self.create_publisher(String, 'bc/state', 10)
+        self.cmd_pub = (self.create_publisher(Twist, p['cmd_topic'], 10)
+                        if self.publish_cmd else None)
         self.create_subscription(LaserScan, 'scan', self._on_scan, qos_profile_sensor_data)
+        if self.driver.needs_odom:
+            self.create_subscription(Odometry, p['odom_topic'], self._on_odom, 20)
         self.create_timer(1.0 / p['rate'], self._tick)
-        mode = ('PUBLISHING /cmd_vel (base_node with enable_commands moves the car)'
+        mode = ('PUBLISHING %s (base_node with enable_commands moves the car)' % p['cmd_topic']
                 if self.publish_cmd else 'DRY RUN: bc/decision only, no /cmd_vel')
         self.get_logger().warn('%s; policy %s, speed %.3f m/s, turn radius %.2f m'
                                % (mode, p['policy'], speed, radius))
+
+    def _on_odom(self, msg):
+        q = msg.pose.pose.orientation
+        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        self.driver.on_odom(time.monotonic(), msg.pose.pose.position.x,
+                            msg.pose.pose.position.y, yaw)
 
     def _on_scan(self, msg):
         self.driver.on_scan(time.monotonic(), msg.ranges, msg.angle_min, msg.angle_increment)
@@ -107,6 +146,14 @@ class BcNode(Node):
     def _tick(self):
         vx, wz, decision, reason = self.driver.command(time.monotonic())
         self.decision_pub.publish(Int8(data=decision))
+        events = getattr(self.policy, 'events', [])
+        for odo, state in events[self.events_seen:]:
+            self.get_logger().info('corner policy: %s at %.2f m (corners %d)'
+                                   % (state, odo, self.policy.corners))
+        self.events_seen = len(events)
+        text = (('%s, corners %d' % (self.policy.state, self.policy.corners))
+                if reason == OK and hasattr(self.policy, 'state') else reason)
+        self.state_pub.publish(String(data=text))
         if self.publish_cmd:
             self.publish(vx, wz)
         self.counts[decision] += 1
@@ -131,10 +178,12 @@ class BcNode(Node):
                 self.publish(0.0, 0.0)
                 time.sleep(0.05)
         total = max(sum(self.counts.values()), 1)
-        names = {**dict(enumerate(LABELS)), STOP: 'stop'}
+        names = {**dict(enumerate(LABELS)), FULL_LEFT: 'full left', FULL_RIGHT: 'full right',
+                 STOP: 'stop'}
         print('bc_node decisions: ' + ', '.join(
             '%s %.0f %%' % (names[k], 100.0 * self.counts[k] / total)
-            for k in (0, 1, 2, STOP)) + ' (%d ticks)' % total, flush=True)
+            for k in (0, 1, 2, FULL_LEFT, FULL_RIGHT, STOP)) + ' (%d ticks)' % total,
+            flush=True)
 
 
 def _interrupt(signum, frame):

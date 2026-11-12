@@ -9,6 +9,10 @@ rules: the car drives only while a key, the joystick or the tilt hold button
 is pressed and the phone keeps sending; otherwise 0 within hold_timeout
 (0.35 s). Reads /battery, /odom, /imu/data and /diagnostics for the gauges.
 
+auto_topic:=bc/cmd_vel (orin_auto.sh) adds the 自動 hold button: while it is held,
+the autonomous policy's commands from that topic go to /cmd_vel (clamped, and
+only while they are fresh); released, 0 again. bc/decision and bc/state are shown.
+
 https:=true serves https only, with a certificate signed by the Orin's own CA
 in cert_dir for the addresses it has at start (web_cert.py). The phone trusts
 that CA once (the page's 憑證 link); https also enables the tilt mode.
@@ -35,6 +39,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from sensor_msgs.msg import BatteryState, Imu
+from std_msgs.msg import Int8, String
 
 from .web_cert import ensure_ca, local_addresses, make_server_cert
 from .web_teleop import make_server, NAMES, WebTeleop
@@ -52,7 +57,10 @@ PARAMETERS = [
     ('https', False, 'true = https only, certificate from the CA in cert_dir'),
     ('cert_dir', '~/.r550_web', 'CA and page certificate (CA key stays here, mode 600)'),
     ('dns_names', '112ab-jno.netbird.cloud', 'comma-separated names for the certificate'),
+    ('auto_topic', '', "Twist topic of the autonomous policy; '' = no 自動 button"),
+    ('auto_timeout', 0.3, 'policy commands older than this count as stop (s)'),
 ]
+DECISIONS = {-1: '停', 0: '左', 1: '直', 2: '右', 3: '左滿舵', 4: '右滿舵'}
 
 
 class WebTeleopNode(Node):
@@ -64,15 +72,21 @@ class WebTeleopNode(Node):
              for name, default, _ in PARAMETERS}
         self.teleop = WebTeleop(speed=p['speed'], turn_radius=p['turn_radius'],
                                 hold_timeout=p['hold_timeout'], back_speed=p['back_speed'],
-                                max_speed=p['max_speed'] or p['speed'])
+                                max_speed=p['max_speed'] or p['speed'],
+                                auto=bool(p['auto_topic']), auto_timeout=p['auto_timeout'])
         self.token = p['token'] or secrets.token_hex(3)
-        self.state = {'battery': None, 'odom_vx': None, 'gyro_z': None, 'base': None}
+        self.state = {'battery': None, 'odom_vx': None, 'gyro_z': None, 'base': None,
+                      'bc': None, 'bc_state': None}
         self.last_action = 'none'
         self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.create_subscription(BatteryState, 'battery', self._on_battery, 10)
         self.create_subscription(Odometry, 'odom', self._on_odom, 10)
         self.create_subscription(Imu, 'imu/data', self._on_imu, 10)
         self.create_subscription(DiagnosticArray, 'diagnostics', self._on_diagnostics, 10)
+        if p['auto_topic']:
+            self.create_subscription(Twist, p['auto_topic'], self._on_auto, 10)
+            self.create_subscription(Int8, 'bc/decision', self._on_decision, 10)
+            self.create_subscription(String, 'bc/state', self._on_bc_state, 10)
         context, ca_cert, scheme = None, None, 'http'
         if p['https']:
             cert_dir = os.path.expanduser(p['cert_dir'])
@@ -106,6 +120,15 @@ class WebTeleopNode(Node):
         for status in msg.status:
             if status.name == 'r550_base: command':
                 self.state['base'] = status.message
+
+    def _on_auto(self, msg):
+        self.teleop.set_auto(time.monotonic(), float(msg.linear.x), float(msg.angular.z))
+
+    def _on_decision(self, msg):
+        self.state['bc'] = DECISIONS.get(int(msg.data), str(msg.data))
+
+    def _on_bc_state(self, msg):
+        self.state['bc_state'] = msg.data
 
     def _status(self):
         return dict(self.state)

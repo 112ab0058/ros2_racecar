@@ -51,7 +51,8 @@ header{grid-area:head;display:grid;gap:6px}
 .chip{padding:3px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--dim)}
 .chip b{font-weight:600;color:var(--fg)}
 .chip.good b{color:var(--good)}.chip.warn b{color:var(--warn)}.chip.bad b{color:var(--bad)}
-nav{grid-area:tabs;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px;
+[hidden]{display:none!important}
+nav{grid-area:tabs;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;padding:4px;
   background:var(--panel);border:1px solid var(--line);border-radius:12px}
 nav button{border:0;border-radius:9px;min-height:42px;font-weight:600;color:var(--dim);background:transparent}
 nav button.on{background:var(--accent);color:var(--accent-fg)}
@@ -85,6 +86,15 @@ section.on{display:grid}
 #deadman,#sensor-btn{width:min(100%,420px);min-height:52px;padding:0 12px;font-size:16px;font-weight:700}
 #deadman.held{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 #deadman:disabled{opacity:.45}
+/* auto: one big hold button, the policy's decision above it */
+#auto{grid-template-rows:auto 1fr auto;gap:var(--gap)}
+.autostate{display:flex;align-items:baseline;justify-content:center;gap:10px;padding:8px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.autostate span{font-size:13px;color:var(--dim)}
+.autostate b{font-size:24px}
+.autostate small{font-size:13px;color:var(--dim)}
+#auto-btn{font-size:20px;font-weight:700;line-height:1.4}
+#auto-btn.held{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 /* wave */
 #wave{grid-template-rows:1fr auto;gap:6px}
 canvas{width:100%;height:100%;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
@@ -134,7 +144,8 @@ dialog .row a{background:var(--accent);color:var(--accent-fg);text-decoration:no
     <span class="chip" id="chip-sec">連線 <b>?</b></span></div>
 </header>
 <nav><button data-tab="keys" class="on">按鍵</button><button data-tab="stick">搖桿</button>
-<button data-tab="tilt">重力</button><button data-tab="wave">波形</button></nav>
+<button data-tab="tilt">重力</button><button data-tab="auto" id="tab-auto" hidden>自動</button>
+<button data-tab="wave">波形</button></nav>
 <div class="ctrl">
 <section id="keys" class="on">
   <button class="key drive" data-a="left"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M34 42V26c0-8-6-14-14-14H10"/><path d="M17 4l-8 8 8 8"/></svg>左前</button>
@@ -148,6 +159,10 @@ dialog .row a{background:var(--accent);color:var(--accent-fg);text-decoration:no
   <button id="sensor-btn">啟用動作感測器</button>
   <button id="deadman" hidden>按住才走 · 傾斜控制方向</button>
   <div class="hint" id="tilt-hint">直拿手機。按下時的角度＝不動；前傾＝前進，左右傾＝轉彎</div></section>
+<section id="auto">
+  <div class="autostate"><span>程式想要</span><b id="bc-dec">-</b><small id="bc-state"></small></div>
+  <button id="auto-btn" class="drive" data-a="auto">按住＝自動駕駛<br>放開＝停</button>
+  <div class="hint">只有按住時車子才會照程式開；放開、切 App、斷線都會在 0.35 秒內停。</div></section>
 <section id="wave"><canvas id="plot"></canvas>
   <div class="legend"><span><i style="background:var(--accent)"></i>角速度 Z（±1 rad/s）</span>
   <span><i style="background:var(--warn)"></i>速度（±0.2 m/s）</span><span>最近 10 秒</span></div></section>
@@ -176,7 +191,7 @@ dialog .row a{background:var(--accent);color:var(--accent-fg);text-decoration:no
 const k = new URLSearchParams(location.search).get('k') || '';
 const $ = id => document.getElementById(id);
 const NAMES = {straight: '直走', left: '左轉', right: '右轉', full_left: '左滿舵', full_right: '右滿舵',
-  back: '後退', back_left: '左後退', back_right: '右後退', stop: '停'};
+  back: '後退', back_left: '左後退', back_right: '右後退', auto: '自動', stop: '停'};
 // base_node CommandGate reasons -> text, chip class
 const BASE = {ok: ['正常', 'good'], no_cmd: ['等待指令', 'good'], cmd_timeout: ['待命', 'good'],
   disabled: ['唯讀（不會動）', 'warn'], run_time_over: ['時間到，已停', 'bad'],
@@ -201,6 +216,8 @@ function show(s) {
   chip('chip-base', '底盤', b[0], b[1]);
   const off = Math.abs(s.speed - 0.1) > 1e-6;
   $('speed').innerHTML = s.speed.toFixed(2) + ' m/s' + (off ? '<small>錄訓練資料請用 0.10</small>' : '');
+  $('tab-auto').hidden = !s.auto;
+  if (s.auto) { $('bc-dec').textContent = s.bc || '-'; $('bc-state').textContent = s.bc_state || ''; }
   $('g-vx').textContent = fmt(s.odom_vx, 3) + ' m/s';
   $('g-gz').textContent = fmt(s.gyro_z, 2) + ' rad/s';
   $('debug').textContent = 'vx ' + s.vx.toFixed(2) + ' wz ' + s.wz.toFixed(2) + ' · #' + s.requests;

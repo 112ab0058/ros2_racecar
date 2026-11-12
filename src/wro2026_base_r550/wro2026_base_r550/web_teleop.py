@@ -14,6 +14,11 @@ through ROS and base_node, so its limits and timeouts apply and the bag gets
   speed +/-  steps of 0.05 m/s, at most max_speed (<= 0.15)
   gauges     battery (10-12.6 V = 0-100 %, as the app), odometry speed, gyro z,
              base_node state, latency; waveform of gyro z and speed
+  auto       (only when the node has an auto topic) hold the 自動 button and the car
+             drives with the commands of the autonomous policy (bc_node); let go and
+             it stops. The policy never reaches /cmd_vel by itself: this is its
+             dead-man switch. Its commands older than auto_timeout count as stop, and
+             they are clamped to 0..max_speed and a radius of at least 0.35 m.
 Not offered: the app's parameter / PID page (it writes the STM32 flash).
 
 Hold to drive: while a key, the joystick or the tilt hold button is pressed,
@@ -43,9 +48,10 @@ ACTIONS = {
     'full_left': (1, 1, True), 'full_right': (1, -1, True),
     'back': (-1, 0, False), 'back_left': (-1, 1, False), 'back_right': (-1, -1, False),
 }
+AUTO = 'auto'
 NAMES = {'straight': '直走', 'left': '左轉', 'right': '右轉', 'full_left': '左滿舵',
          'full_right': '右滿舵', 'back': '後退', 'back_left': '左後退',
-         'back_right': '右後退', None: '停'}
+         'back_right': '右後退', AUTO: '自動', None: '停'}
 MIN_TURN_RADIUS = 0.35   # m, firmware MINI_AKM_MIN_TURN_RADIUS (= full lock)
 MAX_SPEED = 0.15         # m/s, same limit as orin_map.sh
 SPEED_STEP = 0.05        # m/s per +/- press
@@ -56,7 +62,8 @@ class WebTeleop:
     """Hold-to-drive state. Times are seconds from one monotonic clock."""
 
     def __init__(self, speed=0.1, turn_radius=0.5, hold_timeout=0.35, back_speed=0.08,
-                 max_speed=None):
+                 max_speed=None, auto=False, auto_timeout=0.3):
+        """auto: accept the 自動 hold button (the node then has an auto topic)."""
         max_speed = speed if max_speed is None else max_speed
         if not (0.0 < speed <= max_speed <= MAX_SPEED and 0.0 < back_speed <= MAX_SPEED):
             raise ValueError('need 0 < speed <= max_speed <= %.2f m/s, 0 < back_speed <= %.2f'
@@ -74,13 +81,32 @@ class WebTeleop:
         self.action = None
         self.time = None
         self.requests = 0
+        self.auto = auto
+        self.auto_timeout = auto_timeout
+        self.auto_cmd = None             # (time, vx, wz) from the policy
 
     def press(self, t, action):
         """Store one request from the page; 'stop' or anything unknown means stop."""
         with self.lock:
             self.requests += 1
-            self.action = action if action in ACTIONS else None
+            known = action in ACTIONS or (self.auto and action == AUTO)
+            self.action = action if known else None
             self.time = t
+
+    def set_auto(self, t, vx, wz):
+        """Store the newest command of the autonomous policy."""
+        with self.lock:
+            self.auto_cmd = (t, vx, wz)
+
+    def auto_command(self, t):
+        """Policy command clamped to the limits, or (0, 0) if it is too old or missing."""
+        with self.lock:
+            cmd = self.auto_cmd
+        if cmd is None or t - cmd[0] > self.auto_timeout:
+            return 0.0, 0.0
+        vx = min(max(cmd[1], 0.0), self.max_speed)       # forward only, at most max_speed
+        limit = vx / MIN_TURN_RADIUS
+        return vx, max(-limit, min(limit, cmd[2]))
 
     def change_speed(self, steps):
         """Change the forward speed by steps * SPEED_STEP, within MIN_SPEED..max_speed."""
@@ -101,6 +127,8 @@ class WebTeleop:
         action = self.current(t)
         if action is None:
             return 0.0, 0.0
+        if action == AUTO:
+            return self.auto_command(t)
         direction, steer, full = ACTIONS[action]
         vx = self.speed if direction > 0 else -min(self.back_speed, self.speed)
         radius = MIN_TURN_RADIUS if full else self.turn_radius
@@ -113,7 +141,7 @@ def make_server(teleop, token, port, clock, status=dict, ssl_context=None, ca_ce
 
     GET  /?k=TOKEN              the page
     GET  /state?k=TOKEN         JSON: action, vx, wz, speed, text, plus status()
-    POST /cmd?k=TOKEN&a=ACT     press ACT (see ACTIONS, or stop); JSON reply
+    POST /cmd?k=TOKEN&a=ACT     press ACT (see ACTIONS, auto if enabled, or stop); JSON reply
     POST /speed?k=TOKEN&d=up    faster (d=down: slower); JSON reply
     GET  /ca.crt                the CA certificate file ca_cert (public, no token)
     ssl_context: an ssl.SSLContext for https (the server then speaks https only).
@@ -149,7 +177,8 @@ def make_server(teleop, token, port, clock, status=dict, ssl_context=None, ca_ce
             vx, wz = teleop.command(t)
             body = dict(status(), action=action or 'stop', vx=round(vx, 3), wz=round(wz, 3),
                         speed=teleop.speed, max_speed=teleop.max_speed,
-                        requests=teleop.requests, text='%s  %.2f m/s' % (NAMES[action], vx))
+                        requests=teleop.requests, auto=teleop.auto,
+                        text='%s  %.2f m/s' % (NAMES[action], vx))
             self._reply(200, json.dumps(body, ensure_ascii=False),
                         'application/json; charset=utf-8')
 
