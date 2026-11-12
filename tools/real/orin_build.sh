@@ -22,7 +22,7 @@ for p in "${PKGS[@]}"; do
     mv "$STAGE/src/$p" "$WS/src/"
 done
 mkdir -p "$WS/tools"
-cp "$STAGE"/tools/real/orin_*.sh "$STAGE"/tools/real/analyze_*.py "$WS/tools/"   # e.g. bash ~/racecar_ws/tools/orin_check.sh
+cp "$STAGE"/tools/real/orin_*.sh "$STAGE"/tools/real/analyze_*.py "$STAGE"/tools/real/cam_*.py \n   "$STAGE"/tools/real/calibrate_*.py "$WS/tools/"   # e.g. bash ~/racecar_ws/tools/orin_check.sh
 rm -rf "$STAGE"
 
 source /opt/ros/jazzy/setup.bash
