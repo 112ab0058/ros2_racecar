@@ -21,6 +21,7 @@ setup(
         'console_scripts': [
             'scan_node = wro2026_lidar_n10p.scan_node:main',
             'listen = wro2026_lidar_n10p.listen:main',
+            'scan_memory_node = wro2026_lidar_n10p.scan_memory_node:main',
         ],
     },
 )
