@@ -159,6 +159,8 @@ def test_state_text_for_the_other_reasons():
     assert '沒有光達' in state_text(NO_SCAN, d)
     assert state_text(OK, d) == '正常'
     assert state_text(OK, d, 'turn', 2).startswith('打滿轉彎，過了 2 個彎')
+    assert '方向還沒判斷' in state_text(OK, d, 'follow', 0, 'auto')
+    assert '彎道往右' in state_text(OK, d, 'follow', 1, 'cw')
 
 
 def test_bad_scan_stops_until_a_good_one():

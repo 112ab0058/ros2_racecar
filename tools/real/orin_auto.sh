@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Orin: AUTONOMOUS DRIVING with a phone dead-man switch. MAKES THE MOTORS TURN.
 #
-#   CONFIRM=YES bash ~/racecar_ws/tools/orin_auto.sh [direction ccw] [speed 0.1] [seconds 180]
+#   CONFIRM=YES bash ~/racecar_ws/tools/orin_auto.sh [direction auto] [speed 0.1] [seconds 180] \
+#       [corner_ahead 0.11]
+#
+# direction: auto (default) = at the first corner the side whose wall ends is the inside,
+# every corner turns that way; ccw = always left, cw = always right.
 #
 # Ray's corner technique (wro2026_imitation corner.py) drives, but ONLY while the phone
 # page's 自動 button is held: bc_node publishes to bc/cmd_vel, and web_teleop_node passes
@@ -16,8 +20,11 @@
 #   bc_node              policy corner on /scan_filled -> bc/cmd_vel (+ bc/decision, bc/state)
 #   web_teleop_node      phone page, https, 自動 tab
 #
-# Start the car in the MIDDLE of a straight, centred, pointing in the driving direction
-# (the memory needs to have seen the inner wall before the first corner).
+# Start the car at the BEGINNING of a straight, just past the corner (rear axle at most
+# ~0.2 m past the inner wall's corner, so the next corner is >= 0.6 m ahead), centred,
+# pointing along the straight. The memory has to see the inner wall's end from >= 0.4 m
+# (black walls are blind closer): 2-D sim 2026-11-13, starts 0.05 / 0.2 m in: 40/40 laps,
+# 0.4 m (the middle) / 0.55 m: 0/40 (drove into the first corner, too_close stop).
 # Limits: speed <= 0.12 m/s, 10-600 s, cmd_timeout 0.3 s, firmware timeout ~1.3 s;
 #         bc_node stops for good when anything comes within 2 cm of the car outline.
 # Stop:   let go of 自動 / Motor switch OFF / touch ~/r550_map/latest/stop or
@@ -25,9 +32,12 @@
 # Result: ~/r550_map/<time>/ (bag/, map.*, launch.log, memory.log, bc.log, web.log)
 set -o pipefail
 
-DIRECTION="${1:-ccw}"
+DIRECTION="${1:-auto}"
 SPEED="${2:-0.1}"
 RUN_TIME="${3:-180}"
+# full lock when the inner wall ends this far ahead of the lidar (m); smaller = later.
+# Replaying Ray's 11-11 cw laps, 0.11 locked 0.11-0.15 m (driven) before he did.
+CORNER_AHEAD="${4:-0.11}"
 OUT="$HOME/r550_map/$(date +%Y%m%d_%H%M%S)_auto"
 
 source /opt/ros/jazzy/setup.bash
@@ -40,22 +50,27 @@ if pgrep -f "$BUSY" > /dev/null; then
     pgrep -af "$BUSY" | cut -c1-100
     exit 1
 fi
-case "$DIRECTION" in ccw|cw) ;; *) echo "direction $DIRECTION: must be ccw or cw."; exit 1 ;; esac
+case "$DIRECTION" in auto|ccw|cw) ;; *) echo "direction $DIRECTION: must be auto, ccw or cw."; exit 1 ;; esac
 if ! awk "BEGIN{exit !($SPEED > 0 && $SPEED <= 0.12)}"; then
     echo "speed $SPEED: must be above 0 and at most 0.12 m/s."; exit 1
 fi
 if ! awk "BEGIN{exit !($RUN_TIME >= 10 && $RUN_TIME <= 600)}"; then
     echo "seconds $RUN_TIME: must be 10 to 600."; exit 1
 fi
+if ! awk "BEGIN{exit !($CORNER_AHEAD >= -0.10 && $CORNER_AHEAD <= 0.25)}"; then
+    echo "corner_ahead $CORNER_AHEAD: must be -0.10 to 0.25 m."; exit 1
+fi
 if [ "${CONFIRM:-}" != YES ]; then
     echo "Refused: set CONFIRM=YES only after Ray has confirmed speed, time and how to stop."
     exit 1
 fi
 SPEED=$(awk "BEGIN{printf \"%.3f\", $SPEED}")      # ROS parameters must be floats
+CORNER_AHEAD=$(awk "BEGIN{printf \"%.3f\", $CORNER_AHEAD}")
 mkdir -p "$OUT"
 ln -sfn "$OUT" "$HOME/r550_map/latest"
 echo $$ > "$OUT/script.pid"
-echo "Autonomous ($DIRECTION) with the phone 自動 button: speed $SPEED m/s, $RUN_TIME s"
+echo "Autonomous ($DIRECTION, corner_ahead $CORNER_AHEAD m) with the phone 自動 button:" \
+     "speed $SPEED m/s, $RUN_TIME s"
 echo "RESULT_DIR=$OUT"
 
 LAUNCH_PID=""
@@ -110,7 +125,8 @@ sleep 6
 setsid ros2 run wro2026_lidar_n10p scan_memory_node > "$OUT/memory.log" 2>&1 < /dev/null &
 MEM_PID=$!
 setsid ros2 run wro2026_imitation bc_node --ros-args -p policy:=corner \
-    -p direction:="$DIRECTION" -p speed:="$SPEED" -p publish_cmd:=true \
+    -p direction:="$DIRECTION" -p corner_ahead:="$CORNER_AHEAD" \
+    -p speed:="$SPEED" -p publish_cmd:=true \
     -p cmd_topic:=bc/cmd_vel -p stop_margin:=0.02 -p memory_marks:=true \
     -r scan:=scan_filled \
     > "$OUT/bc.log" 2>&1 < /dev/null &

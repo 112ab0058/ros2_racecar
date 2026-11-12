@@ -12,13 +12,13 @@ from wro2026_lidar_n10p.scan_memory import ScanMemory
 INC = 2.0 * math.pi / 480
 
 
-def drive_laps(direction, laps=1, island=0.80, memory=True, seed=0):
+def drive_laps(direction, laps=1, island=0.80, memory=True, seed=0, policy_direction=None):
     """Drive the corner policy around the field; return (ok, why, laps, min clearance, policy)."""
     field = Field(1.6, island)
     centre = (0.8 + island / 2.0) / 2.0
     car = Car(-0.35 if direction == 'ccw' else 0.35, -centre,
               0.0 if direction == 'ccw' else math.pi)
-    policy = CornerPolicy(direction)
+    policy = CornerPolicy(policy_direction or direction)
     driver = Driver(policy, 0.1, 0.5, stop_margin=0.02, full_turn_radius=0.35)
     mem = ScanMemory()
     rng = np.random.default_rng(seed)
@@ -51,6 +51,61 @@ def test_one_lap_each_way_with_the_blind_black_walls(direction):
     ok, why, laps, clear, policy = drive_laps(direction)
     assert ok, (why, laps)
     assert clear > 0.02 and policy.corners == 4
+
+
+@pytest.mark.parametrize('direction', ['ccw', 'cw'])
+@pytest.mark.parametrize('seed', [0, 1, 2])
+def test_auto_finds_the_direction_and_drives_the_lap(direction, seed):
+    ok, why, laps, clear, policy = drive_laps(direction, seed=seed, policy_direction='auto')
+    assert ok, (why, laps)
+    assert policy.direction == direction and policy.corners == 4 and clear > 0.02
+
+
+def wall_scan(walls):
+    """Lidar scan (480 beams, no noise, lidar at 0, 0) of walls (x0, y0, x1, y1)."""
+    a = np.arange(480) * INC
+    c, s = np.cos(a), np.sin(a)
+    r = np.full(480, np.inf)
+    for x0, y0, x1, y1 in walls:
+        dx, dy = x1 - x0, y1 - y0
+        den = c * dy - s * dx                     # ray (c, s) * t = (x0, y0) + (dx, dy) * u
+        with np.errstate(divide='ignore', invalid='ignore'):
+            t = (x0 * dy - y0 * dx) / den
+            u = (x0 * s - y0 * c) / den
+        hit = (np.abs(den) > 1e-9) & (t > 0) & (u >= 0) & (u <= 1)
+        r = np.where(hit, np.minimum(r, t), r)
+    return r
+
+
+def auto_after(walls, scans=5):
+    policy = CornerPolicy('auto')
+    policy.on_odom(0.0, 0.0, 0.0)
+    for _ in range(scans):
+        label, _ = policy(wall_scan(walls), 0.0, INC)
+        assert label not in (FULL_LEFT, FULL_RIGHT)
+    return policy
+
+
+def test_auto_a_gap_in_a_wall_is_not_a_corner():
+    """Right wall missing for 10 cm (blind, no return): points after the gap are on the line."""
+    walls = [(-1.0, 0.2, 2.0, 0.2), (-1.0, -0.2, 0.3, -0.2), (0.4, -0.2, 2.0, -0.2)]
+    policy = auto_after(walls)
+    assert policy.direction is None and policy.state == FOLLOW
+
+
+@pytest.mark.parametrize('flip, expected', [(1.0, 'ccw'), (-1.0, 'cw')])
+def test_auto_the_side_that_opens_is_the_inside(flip, expected):
+    """Inner wall ends 0.3 m ahead, open beyond; the outer wall runs into the wall ahead."""
+    walls = [(-1.0, 0.2, 0.3, 0.2),          # inner wall (island), ends at x 0.3
+             (0.3, 0.2, 0.3, 1.0),           # island's next side
+             (-1.0, 1.0, 1.0, 1.0),          # far outer wall across the next corridor
+             (-1.0, -0.2, 0.7, -0.2),        # outer wall
+             (0.7, -0.2, 0.7, 1.0)]          # wall ahead
+    walls = [(x0, flip * y0, x1, flip * y1) for x0, y0, x1, y1 in walls]
+    policy = auto_after(walls, scans=2)
+    assert policy.direction is None                    # needs confirm_scans (3) in a row
+    policy(wall_scan(walls), 0.0, INC)
+    assert policy.direction == expected
 
 
 def test_without_memory_the_lap_fails():
@@ -103,3 +158,4 @@ def test_full_lock_uses_the_full_turn_radius():
 def test_bad_direction():
     with pytest.raises(ValueError):
         CornerPolicy('left')
+    assert CornerPolicy('auto').direction is None and CornerPolicy('cw').direction == 'cw'

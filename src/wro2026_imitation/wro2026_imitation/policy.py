@@ -85,8 +85,16 @@ CORNER_TEXT = {'follow': '保持中線', 'delay': '等著打滿', 'turn': '打�
                'settle': '轉完回正'}
 
 
-def state_text(reason, driver, policy_state=None, corners=0):
-    """One Traditional Chinese line for the phone page: what the car does and why."""
+DIRECTION_TEXT = {'ccw': '彎道往左（逆時針）', 'cw': '彎道往右（順時針）',
+                  'auto': '方向還沒判斷（到第一個彎才知道）'}
+
+
+def state_text(reason, driver, policy_state=None, corners=0, direction=None):
+    """
+    One Traditional Chinese line for the phone page: what the car does and why.
+
+    direction: corner policy only, 'ccw' / 'cw' / 'auto' (not decided yet).
+    """
     if reason == TOO_CLOSE:
         where = point_text(driver.close_point) if driver.close_point else ''
         return '太靠近，鎖住停車（要重開程式）：%s' % where
@@ -94,6 +102,8 @@ def state_text(reason, driver, policy_state=None, corners=0):
         return REASON_TEXT.get(reason, reason)
     text = ('%s，過了 %d 個彎' % (CORNER_TEXT.get(policy_state, policy_state), corners)
             if policy_state else '正常')
+    if direction:
+        text += '｜%s' % DIRECTION_TEXT.get(direction, direction)
     if driver.nearest:
         text += '｜最近：%s' % point_text(driver.nearest)
     return text

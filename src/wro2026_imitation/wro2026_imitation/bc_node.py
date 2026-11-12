@@ -73,7 +73,8 @@ PARAMETERS = [
     ('rate', 20.0, 'bc/decision and cmd_vel messages per second'),
     ('front_dist', 0.5, 'center: turn to the open side when the front is closer (m)'),
     ('side_margin', 0.05, 'center: steer when one side is this much closer (m)'),
-    ('direction', 'ccw', "corner: 'ccw' turns left at corners, 'cw' right"),
+    ('direction', 'ccw', "corner: 'ccw' turns left at corners, 'cw' right, 'auto' = the "
+                         'side whose wall ends first at the first corner'),
     ('corner_ahead', 0.11, 'corner: full lock when the inner wall ends this far ahead (m)'),
     ('entry_offset', 0.05, 'corner: before a corner aim this far towards the outer wall (m)'),
     ('turn_deg', 80.0, 'corner: full lock until the heading changed this much (deg)'),
@@ -161,8 +162,10 @@ class BcNode(Node):
             self.get_logger().info('corner policy: %s at %.2f m (corners %d)'
                                    % (state, odo, self.policy.corners))
         self.events_seen = len(events)
+        direction = ((self.policy.direction or 'auto')
+                     if isinstance(self.policy, CornerPolicy) else None)
         text = state_text(reason, self.driver, getattr(self.policy, 'state', None),
-                          getattr(self.policy, 'corners', 0))
+                          getattr(self.policy, 'corners', 0), direction)
         self.state_pub.publish(String(data=text))
         if self.publish_cmd:
             self.publish(vx, wz)
