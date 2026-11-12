@@ -111,7 +111,8 @@ setsid ros2 run wro2026_lidar_n10p scan_memory_node > "$OUT/memory.log" 2>&1 < /
 MEM_PID=$!
 setsid ros2 run wro2026_imitation bc_node --ros-args -p policy:=corner \
     -p direction:="$DIRECTION" -p speed:="$SPEED" -p publish_cmd:=true \
-    -p cmd_topic:=bc/cmd_vel -p stop_margin:=0.02 -r scan:=scan_filled \
+    -p cmd_topic:=bc/cmd_vel -p stop_margin:=0.02 -p memory_marks:=true \
+    -r scan:=scan_filled \
     > "$OUT/bc.log" 2>&1 < /dev/null &
 BC_PID=$!
 for _ in $(seq 60); do grep -q "PUBLISHING" "$OUT/bc.log" && break; sleep 0.25; done

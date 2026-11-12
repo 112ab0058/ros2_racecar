@@ -6,7 +6,8 @@ import pytest
 from wro2026_imitation.features import LEFT, mirror, N_BINS, RIGHT, scan_features, STRAIGHT
 from wro2026_imitation.model import MLP
 from wro2026_imitation.policy import (BAD_SCAN, center_rule, check_model, Driver, inside_outline,
-                                      model_policy, NO_SCAN, OK, STOP, TOO_CLOSE)
+                                      model_policy, NO_SCAN, OK, side_word, state_text, STOP,
+                                      TOO_CLOSE)
 
 BEAMS = 480
 INC = 2.0 * math.pi / BEAMS
@@ -104,6 +105,60 @@ def test_too_close_stops_for_good():
     d.decide = never
     d.on_scan(0.1, corridor(0.3, 0.3), 0.0, INC)       # obstacle gone: still stopped
     assert d.command(0.15) == (0.0, 0.0, STOP, TOO_CLOSE)
+
+
+def stand_scan():
+    """
+    Scan from the stand on 2026-11-12.
+
+    A point 0.130 m away at 237.8 deg (rear right), 2.0 cm from the side, plus a wall
+    1 m to the right.
+    """
+    r = corridor(np.inf, 1.0)
+    r[int(round(237.75 / 0.75))] = 0.130
+    return r
+
+
+def test_remembered_point_near_the_side_does_not_latch():
+    r = stand_scan()
+    mem = np.zeros(BEAMS, dtype=bool)
+    mem[int(round(237.75 / 0.75))] = True
+    d = Driver(always(STRAIGHT), 0.1, 0.5, stop_margin=0.02)
+    d.on_scan(0.0, r, 0.0, INC, remembered=mem)
+    assert d.command(0.05)[3] == OK
+    assert d.nearest[2] and 0.019 < d.nearest[1] < 0.021        # remembered, 2.0 cm away
+    assert '右後' in state_text(OK, d) and '記憶' in state_text(OK, d)
+
+
+def test_measured_point_near_the_side_latches_and_says_where():
+    d = Driver(always(STRAIGHT), 0.1, 0.5, stop_margin=0.02)
+    d.on_scan(0.0, stand_scan(), 0.0, INC)                       # same point, measured
+    assert d.command(0.05) == (0.0, 0.0, STOP, TOO_CLOSE)
+    text = state_text(TOO_CLOSE, d)
+    assert '太靠近' in text and '右後' in text and '2.0 cm' in text and '記憶' not in text
+
+
+def test_remembered_point_inside_the_car_latches():
+    r = put(90.0, 0.085)                                         # inside the left side
+    d = Driver(always(STRAIGHT), 0.1, 0.5, stop_margin=0.02)
+    d.on_scan(0.0, r, 0.0, INC, remembered=np.isfinite(r))
+    assert d.command(0.05)[3] == TOO_CLOSE
+    assert '車身內' in state_text(TOO_CLOSE, d)
+
+
+@pytest.mark.parametrize('deg, word', [(0, '前'), (20, '前'), (45, '左前'), (90, '左'),
+                                       (135, '左後'), (180, '後'), (-170, '後'),
+                                       (237.8, '右後'), (-90, '右'), (-40, '右前'),
+                                       (350, '前')])
+def test_side_words(deg, word):
+    assert side_word(deg) == word
+
+
+def test_state_text_for_the_other_reasons():
+    d = Driver(always(STRAIGHT), 0.1, 0.5)
+    assert '沒有光達' in state_text(NO_SCAN, d)
+    assert state_text(OK, d) == '正常'
+    assert state_text(OK, d, 'turn', 2).startswith('打滿轉彎，過了 2 個彎')
 
 
 def test_bad_scan_stops_until_a_good_one():

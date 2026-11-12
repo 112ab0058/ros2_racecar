@@ -27,7 +27,8 @@ the phone page's 自動 hold button passes them on (web_teleop_node auto_topic).
 Publishes:
   bc/decision  std_msgs/Int8               -1 stop, 0 left, 1 straight, 2 right,
                                            3 full left, 4 full right
-  bc/state     std_msgs/String             policy corner: state, corners; else the reason
+  bc/state     std_msgs/String             one Chinese line for the phone: what it does
+                                           and why (too close: where), nearest point
   bc/probs     std_msgs/Float32MultiArray  network output for each scan (policy model)
   cmd_vel      geometry_msgs/Twist         only with publish_cmd true (topic cmd_topic)
 """
@@ -50,7 +51,7 @@ from std_msgs.msg import Float32MultiArray, Int8, String
 from .corner import CornerPolicy, FULL_LEFT, FULL_RIGHT
 from .features import LABELS
 from .model import MLP
-from .policy import center_policy, check_model, Driver, model_policy, OK, STOP
+from .policy import center_policy, check_model, Driver, model_policy, OK, state_text, STOP
 
 # name, default, description
 PARAMETERS = [
@@ -64,6 +65,10 @@ PARAMETERS = [
     ('min_turn_radius', 0.35, 'refuse to start below this commanded radius (m), as orin_map.sh; '
                               '0.35 = full steering lock, 0.40 m driven (2026-11-10)'),
     ('stop_margin', 0.04, 'stop for good when a lidar point is this close to the car (m)'),
+    ('memory_marks', False, 'true = the scan is scan_memory_node output: intensity 1.0 marks '
+                            'remembered points, which use memory_margin instead'),
+    ('memory_margin', 0.0, 'stop margin for remembered points (m); they are up to ~1.7 cm '
+                           'off, 0 = only inside the car outline itself'),
     ('scan_timeout', 0.3, 'stop when the newest scan is older than this (s)'),
     ('rate', 20.0, 'bc/decision and cmd_vel messages per second'),
     ('front_dist', 0.5, 'center: turn to the open side when the front is closer (m)'),
@@ -111,7 +116,8 @@ class BcNode(Node):
             raise ValueError('turn radius %.2f / %.2f m is below min_turn_radius %.2f'
                              % (radius, p['full_turn_radius'], p['min_turn_radius']))
         self.driver = Driver(decide, speed, radius, p['stop_margin'], p['scan_timeout'],
-                             p['full_turn_radius'])
+                             p['full_turn_radius'], p['memory_margin'])
+        self.memory_marks = bool(p['memory_marks'])
         self.policy = decide
         self.events_seen = 0
         self.publish_cmd = bool(p['publish_cmd'])
@@ -139,7 +145,11 @@ class BcNode(Node):
                             msg.pose.pose.position.y, yaw)
 
     def _on_scan(self, msg):
-        self.driver.on_scan(time.monotonic(), msg.ranges, msg.angle_min, msg.angle_increment)
+        remembered = None
+        if self.memory_marks and len(msg.intensities) == len(msg.ranges):
+            remembered = [v == 1.0 for v in msg.intensities]
+        self.driver.on_scan(time.monotonic(), msg.ranges, msg.angle_min, msg.angle_increment,
+                            remembered)
         if self.driver.probs is not None:
             self.probs_pub.publish(Float32MultiArray(data=[float(v) for v in self.driver.probs]))
 
@@ -151,8 +161,8 @@ class BcNode(Node):
             self.get_logger().info('corner policy: %s at %.2f m (corners %d)'
                                    % (state, odo, self.policy.corners))
         self.events_seen = len(events)
-        text = (('%s, corners %d' % (self.policy.state, self.policy.corners))
-                if reason == OK and hasattr(self.policy, 'state') else reason)
+        text = state_text(reason, self.driver, getattr(self.policy, 'state', None),
+                          getattr(self.policy, 'corners', 0))
         self.state_pub.publish(String(data=text))
         if self.publish_cmd:
             self.publish(vx, wz)
@@ -161,7 +171,7 @@ class BcNode(Node):
             if reason == OK:
                 self.get_logger().info('state: ok')
             else:
-                self.get_logger().warn('state: %s' % reason)
+                self.get_logger().warn('state: %s (%s)' % (reason, text))
             self.last_reason = reason
 
     def publish(self, vx, wz):
