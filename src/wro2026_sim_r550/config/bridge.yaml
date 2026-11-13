@@ -1,0 +1,34 @@
+# ros_gz_bridge topics for sim.launch.py. Gazebo -> ROS unless noted.
+# The sensor topics go to /sim/... and sim_sensors_node turns them into the
+# real car's topics (/odom, /imu/data, /imu/data_raw) with the real covariances.
+- ros_topic_name: /clock
+  gz_topic_name: /clock
+  ros_type_name: rosgraph_msgs/msg/Clock
+  gz_type_name: gz.msgs.Clock
+  direction: GZ_TO_ROS
+- ros_topic_name: /scan
+  gz_topic_name: /scan
+  ros_type_name: sensor_msgs/msg/LaserScan
+  gz_type_name: gz.msgs.LaserScan
+  direction: GZ_TO_ROS
+- ros_topic_name: /sim/imu
+  gz_topic_name: /sim/imu
+  ros_type_name: sensor_msgs/msg/Imu
+  gz_type_name: gz.msgs.IMU
+  direction: GZ_TO_ROS
+- ros_topic_name: /sim/odom
+  gz_topic_name: /sim/odom
+  ros_type_name: nav_msgs/msg/Odometry
+  gz_type_name: gz.msgs.Odometry
+  direction: GZ_TO_ROS
+- ros_topic_name: /sim/ground_truth
+  gz_topic_name: /sim/ground_truth
+  ros_type_name: nav_msgs/msg/Odometry
+  gz_type_name: gz.msgs.Odometry
+  direction: GZ_TO_ROS
+# ROS -> Gazebo: only sim_base_node publishes this (after the CommandGate)
+- ros_topic_name: /sim/cmd_vel
+  gz_topic_name: /sim/cmd_vel
+  ros_type_name: geometry_msgs/msg/Twist
+  gz_type_name: gz.msgs.Twist
+  direction: ROS_TO_GZ

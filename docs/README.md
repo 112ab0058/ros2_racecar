@@ -2,42 +2,41 @@
 
 先讀 [STATUS.md](STATUS.md)。
 
-## 主線
+## 研究（`research/`）：專題報告的素材
 
 | 文件 | 用途 |
 |---|---|
-| [STATUS.md](STATUS.md) | 唯一的「目前狀態」：模擬線結論、實車里程碑 H0–H9、下一步、已知問題 |
-| [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) | 系統架構、package 分工與資料流（模擬與實車） |
+| [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md) | **專題規劃：模組與演算法總表、做事順序、要調的參數、實驗、風險、要買的東西** |
+| [research/DETAILED_PLAN.md](research/DETAILED_PLAN.md) | **步驟 7 以後的詳細執行規劃：每一步的小步驟、誰做（Ray / Claude Code / chat）、完成標準、砍的順序** |
+| [research/LOGBOOK.md](research/LOGBOOK.md) | 研究日誌：每次工作的目的、做法、數據、問題、學到的東西 |
+| [research/R550_STUDY_NOTES.md](research/R550_STUDY_NOTES.md) | 廠商資料研讀筆記：C30D、開機流程、阿克曼運動學、馬達 PI、電源、**串口協定**、Orin 怎麼接車子 |
+| [research/LEARNING_PATH.md](research/LEARNING_PATH.md) | 各階段要懂的觀念和小練習（時程以 PROJECT_PLAN 為準） |
 
 ## 實車（`real/`）
 
 | 文件 | 用途 |
 |---|---|
-| [real/REAL_CAR_HARDWARE.md](real/REAL_CAR_HARDWARE.md) | Jetson 與 WAVE ROVER 的硬體盤點、允許的 ESP32 指令、已驗證項目、UNKNOWN 清單 |
-| [real/FINAL_CAR_DRAFT.md](real/FINAL_CAR_DRAFT.md) | 最終比賽車（Ackermann、STM32、Orbbec、LiDAR、encoder）的硬體盤點草稿，大多數型號仍是 UNKNOWN |
-| [real/RUNBOOK.md](real/RUNBOOK.md) | 實車操作：部署、啟動 / 停止、架空目視測試、UART 接線後的步驟、量測輪距與 `pwm_to_mps` |
-| [../src/wro2026_base_waverover/README.md](../src/wro2026_base_waverover/README.md) | 底盤 driver：結構、topic、安全行為、odometry 的限制 |
-| [../src/wro2026_real/README.md](../src/wro2026_real/README.md) | bringup、URDF、line detector 與 `/line_detection` 格式 |
+| [real/R550_HARDWARE.md](real/R550_HARDWARE.md) | R550 mini akm 實物盤點：C30D、N10P 光達、C70 相機、尺寸、電源 |
+| [real/RUNBOOK.md](real/RUNBOOK.md) | 操作手冊：部署、build、開機順序、只聽 STM32、啟動 node、充電、疑難排解 |
+| [real/NETWORK.md](real/NETWORK.md) | 網路：IP / MAC、路由器綁定、NetBird、Foxglove、WSL 看不到 Orin 的原因、`ROS_DOMAIN_ID` |
+| [real/ORIN_BACKUP.md](real/ORIN_BACKUP.md) | Orin 狀態備份與 SD 卡映像的做法、還原步驟 |
+| [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) | R550 底盤 package：協定、只讀 node、`listen` 工具 |
+| [../src/wro2026_lidar_n10p/README.md](../src/wro2026_lidar_n10p/README.md) | N10P 光達 driver（純 Python、只讀）：協定、`/scan` node、`listen` 工具 |
+| [../src/wro2026_description/README.md](../src/wro2026_description/README.md) | URDF / TF：光達、IMU 裝在車上的位置 |
 
-## 模擬（`sim/`）
+## 模擬（`sim/`，已結束，只當參考）
 
 | 文件 | 用途 |
 |---|---|
-| [sim/SPEC.md](sim/SPEC.md) | 模擬線的 Phase 執行規格（SHA 比對、archive、Level 0/1/2）；實車線不套用 |
-| [sim/FIELD_PLAN_160CM.md](sim/FIELD_PLAN_160CM.md) | 160 × 160 cm 場地尺寸與材料規劃 |
-| [sim/GAZEBO_PERFORMANCE.md](sim/GAZEBO_PERFORMANCE.md) | WSL 上 Gazebo 的效能設定清單 |
-| [sim/ROS2_WSL_NETWORK.md](sim/ROS2_WSL_NETWORK.md) | WSL 的 ROS 2 網路設定（描述 Ray 的 WSL 環境） |
-| [sim/WORKSPACE_MAP.md](sim/WORKSPACE_MAP.md) | WSL 工作區與 GitHub repo 的對照（描述 Ray 的 WSL 環境） |
+| [sim/FIELD_PLAN_160CM.md](sim/FIELD_PLAN_160CM.md) | 160 × 160 cm 場地的尺寸與材料（**實體場地也用這份**） |
+| [sim/SPEC.md](sim/SPEC.md) | 模擬線的 Phase 規格；實車不套用 |
+| [sim/GAZEBO_PERFORMANCE.md](sim/GAZEBO_PERFORMANCE.md) | WSL 上 Gazebo 的效能設定 |
+| [sim/ROS2_WSL_NETWORK.md](sim/ROS2_WSL_NETWORK.md) | WSL 的 ROS 2 網路設定 |
+| [sim/WORKSPACE_MAP.md](sim/WORKSPACE_MAP.md) | WSL 工作區與 repo 的對照 |
 
 ## 封存（`archive/`，內文不再更新）
 
 | 文件 | 用途 |
 |---|---|
-| [archive/sim_phases/CURRENT_STATE.md](archive/sim_phases/CURRENT_STATE.md) | 模擬 Phase 2–6J 的權威狀態（停在 2026-07-22） |
-| [archive/sim_phases/TEST_EVIDENCE.md](archive/sim_phases/TEST_EVIDENCE.md) | 模擬各 Phase 的測試證據摘要（停在 2026-07-22） |
-| [archive/sim_phases/NEXT_PROMPT.md](archive/sim_phases/NEXT_PROMPT.md) | 2026-07-06 的下一輪 Codex prompt（已過期） |
-| [archive/sim_phases/AI_SYNC.md](archive/sim_phases/AI_SYNC.md) | 2026-07-06 的 AI 同步紀錄（已過期） |
-| [archive/sim_phases/NEXT_PROMPT_phase7g.md](archive/sim_phases/NEXT_PROMPT_phase7g.md) | Phase 7G residual odom campaign 的完整 prompt |
-| [archive/handoff_2026-10-09/](archive/handoff_2026-10-09/README.md) | 2026-10-09 從模擬轉實車的交接包（H0–H9 里程碑定義、Phase 7 結論、證據路徑） |
-
-
+| [archive/sim_phases/](archive/sim_phases/CURRENT_STATE.md) | 模擬 Phase 2–7 的狀態與證據摘要 |
+| [archive/handoff_2026-10-09/](archive/handoff_2026-10-09/README.md) | 2026-10-09 從模擬轉實車的交接包 |

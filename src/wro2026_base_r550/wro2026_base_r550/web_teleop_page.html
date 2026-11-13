@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f3f4f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121314" media="(prefers-color-scheme: dark)">
+<title>R550 遙控</title>
+<!--
+  Phone page of web_teleop_node (wro2026_base_r550). Served by web_teleop.py.
+  Hold to drive: while a key, the joystick or the tilt hold-button is pressed, the page
+  sends POST /cmd every 0.1 s; anything else (letting go, leaving the page, losing WiFi)
+  stops the car within 0.35 s on the Orin side. Tilt mode needs https (motion sensors).
+-->
+<style>
+:root{
+  --bg:#f3f4f1;--panel:#ffffff;--fg:#1b1c1a;--dim:#686b64;--line:#d7d9d2;--press:#e9ebe5;
+  --accent:#1f63d6;--accent-fg:#ffffff;--good:#25803a;--warn:#b85c00;--bad:#c62828;
+  --radius:16px;--gap:10px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#121314;--panel:#1d1f20;--fg:#ecede8;--dim:#9a9d95;--line:#33363a;--press:#272a2c;
+  --accent:#4d8dff;--accent-fg:#0b1220;--good:#5cc172;--warn:#ffa84a;--bad:#ff6b6b;
+}}
+*{box-sizing:border-box;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+  -webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);overflow:hidden;
+  font:15px/1.35 -apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC",system-ui,sans-serif;
+  touch-action:none}
+button{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);touch-action:none;cursor:pointer}
+button:active{background:var(--press)}
+.app{height:100%;height:100dvh;display:grid;gap:var(--gap);
+  padding:max(12px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right))
+          max(12px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  grid-template-rows:auto auto 1fr auto;grid-template-areas:"head" "tabs" "ctrl" "info"}
+header{grid-area:head;display:grid;gap:6px}
+.status{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius);
+  background:var(--panel);border:1px solid var(--line)}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--dim);flex:none}
+#action{font-size:22px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status.drive{border-color:var(--accent)}.status.drive .dot{background:var(--accent)}
+.status.drive #action{color:var(--accent)}
+.status.bad{border-color:var(--bad)}.status.bad .dot{background:var(--bad)}
+.status.bad #action{color:var(--bad)}
+.battery{display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums;font-size:14px}
+.cell{width:30px;height:14px;border:1.5px solid currentColor;border-radius:3px;padding:1.5px;position:relative}
+.cell::after{content:"";position:absolute;right:-4px;top:3.5px;width:2.5px;height:5px;
+  background:currentColor;border-radius:0 1px 1px 0}
+#batfill{height:100%;width:0;border-radius:1.5px;background:var(--good)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;font-size:13px}
+.chip{padding:3px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--dim)}
+.chip b{font-weight:600;color:var(--fg)}
+.chip.good b{color:var(--good)}.chip.warn b{color:var(--warn)}.chip.bad b{color:var(--bad)}
+[hidden]{display:none!important}
+nav{grid-area:tabs;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;padding:4px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px}
+nav button{border:0;border-radius:9px;min-height:42px;font-weight:600;color:var(--dim);background:transparent}
+nav button.on{background:var(--accent);color:var(--accent-fg)}
+/* the control area is a size container: dials fit the space that is left, not the screen */
+.ctrl{grid-area:ctrl;min-height:0;position:relative;container-type:size}
+section{position:absolute;inset:0;display:none}
+section.on{display:grid}
+/* keys */
+#keys{grid-template-columns:repeat(3,1fr);grid-template-rows:2fr 1fr;gap:var(--gap)}
+.key{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  font-size:17px;font-weight:700}
+.key svg{width:44px;height:44px}
+.key.held{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+#k-back{grid-column:2}
+/* joystick and tilt dial */
+#stick,#tilt{place-items:center;align-content:center;gap:10px}
+.dial{position:relative;width:min(80vw,36vh,420px);aspect-ratio:1;border-radius:50%;
+  background:var(--panel);border:1px solid var(--line);touch-action:none}
+.dial::before{content:"";position:absolute;inset:37.5%;border-radius:50%;border:1px dashed var(--line)}
+.dial .lbl{position:absolute;transform:translate(-50%,-50%);font-size:12px;color:var(--dim);
+  white-space:nowrap;pointer-events:none}
+.dial .lbl.on{color:var(--accent);font-weight:700}
+.knob{position:absolute;left:50%;top:50%;width:24%;aspect-ratio:1;margin:-12% 0 0 -12%;
+  border-radius:50%;background:var(--line);pointer-events:none;transition:background .1s}
+.knob.on{background:var(--accent)}
+@supports (width:1cqh){
+  #stick .dial{width:min(100cqw,calc(100cqh - 50px),420px)}
+  #tilt .dial{width:min(100cqw,calc(100cqh - 112px),420px)}
+}
+.hint{font-size:12px;line-height:1.3;color:var(--dim);text-align:center;max-width:34em}
+#deadman,#sensor-btn{width:min(100%,420px);min-height:52px;padding:0 12px;font-size:16px;font-weight:700}
+#deadman.held{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+#deadman:disabled{opacity:.45}
+/* auto: one big hold button, the policy's decision above it */
+#auto{grid-template-rows:auto 1fr auto;gap:var(--gap)}
+.autostate{display:flex;align-items:baseline;justify-content:center;gap:10px;padding:8px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.autostate span{font-size:13px;color:var(--dim)}
+.autostate b{font-size:24px}
+.autostate small{font-size:13px;color:var(--dim)}
+#auto-btn{font-size:20px;font-weight:700;line-height:1.4}
+#auto-btn.held{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+/* wave */
+#wave{grid-template-rows:1fr auto;gap:6px}
+canvas{width:100%;height:100%;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
+.legend{display:flex;gap:14px;justify-content:center;font-size:12px;color:var(--dim)}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+/* info */
+.info{grid-area:info;display:grid;gap:8px}
+.speed{display:grid;grid-template-columns:56px 1fr 56px;gap:8px;align-items:center}
+.speed button{height:44px;font-size:22px;font-weight:600}
+#speed{text-align:center;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+#speed small{display:block;font-size:12px;font-weight:500;color:var(--warn)}
+.gauges{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.gauge{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 10px}
+.gauge span{font-size:12px;color:var(--dim)}
+.gauge b{display:block;font-size:18px;font-variant-numeric:tabular-nums}
+.foot{display:flex;justify-content:space-between;gap:8px;font:11px/1.3 ui-monospace,Menlo,monospace;color:var(--dim)}
+.foot a{color:var(--accent)}
+dialog{max-width:min(92vw,440px);border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--panel);color:var(--fg);padding:18px}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog ol{padding-left:20px;margin:8px 0}
+dialog li{margin:6px 0}
+dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+dialog .row a,dialog .row button{padding:9px 14px;border-radius:10px;font-weight:600}
+dialog .row a{background:var(--accent);color:var(--accent-fg);text-decoration:none}
+/* short screens (small iPhones with Safari's bars): tighter info area */
+@media (max-height:620px){
+  :root{--gap:8px}
+  .status{padding:7px 12px}#action{font-size:19px}
+  .speed button{height:40px}
+  .gauge{padding:3px 10px}.gauge b{font-size:15px}
+}
+/* landscape phone: controls left, everything else right */
+@media (orientation:landscape) and (max-height:560px){
+  .app{grid-template-columns:1.25fr 1fr;grid-template-rows:auto auto 1fr;
+    grid-template-areas:"ctrl head" "ctrl tabs" "ctrl info";align-content:start}
+  .info{align-self:end}
+}
+</style></head><body>
+<div class="app">
+<header>
+  <div class="status" id="status"><span class="dot"></span><span id="action">連線中…</span>
+    <span class="battery" id="battery"><span class="cell"><span id="batfill"></span></span>
+    <span id="battxt">?</span></span></div>
+  <div class="chips"><span class="chip" id="chip-base">底盤 <b>?</b></span>
+    <span class="chip" id="chip-net">延遲 <b>?</b></span>
+    <span class="chip" id="chip-sec">連線 <b>?</b></span></div>
+</header>
+<nav><button data-tab="keys" class="on">按鍵</button><button data-tab="stick">搖桿</button>
+<button data-tab="tilt">重力</button><button data-tab="auto" id="tab-auto" hidden>自動</button>
+<button data-tab="wave">波形</button></nav>
+<div class="ctrl">
+<section id="keys" class="on">
+  <button class="key drive" data-a="left"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M34 42V26c0-8-6-14-14-14H10"/><path d="M17 4l-8 8 8 8"/></svg>左前</button>
+  <button class="key drive" data-a="straight"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M24 42V8"/><path d="M12 20L24 8l12 12"/></svg>直走</button>
+  <button class="key drive" data-a="right"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 42V26c0-8 6-14 14-14h10"/><path d="M31 4l8 8-8 8"/></svg>右前</button>
+  <button class="key drive" id="k-back" data-a="back"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M24 6v34"/><path d="M12 28l12 12 12-12"/></svg>後退</button>
+</section>
+<section id="stick"><div class="dial" id="pad"><div class="knob" id="knob"></div></div>
+  <div class="hint">拖到哪個方向就往哪開；回中心或放開就停</div></section>
+<section id="tilt"><div class="dial" id="ball-dial"><div class="knob" id="ball"></div></div>
+  <button id="sensor-btn">啟用動作感測器</button>
+  <button id="deadman" hidden>按住才走 · 傾斜控制方向</button>
+  <div class="hint" id="tilt-hint">直拿手機。按下時的角度＝不動；前傾＝前進，左右傾＝轉彎</div></section>
+<section id="auto">
+  <div class="autostate"><span>程式想要</span><b id="bc-dec">-</b><small id="bc-state"></small></div>
+  <button id="auto-btn" class="drive" data-a="auto">按住＝自動駕駛<br>放開＝停</button>
+  <div class="hint">只有按住時車子才會照程式開；放開、切 App、斷線都會在 0.35 秒內停。</div></section>
+<section id="wave"><canvas id="plot"></canvas>
+  <div class="legend"><span><i style="background:var(--accent)"></i>角速度 Z（±1 rad/s）</span>
+  <span><i style="background:var(--warn)"></i>速度（±0.2 m/s）</span><span>最近 10 秒</span></div></section>
+</div>
+<div class="info">
+  <div class="speed"><button id="slower" aria-label="減速">−</button>
+    <div id="speed">0.10 m/s</div><button id="faster" aria-label="加速">+</button></div>
+  <div class="gauges"><div class="gauge"><span>實際速度</span><b id="g-vx">-</b></div>
+    <div class="gauge"><span>角速度 Z</span><b id="g-gz">-</b></div></div>
+  <div class="foot"><span id="debug">-</span><a href="#" id="cert-link">憑證</a></div>
+</div>
+</div>
+<dialog id="cert-dialog">
+  <b>第一次用 https：讓 iPhone 信任這台 Orin</b>
+  <ol>
+    <li>按下面「下載憑證」→ 允許下載描述檔。</li>
+    <li>設定 → 一般 → VPN 與裝置管理 → 「R550 phone page CA」→ 安裝。</li>
+    <li>設定 → 一般 → 關於本機 → 憑證信任設定 → 打開「R550 phone page CA」。</li>
+    <li>回到這頁重新整理，網址列不會再有警告。</li>
+  </ol>
+  <div class="hint">這個憑證只在這台 Orin 上產生，只用來加密你的手機和車子之間的連線。</div>
+  <div class="row"><button id="cert-close">關閉</button><a href="/ca.crt" download="r550-ca.crt">下載憑證</a></div>
+</dialog>
+<script>
+'use strict';
+const k = new URLSearchParams(location.search).get('k') || '';
+const $ = id => document.getElementById(id);
+const NAMES = {straight: '直走', left: '左轉', right: '右轉', full_left: '左滿舵', full_right: '右滿舵',
+  back: '後退', back_left: '左後退', back_right: '右後退', auto: '自動', stop: '停'};
+// base_node CommandGate reasons -> text, chip class
+const BASE = {ok: ['正常', 'good'], no_cmd: ['等待指令', 'good'], cmd_timeout: ['待命', 'good'],
+  disabled: ['唯讀（不會動）', 'warn'], run_time_over: ['時間到，已停', 'bad'],
+  feedback_lost: ['底盤沒回應', 'bad'], battery_low: ['電壓低，已停', 'bad']};
+// 8 sectors from +x (right), counter-clockwise; vendor app Ackermann table 3-1
+const SECTORS = ['full_right', 'right', 'straight', 'left', 'full_left', 'back_left', 'back',
+  'back_right'];
+const hist = [];
+let timer = null, action = null, pointer = null, heldBtn = null, mode = 'keys', rtt = null;
+const fmt = (v, d) => (v === null || v === undefined) ? '-' : v.toFixed(d);
+
+// ---------- server ----------
+function show(s) {
+  const st = $('status');
+  $('action').textContent = (NAMES[s.action] || s.action) + '  ' + s.vx.toFixed(2) + ' m/s';
+  st.className = 'status' + (s.action === 'stop' ? '' : ' drive');
+  const v = s.battery, p = v ? Math.max(0, Math.min(1, (v - 10.0) / 2.6)) : 0;
+  $('batfill').style.width = (100 * p) + '%';
+  $('batfill').style.background = v && v < 11.0 ? 'var(--bad)' : 'var(--good)';
+  $('battxt').textContent = v ? Math.round(100 * p) + '% ' + v.toFixed(1) + 'V' : '?';
+  const b = BASE[s.base] || [s.base || '?', s.base ? 'warn' : ''];
+  chip('chip-base', '底盤', b[0], b[1]);
+  const off = Math.abs(s.speed - 0.1) > 1e-6;
+  $('speed').innerHTML = s.speed.toFixed(2) + ' m/s' + (off ? '<small>錄訓練資料請用 0.10</small>' : '');
+  $('tab-auto').hidden = !s.auto;
+  if (s.auto) { $('bc-dec').textContent = s.bc || '-'; $('bc-state').textContent = s.bc_state || ''; }
+  $('g-vx').textContent = fmt(s.odom_vx, 3) + ' m/s';
+  $('g-gz').textContent = fmt(s.gyro_z, 2) + ' rad/s';
+  $('debug').textContent = 'vx ' + s.vx.toFixed(2) + ' wz ' + s.wz.toFixed(2) + ' · #' + s.requests;
+  hist.push([performance.now() / 1000, s.gyro_z, s.odom_vx]);
+  while (hist.length && hist[0][0] < hist[hist.length - 1][0] - 10) hist.shift();
+  if (mode === 'wave') plot();
+}
+function chip(id, label, text, cls) {
+  $(id).className = 'chip ' + (cls || '');
+  $(id).innerHTML = label + ' <b>' + text + '</b>';
+}
+function lost() {
+  $('action').textContent = '連線中斷：車子會自己停';
+  $('status').className = 'status bad';
+  chip('chip-net', '延遲', '斷線', 'bad');
+}
+function call(method, path) {
+  const t0 = performance.now();
+  const url = path + (path.includes('?') ? '&' : '?') + 'k=' + k;
+  return fetch(url, {method: method, cache: 'no-store'}).then(r => r.json()).then(s => {
+    const ms = performance.now() - t0;
+    rtt = rtt === null ? ms : 0.8 * rtt + 0.2 * ms;
+    chip('chip-net', '延遲', Math.round(rtt) + ' ms', rtt < 150 ? 'good' : rtt < 300 ? 'warn' : 'bad');
+    show(s);
+  }).catch(lost);
+}
+
+// ---------- hold to drive ----------
+function drive(a) {
+  if (a === action) return;
+  action = a;
+  if (!a) {
+    if (timer) { clearInterval(timer); timer = null; }
+    call('POST', '/cmd?a=stop');
+    return;
+  }
+  call('POST', '/cmd?a=' + a);
+  if (!timer) timer = setInterval(() => { if (action) call('POST', '/cmd?a=' + action); }, 100);
+}
+function release() {
+  pointer = null; tiltHeld = false;
+  if (heldBtn) { heldBtn.classList.remove('held'); heldBtn = null; }
+  for (const id of ['knob', 'ball']) { $(id).style.transform = ''; $(id).classList.remove('on'); }
+  for (const l of document.querySelectorAll('.lbl.on')) l.classList.remove('on');
+  drive(null);
+}
+function hold(e, el) {
+  e.preventDefault(); release(); pointer = e.pointerId;
+  try { el.setPointerCapture(e.pointerId); } catch (err) { /* document listener releases */ }
+}
+// Letting go anywhere stops, matched by finger, so a second finger on +/- does not.
+for (const ev of ['pointerup', 'pointercancel']) {
+  document.addEventListener(ev, e => { if (e.pointerId === pointer) release(); });
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
+window.addEventListener('blur', release);
+window.addEventListener('pagehide', release);
+
+// keys
+for (const b of document.querySelectorAll('.drive')) {
+  b.addEventListener('pointerdown', e => { hold(e, b); heldBtn = b; b.classList.add('held'); drive(b.dataset.a); });
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+// dial labels (joystick and tilt)
+const LABELS = {straight: '前進', right: '右轉', full_right: '右滿舵', back_right: '右後退',
+  back: '後退', back_left: '左後退', full_left: '左滿舵', left: '左轉'};
+for (const dial of ['pad', 'ball-dial']) {
+  SECTORS.forEach((a, i) => {
+    const l = document.createElement('span'), ang = i * Math.PI / 4;
+    l.className = 'lbl'; l.dataset.a = a; l.textContent = LABELS[a];
+    l.style.left = (50 + 40 * Math.cos(ang)) + '%'; l.style.top = (50 - 40 * Math.sin(ang)) + '%';
+    $(dial).appendChild(l);
+  });
+}
+// x right, y forward, both -1..1 -> action (null inside the dead zone), and show it
+function steer(dialId, knobId, x, y) {
+  const d = Math.hypot(x, y);
+  if (d > 1) { x /= d; y /= d; }
+  const R = $(dialId).clientWidth / 2;
+  $(knobId).style.transform = 'translate(' + (x * 0.76 * R) + 'px,' + (-y * 0.76 * R) + 'px)';
+  const a = d < 0.3 ? null : SECTORS[(Math.round(Math.atan2(y, x) / (Math.PI / 4)) + 8) % 8];
+  $(knobId).classList.toggle('on', !!a);
+  for (const l of $(dialId).querySelectorAll('.lbl')) l.classList.toggle('on', l.dataset.a === a);
+  drive(a);
+}
+// joystick
+function stick(e) {
+  const r = $('pad').getBoundingClientRect(), R = 0.76 * r.width / 2;
+  steer('pad', 'knob', (e.clientX - r.left - r.width / 2) / R, (r.top + r.height / 2 - e.clientY) / R);
+}
+$('pad').addEventListener('pointerdown', e => { hold(e, $('pad')); stick(e); });
+$('pad').addEventListener('pointermove', e => { if (e.pointerId === pointer) stick(e); });
+
+// tilt ("gravity" mode of the vendor app) + hold button: tilting alone never drives
+let tiltHeld = false, sensorOn = false, neutral = null, lastTilt = null;
+const TILT_FULL = 20;   // degrees for full deflection
+function tiltReady() {
+  if (!window.isSecureContext) {
+    $('sensor-btn').hidden = true; $('deadman').hidden = false; $('deadman').disabled = true;
+    $('tilt-hint').textContent = '重力模式需要 https 網址（iPhone 只給 https 網頁動作感測器）';
+    return;
+  }
+  // one slot: "enable sensors" first, then the hold button
+  $('sensor-btn').hidden = sensorOn; $('deadman').hidden = !sensorOn; $('deadman').disabled = !sensorOn;
+}
+$('sensor-btn').addEventListener('click', async () => {
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      if (await DeviceOrientationEvent.requestPermission() !== 'granted') throw new Error('denied');
+    }
+    window.addEventListener('deviceorientation', e => {
+      if (e.beta === null || e.gamma === null) return;
+      lastTilt = [e.beta, e.gamma];
+      if (tiltHeld && neutral) {
+        steer('ball-dial', 'ball', (e.gamma - neutral[1]) / TILT_FULL, -(e.beta - neutral[0]) / TILT_FULL);
+      }
+    });
+    sensorOn = true;
+  } catch (err) {
+    $('tilt-hint').textContent = '沒有取得動作感測器權限：關掉分頁重開再按一次「啟用」';
+  }
+  tiltReady();
+});
+$('deadman').addEventListener('pointerdown', e => {
+  if (!sensorOn || !lastTilt) return;
+  hold(e, $('deadman')); heldBtn = $('deadman'); $('deadman').classList.add('held');
+  neutral = lastTilt.slice(); tiltHeld = true;
+  steer('ball-dial', 'ball', 0, 0);
+});
+
+// tabs, speed
+for (const t of document.querySelectorAll('nav button')) {
+  t.addEventListener('click', () => {
+    release(); mode = t.dataset.tab;
+    for (const x of document.querySelectorAll('nav button, section')) x.classList.remove('on');
+    t.classList.add('on'); $(mode).classList.add('on');
+    if (mode === 'tilt') tiltReady();
+    if (mode === 'wave') plot();
+  });
+}
+$('faster').addEventListener('click', () => call('POST', '/speed?d=up'));
+$('slower').addEventListener('click', () => call('POST', '/speed?d=down'));
+
+// https state and certificate help
+const secure = location.protocol === 'https:';
+chip('chip-sec', '連線', secure ? 'https 加密' : 'http', secure ? 'good' : 'warn');
+$('cert-link').hidden = !secure;
+$('cert-link').addEventListener('click', e => { e.preventDefault(); release(); $('cert-dialog').showModal(); });
+$('cert-close').addEventListener('click', () => $('cert-dialog').close());
+
+// waveform
+function plot() {
+  const c = $('plot'), dpr = window.devicePixelRatio || 1;
+  c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr;
+  const g = c.getContext('2d'), w = c.width, h = c.height, css = getComputedStyle(document.body);
+  const col = name => css.getPropertyValue(name).trim();
+  g.clearRect(0, 0, w, h);
+  const now = hist.length ? hist[hist.length - 1][0] : 0;
+  const lane = (i, scale, color) => {
+    const mid = h * (i + 0.5) / 2, amp = h / 4 - 6 * dpr;
+    g.strokeStyle = col('--line'); g.lineWidth = dpr;
+    g.beginPath(); g.moveTo(0, mid); g.lineTo(w, mid); g.stroke();
+    g.strokeStyle = col(color); g.lineWidth = 2 * dpr; g.lineJoin = 'round'; g.beginPath();
+    let first = true;
+    for (const p of hist) {
+      const v = p[i + 1];
+      if (v === null || v === undefined) continue;
+      const x = w * (1 - (now - p[0]) / 10), y = mid - amp * Math.max(-1, Math.min(1, v / scale));
+      if (first) { g.moveTo(x, y); first = false; } else g.lineTo(x, y);
+    }
+    g.stroke();
+  };
+  lane(0, 1.0, '--accent'); lane(1, 0.2, '--warn');
+}
+setInterval(() => { if (!timer) call('GET', '/state'); }, 250);
+</script></body></html>

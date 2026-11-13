@@ -9,19 +9,25 @@ Codex 時期的專案規則在 AGENTS.md，模擬（`src/wro2026_sim`）相關�
 ## 實車開發（2026-10 起）
 
 ### 現況
-- 實車主機：Jetson Orin Nano，Ubuntu 24.04 + ROS 2 **Jazzy**（L4T R39.2.1，ssh `user2@112ab-jno`）。模擬端也是 Jazzy，但 Jetson 只裝了 `ros-base`，不要假設有 Gazebo 或 GUI 套件。
-- 目前是**過渡測試車：Waveshare WAVE ROVER（ESP32、差速、沒有 encoder、尚未裝光達）**。硬體細節與已驗證項目見 `docs/real/REAL_CAR_HARDWARE.md`。最後比賽車是轉向輪（Ackermann 類），所以：
-  - 底盤相關（馬達、encoder、運動學）放在獨立 package，之後換車只換這層。
-  - 底盤以上（相機、line detection、決策）只透過 `/cmd_vel`、`/odom`、TF、感測器 topic 溝通，不得依賴差速專屬行為（例如原地旋轉）。
+- 實車主機：Jetson Orin Nano，Ubuntu 24.04 + ROS 2 **Jazzy**（L4T R39.2.1，ssh `user2@112ab-jno`）。模擬端也是 Jazzy。Jetson 原本只有 `ros-base`；2026-10-20 **暫時**加裝了 `ros-jazzy-ros-gz`、`navigation2`、`nav2-bringup`（給 `wro2026_sim_r550`），沒有螢幕，Gazebo 只用無畫面模式。
+- 正式的車是 **WHEELTEC R550 mini akm**（阿克曼、STM32 C30D 控制板、encoder、ICM20948 IMU、LSLIDAR N10P、WHEELTEC C70 相機），2026-10-15 到貨。硬體見 `docs/real/R550_HARDWARE.md`。過渡用的 WAVE ROVER 已收起來，相關程式和文件 2026-10-16 刪除。
+  - 底盤相關（串口協定、driver）放在獨立 package（`wro2026_base_r550`）。
+  - 阿克曼**不能原地旋轉**，底盤以上的程式不得依賴原地旋轉。
+- 專題範圍與時程見 `docs/research/PROJECT_PLAN.md`（不參加 WRO，11 月中完成）。
 - 硬體型號未確認的項目一律標 `UNKNOWN`，不得猜測補齊。
 - 目前狀態只看 `docs/STATUS.md`；文件索引在 `docs/README.md`。2026-10-09 的交接資料已封存在 `docs/archive/handoff_2026-10-09/`（里程碑 H0–H9 的定義在 `START_HERE_NEXT_AI.md`）。
 - **實車線不套用 `docs/sim/SPEC.md` 的流程**（三份 SHA 比對、唯讀 archive、Level 0/1/2 都只適用模擬線），只照這份 CLAUDE.md 的安全規則。
 
 ### Package 規劃
 - `src/wro2026_sim`：模擬，保持原樣，不得部署到 Jetson。
-- `src/wro2026_real`（2026-10-13 建立）：實車 bringup、相機、參數化的 line detector、URDF。不得依賴 Gazebo / ros_gz / turtlebot3。
-- `src/wro2026_base_waverover`（2026-10-13 建立）：WAVE ROVER 底盤 driver，由 Jetson 的 `~/ros2_ws/src/wave_rover_driver`（本機 git）搬進來；舊的那份留在 Jetson 當備份，不要修改，也不要和新的同時啟動。
-- Jetson 上用 `~/racecar_ws`（不是 git repo）build / test 這兩個 package；操作步驟在 `docs/real/RUNBOOK.md`。
+- `src/wro2026_sim_r550`（2026-10-20 決定，暫時）：照 R550 規格的阿克曼 Gazebo 模擬，**可以暫時部署到 Orin**（Orin 暫時裝 `ros-jazzy-ros-gz`，用完再移除）。只在模擬裡用：不得和 `base_node` 同時跑，模擬的 topic、Gazebo 的位置不得進實車控制迴路。
+- `src/wro2026_base_r550`：R550 底盤（協定、只讀回授 node、`listen`、指令端 `base_node`（`enable_commands` 預設 false）；STM32 韌體沒有指令逾時）。不得依賴 Gazebo / ros_gz / turtlebot3。
+- `src/wro2026_lidar_n10p`：N10P 光達 driver（純 Python、只讀，協定照 LSLIDAR 官方 driver）。
+- `src/wro2026_description`：URDF（感測器位置、TF 樹，`base_link` = 後軸中心），不碰硬體。
+- `src/wro2026_bringup`：一次啟動的 launch。`sensors.launch.py` 只能放只讀的 node；會讓馬達轉的另開 launch，照安全規則。
+- 部署：Windows 跑 `tools/real/deploy.cmd`（git pull → tar 經 ssh 送到 Orin → `tools/real/orin_build.sh` build）。
+- Ray 電腦上的 Claude Code 在 **Windows**（Git Bash / PowerShell）跑，repo 在 `C:\Users\chaon\ros2_racecar`；WSL 的 `~/ros2_racecar` 是舊副本（別的分支），不要用。它可以 ssh / scp 到 Orin（金鑰），但**不能回答互動式提示、看不到輪子**：`orin_air_test.sh` 這類腳本由 Ray 自己在 ssh 跑。結果放 Windows `下載\r550_check\`、`下載\r550_airtest\`、`下載\r550_teleop\`。每支新腳本交給 Ray 時附上：位置、啟動指令、做什麼、怎麼看結果。自己測試要發 `/cmd_vel` 時用 rclpy node 的 timer 發布，不用 `ros2 topic pub`。
+- Jetson 上用 `~/racecar_ws`（不是 git repo）build / test；操作步驟在 `docs/real/RUNBOOK.md`。Jetson 的 `~/ros2_ws/src/wave_rover_driver` 是舊 driver 的備份，不要修改。
 
 ### 安全規則（實車）
 - 任何會讓馬達轉動的程式或指令，執行前先跟我確認，並說明：限速、限時、怎麼停。

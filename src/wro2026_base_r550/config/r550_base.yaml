@@ -1,0 +1,18 @@
+# R550 base node (node name: r550_base): command side ONLY.
+# The feedback parameters come from r550_feedback.yaml (base.launch.py loads both).
+# Defaults in base_node.py COMMAND_PARAMETERS must stay identical to this file.
+# THIS NODE CAN MAKE THE MOTORS TURN when enable_commands is true.
+r550_base:
+  ros__parameters:
+    enable_commands: false       # false = read only like feedback_node
+    cmd_vel_stamped: false       # Nav2 Jazzy publishes TwistStamped by default
+    command_rate: 20.0           # Hz; zeros are sent too while enabled
+    cmd_timeout: 0.3             # s; CLAUDE.md: /cmd_vel timeout 0.3 s
+    max_vx: 0.3                  # m/s real; raise only after floor tests
+    max_reverse_vx: 0.15         # m/s real
+    max_wz: 1.0                  # rad/s
+    max_accel: 0.5               # m/s^2 ramp on vx; safety stops are immediate
+    min_turn_speed: 0.02         # m/s; below this wz = 0 (Ackermann cannot turn on the spot)
+    min_battery_voltage: 10.5    # V filtered; vendor buzzer warns at 10.5 V
+    max_run_time: 0.0            # s after the first /cmd_vel; 0 = no limit (tests pass one)
+    stop_frames_on_exit: 5
