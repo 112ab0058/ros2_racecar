@@ -5,7 +5,7 @@ rem  Double-click, or in PowerShell / cmd:  tools\real\deploy.cmd
 rem
 rem  1. git pull (stops if you have local changes)
 rem  2. deploy_send.cmd (started only after the pull, so it is always the
-rem     new version): tar the 4 real-car packages + tools/real, send them over
+rem     new version): tar the real-car packages + tools/real, send them over
 rem     ONE ssh, and run tools/real/orin_build.sh on the Orin
 rem  wro2026_sim is never sent (CLAUDE.md: do not deploy it to the Jetson).
 rem ============================================================
