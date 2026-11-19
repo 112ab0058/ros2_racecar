@@ -51,7 +51,7 @@ class FloorCamera:
 
     def __init__(self, k, d, height, pitch_down_deg, roll_deg, yaw_deg, x, y=0.0,
                  size=(1280, 720)):
-        """k 3x3, d plumb_bob; height of the lens (m); x, y of the lens in base_link (m)."""
+        """Intrinsics k (3x3) and d (plumb_bob); lens height and x, y in base_link (m)."""
         self.k = np.asarray(k, dtype=float).reshape(3, 3)
         self.d = np.asarray(d, dtype=float)
         self.height = float(height)
