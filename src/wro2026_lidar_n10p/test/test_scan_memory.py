@@ -3,7 +3,7 @@ import math
 
 import numpy as np
 import pytest
-from wro2026_lidar_n10p.scan_memory import ScanMemory
+from wro2026_lidar_n10p.scan_memory import PoseHistory, ScanMemory
 
 N = 480
 INC = 2 * math.pi / N
@@ -131,3 +131,57 @@ def test_fill_is_not_pulled_closer_by_neighbours():
     inner = ks[5:-5]
     assert mask[inner].all()
     assert np.allclose(out[inner], r[inner], atol=0.012)      # points are kept 1 cm apart
+
+
+def test_camera_points_fill_blind_beams_and_are_marked():
+    """The camera saw the wall 0.3 m to the left from where the car was 0.1 m ago."""
+    mem = ScanMemory(laser_x=0.0)
+    mem.on_odom(0.1, 0.0, 0.0)
+    cam = np.full(N, np.inf)
+    cam[beam(90)] = 0.3
+    assert mem.add_camera(0.0, cam, 0.0, INC, pose=(0.0, 0.0, 0.0)) == 1
+    assert np.allclose(mem.pts, [[0.0, 0.3]])                   # placed with the given pose
+    out, mask = mem.on_scan(0.1, np.full(N, np.inf), 0.0, INC)
+    k = int(np.argmin(out))
+    assert mask[k] and mem.filled_by_camera[k]
+    assert out[k] == pytest.approx(math.hypot(0.1, 0.3), abs=0.005)
+    lidar = np.full(N, np.inf)
+    lidar[beam(-90)] = 0.3                                     # a lidar point on the right
+    mem.on_scan(0.2, lidar, 0.0, INC)
+    out, mask = mem.on_scan(0.3, np.full(N, np.inf), 0.0, INC)
+    assert mask[beam(-90)] and not mem.filled_by_camera[beam(-90)]
+
+
+def test_camera_points_without_odometry_are_not_stored():
+    mem = ScanMemory()
+    cam = np.full(N, np.inf)
+    cam[0] = 0.5
+    assert mem.add_camera(0.0, cam, 0.0, INC) == 0 and len(mem.pts) == 0
+
+
+def test_a_lidar_return_behind_a_camera_point_clears_it():
+    """E.g. a dark mark on the floor: the lidar sees over it to the wall behind."""
+    mem = ScanMemory(laser_x=0.0)
+    mem.on_odom(0.0, 0.0, 0.0)
+    cam = np.full(N, np.inf)
+    cam[beam(0)] = 0.4
+    mem.add_camera(0.0, cam, 0.0, INC)
+    r = np.full(N, np.inf)
+    r[beam(0)] = 0.9
+    mem.on_scan(0.1, r, 0.0, INC)
+    assert np.allclose(mem.pts, [[0.9, 0.0]])
+
+
+def test_pose_history_interpolates_and_refuses_gaps():
+    h = PoseHistory(keep=2.0)
+    assert h.at(0.0) is None
+    h.add(10.0, 0.0, 0.0, math.radians(170))
+    h.add(10.1, 0.01, 0.0, math.radians(-170))               # heading crossed +-180 deg
+    x, y, yaw = h.at(10.05)
+    assert x == pytest.approx(0.005) and abs(abs(yaw) - math.pi) < 1e-9
+    assert h.at(10.0) == pytest.approx((0.0, 0.0, math.radians(170)))
+    assert h.at(10.25) == pytest.approx((0.01, 0.0, math.radians(-170)))   # newest, 0.15 s
+    assert h.at(10.35) is None and h.at(9.7) is None
+    h.add(10.05, 9.0, 9.0, 0.0)                               # out of order: ignored
+    h.add(13.0, 1.0, 0.0, 0.0)
+    assert len(h.poses) == 1                                  # older than 2 s dropped

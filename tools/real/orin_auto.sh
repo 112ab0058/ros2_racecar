@@ -16,7 +16,10 @@
 #
 #   drive_map.launch.py  base (enable_commands, max_vx, max_run_time), lidar, EKF,
 #                        slam_toolbox, rosbag
-#   scan_memory_node     /scan + /odometry/filtered -> /scan_filled (black-wall blind spot)
+#   wall_node            C70 camera -> camera/wall_scan: black wall bottoms from ~0.3 m,
+#                        where the lidar sees them only sometimes (+ 5 JPEG/s for the bag)
+#   scan_memory_node     /scan + camera/wall_scan + /odometry/filtered -> /scan_filled
+#                        (fills the black-wall blind spot from lidar and camera memory)
 #   bc_node              policy corner on /scan_filled -> bc/cmd_vel (+ bc/decision, bc/state)
 #   web_teleop_node      phone page, https, 自動 tab
 #
@@ -29,7 +32,7 @@
 #         bc_node stops for good when anything comes within 2 cm of the car outline.
 # Stop:   let go of 自動 / Motor switch OFF / touch ~/r550_map/latest/stop or
 #         kill -TERM <script pid> (stops driving, saves the map, stops everything).
-# Result: ~/r550_map/<time>/ (bag/, map.*, launch.log, memory.log, bc.log, web.log)
+# Result: ~/r550_map/<time>/ (bag/, map.*, launch.log, camera.log, memory.log, bc.log, web.log)
 set -o pipefail
 
 DIRECTION="${1:-auto}"
@@ -45,6 +48,7 @@ source "$HOME/racecar_ws/install/setup.bash"
 
 BUSY="wro2026_base_r550/(feedback_node|base_node|web_teleop_node)|wro2026_lidar_n10p"
 BUSY="$BUSY|robot_state_publisher|foxglove_bridge|ekf_node|slam_toolbox|bc_node"
+BUSY="$BUSY|wro2026_camera_c70"
 if pgrep -f "$BUSY" > /dev/null; then
     echo "Other ROS programs are running. Stop them first:"
     pgrep -af "$BUSY" | cut -c1-100
@@ -76,6 +80,7 @@ echo "RESULT_DIR=$OUT"
 LAUNCH_PID=""
 WEB_PID=""
 MEM_PID=""
+CAM_PID=""
 BC_PID=""
 count() { pgrep -g "$1" | wc -l; }
 stop_group() {      # SIGTERM a process group, wait up to 5 s, then SIGKILL
@@ -90,6 +95,7 @@ finish() {
     [ -n "$WEB_PID" ] && echo "phone page stopped (it published zeros)"
     stop_group "$BC_PID"
     stop_group "$MEM_PID"
+    stop_group "$CAM_PID"
     if [ -n "$LAUNCH_PID" ] && [ "$(count "$LAUNCH_PID")" -gt 0 ]; then
         echo "saving the map (up to 40 s) ..."
         timeout 25 ros2 run nav2_map_server map_saver_cli -f "$OUT/map" \
@@ -122,6 +128,14 @@ if ! grep -q "COMMANDS ENABLED" "$OUT/launch.log"; then
 fi
 sleep 6
 
+setsid ros2 run wro2026_camera_c70 wall_node --ros-args -p image_rate:=5.0 \
+    > "$OUT/camera.log" 2>&1 < /dev/null &
+CAM_PID=$!
+for _ in $(seq 40); do grep -q "READ ONLY" "$OUT/camera.log" && break; sleep 0.25; done
+if ! grep -q "READ ONLY" "$OUT/camera.log" || ! kill -0 "$CAM_PID" 2>/dev/null; then
+    echo "camera wall node did not start, see $OUT/camera.log"
+    exit 1
+fi
 setsid ros2 run wro2026_lidar_n10p scan_memory_node > "$OUT/memory.log" 2>&1 < /dev/null &
 MEM_PID=$!
 setsid ros2 run wro2026_imitation bc_node --ros-args -p policy:=corner \
@@ -157,6 +171,8 @@ while [ "$SECONDS" -lt "$END" ]; do
     if [ -e "$OUT/stop" ]; then echo "stop requested"; break; fi
     if ! kill -0 "$WEB_PID" 2>/dev/null; then echo "phone page ended"; break; fi
     if ! kill -0 "$BC_PID" 2>/dev/null; then echo "bc_node ended"; break; fi
+    if ! kill -0 "$CAM_PID" 2>/dev/null; then echo "camera wall node ended"; break; fi
+    if ! kill -0 "$MEM_PID" 2>/dev/null; then echo "scan memory ended"; break; fi
     if [ "$(count "$LAUNCH_PID")" -eq 0 ]; then echo "launch ended"; break; fi
     sleep 1
 done

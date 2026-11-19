@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>wro2026_camera_c70</name>
+  <version>0.1.0</version>
+  <description>WHEELTEC C70 camera: calibration files and a READ-ONLY node that finds the black wall bottoms on the white floor (camera/wall_scan), for the lidar's blind spot.</description>
+  <maintainer email="t112ab0058@ntut.org.tw">112ab0058</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

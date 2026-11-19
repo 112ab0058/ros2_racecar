@@ -12,7 +12,7 @@ Feeds /odometry/filtered and /scan_filled (exactly what bc_node got) to the same
 CornerPolicy, so the corner events must match the run's bc.log (check ALL EVENTS).
 Prints, every 0.5 s for the first 6 s after T_PRESS and at every event, for the inner
 side (both sides while auto has not decided):
-  fit m/M     wall points in fit_window: measured / memory (scan_memory intensity 1.0)
+  fit m/M     wall points in fit_window: measured / memory (scan_memory intensity 1 lidar, 2 camera)
   wall        fitted wall line's distance from the lidar (m)
   end, next   where the wall "ends" (lidar x, m) and the next point on the line after the gap
   beyond m/M  beams counted as open beyond the end, measured / memory, with up to six
@@ -104,7 +104,7 @@ def main():
             pol.on_odom(m.pose.pose.position.x, m.pose.pose.position.y, yaw)
             continue
         rr = np.asarray(m.ranges, float)
-        mem = (np.asarray(m.intensities, float) == 1.0 if len(m.intensities) == len(rr)
+        mem = (np.asarray(m.intensities, float) >= 1.0 if len(m.intensities) == len(rr)
                else np.zeros(len(rr), bool))
         angles = m.angle_min + m.angle_increment * np.arange(len(rr))
         angles = (angles + math.pi) % (2 * math.pi) - math.pi

@@ -8,7 +8,7 @@ set -eo pipefail
 
 WS="$HOME/racecar_ws"
 STAGE="$WS/.deploy"
-PKGS=(wro2026_base_r550 wro2026_lidar_n10p wro2026_description wro2026_bringup wro2026_sim_r550 wro2026_imitation)
+PKGS=(wro2026_base_r550 wro2026_lidar_n10p wro2026_description wro2026_bringup wro2026_sim_r550 wro2026_imitation wro2026_camera_c70)
 
 for p in "${PKGS[@]}"; do
     if [ ! -d "$STAGE/src/$p" ]; then
@@ -24,7 +24,9 @@ done
 mkdir -p "$WS/tools"
 # e.g. bash ~/racecar_ws/tools/orin_check.sh, python3 ~/racecar_ws/tools/cam_calib_capture.py
 cp "$STAGE"/tools/real/orin_*.sh "$STAGE"/tools/real/analyze_*.py \
-   "$STAGE"/tools/real/cam_*.py "$STAGE"/tools/real/calibrate_*.py "$WS/tools/"
+   "$STAGE"/tools/real/cam_*.py "$STAGE"/tools/real/calibrate_*.py \
+   "$STAGE"/tools/real/lidar_*.py "$STAGE"/tools/real/replay_*.py \
+   "$STAGE"/tools/real/start_*.py "$WS/tools/"
 rm -rf "$STAGE"
 
 source /opt/ros/jazzy/setup.bash

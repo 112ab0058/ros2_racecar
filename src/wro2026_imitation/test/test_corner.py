@@ -5,14 +5,15 @@ import numpy as np
 import pytest
 from wro2026_imitation.corner import CornerPolicy, FOLLOW, FULL_LEFT, FULL_RIGHT, TURN
 from wro2026_imitation.features import LEFT, RIGHT, STRAIGHT
-from wro2026_imitation.field_sim import Car, Field, lidar
+from wro2026_imitation.field_sim import camera as camera_view, Car, Field, lidar
 from wro2026_imitation.policy import Driver, NO_ODOM, OK, STOP
 from wro2026_lidar_n10p.scan_memory import ScanMemory
 
 INC = 2.0 * math.pi / 480
 
 
-def drive_laps(direction, laps=1, island=0.80, memory=True, seed=0, policy_direction=None):
+def drive_laps(direction, laps=1, island=0.80, memory=True, seed=0, policy_direction=None,
+               partial=False, camera=False):
     """Drive the corner policy around the field; return (ok, why, laps, min clearance, policy)."""
     field = Field(1.6, island)
     centre = (0.8 + island / 2.0) / 2.0
@@ -27,7 +28,9 @@ def drive_laps(direction, laps=1, island=0.80, memory=True, seed=0, policy_direc
         if int(round(t / dt)) % 5 == 0:                       # odometry and lidar at 10 Hz
             driver.on_odom(t, car.x, car.y, car.yaw)
             mem.on_odom(car.x, car.y, car.yaw)
-            r = lidar(field, car, rng=rng)
+            if camera:
+                mem.add_camera(t, camera_view(field, car, rng=rng), 0.0, INC)
+            r = lidar(field, car, rng=rng, partial=partial)
             if memory:
                 r, _ = mem.on_scan(t, r, 0.0, INC)
             driver.on_scan(t, r, 0.0, INC)
@@ -159,3 +162,44 @@ def test_bad_direction():
     with pytest.raises(ValueError):
         CornerPolicy('left')
     assert CornerPolicy('auto').direction is None and CornerPolicy('cw').direction == 'cw'
+
+
+def run4_scan(camera):
+    """
+    Run 4 of 2026-11-13 (cw, false full right lock 0.11 m after the start), lidar frame.
+
+    Inner (right) wall y -0.20, outer (left) wall y +0.22, both straight on. The black
+    walls answered only behind-right (r 0.27-0.32, x -0.25..-0.15) and from about 0.46 m
+    ahead; in between the lidar saw nothing. camera: add what the C70 sees, the wall
+    bottoms from x 0.28 m (lidar frame) to 1.0 m from the lidar.
+    """
+    walls = [(-1.0, -0.20, 2.0, -0.20), (-1.0, 0.22, 2.0, 0.22)]
+    r = wall_scan(walls)
+    x = r * np.cos(np.arange(480) * INC)
+    seen = ((x >= -0.25) & (x <= -0.15) & (r < 0.33) & (np.sin(np.arange(480) * INC) < 0)) \
+        | (r >= 0.46)
+    if camera:
+        seen |= (x >= 0.28) & (r <= 1.0)
+    return np.where(seen, r, np.inf)
+
+
+@pytest.mark.parametrize('camera', [False, True])
+def test_run4_false_corner_and_the_camera(camera):
+    """Without the camera the 6 points behind make a short wall that 'ends' (the 11-13 fault)."""
+    policy = CornerPolicy('cw', corner_ahead=0.17)
+    policy.on_odom(0.0, 0.0, 0.0)
+    r = run4_scan(camera)
+    end = policy.inner_wall_end(r, np.arange(480) * INC)
+    label, _ = policy(r, 0.0, INC)
+    if camera:      # the walk now runs along the wall to where the beams thin out (~0.94 m)
+        assert end is None or end > policy.entry_dist
+        assert label != FULL_RIGHT and policy.state == FOLLOW and not policy.approach
+    else:
+        assert end == pytest.approx(-0.15, abs=0.02) and label == FULL_RIGHT
+
+
+@pytest.mark.parametrize('direction', ['ccw', 'cw'])
+def test_one_lap_with_the_measured_blind_edge_and_the_camera(direction):
+    ok, why, laps, clear, policy = drive_laps(direction, partial=True, camera=True)
+    assert ok, (why, laps)
+    assert clear > 0.02 and policy.corners == 4

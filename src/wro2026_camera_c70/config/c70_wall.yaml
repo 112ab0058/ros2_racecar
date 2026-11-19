@@ -1,0 +1,19 @@
+# C70 wall node parameters (node name: c70_wall). READ ONLY node (camera only).
+# Defaults in wall_node.py PARAMETERS must stay identical to this file.
+c70_wall:
+  ros__parameters:
+    device: /dev/video0
+    intrinsics: ''               # empty = config/c70_ost_1280x720.yaml of this package
+    extrinsics: ''               # empty = config/c70_extrinsics.yaml of this package
+    frame_id: laser_link         # ranges are seen from the lidar, like /scan
+    laser_x: 0.13                # m, urdf laser_link
+    bins: 480                    # as /scan
+    rate: 10.0                   # wall scans per second
+    threshold: 110               # grey level: darker = wall (2026-11-13 field photos: walls 14-89, floor below them 130-254)
+    run: 12                      # dark pixels in a row that make a wall
+    max_saturation: 60           # floor below a wall bottom must be whiter (beige wall tape 93-103, floor 9-27)
+    step: 4                      # every 4th image column
+    max_range: 1.0               # m from the lidar; the lidar is reliable beyond 0.45 m anyway
+    frame_timeout: 1.0           # s
+    image_rate: 0.0              # JPEG frames per second on camera/image/compressed (bags); 0 = none
+    jpeg_quality: 80

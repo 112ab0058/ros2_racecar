@@ -23,6 +23,7 @@ Codex 時期的專案規則在 AGENTS.md，模擬（`src/wro2026_sim`）相關�
 - `src/wro2026_sim_r550`（2026-10-20 決定，暫時）：照 R550 規格的阿克曼 Gazebo 模擬，**可以暫時部署到 Orin**（Orin 暫時裝 `ros-jazzy-ros-gz`，用完再移除）。只在模擬裡用：不得和 `base_node` 同時跑，模擬的 topic、Gazebo 的位置不得進實車控制迴路。
 - `src/wro2026_base_r550`：R550 底盤（協定、只讀回授 node、`listen`、指令端 `base_node`（`enable_commands` 預設 false）；STM32 韌體沒有指令逾時）。不得依賴 Gazebo / ros_gz / turtlebot3。
 - `src/wro2026_lidar_n10p`：N10P 光達 driver（純 Python、只讀，協定照 LSLIDAR 官方 driver）。
+- `src/wro2026_camera_c70`（2026-11-20）：C70 相機校正檔，以及只讀的牆腳 node（`camera/wall_scan`），補光達對黑牆的盲區；`scan_memory_node` 把它放進記憶。
 - `src/wro2026_description`：URDF（感測器位置、TF 樹，`base_link` = 後軸中心），不碰硬體。
 - `src/wro2026_bringup`：一次啟動的 launch。`sensors.launch.py` 只能放只讀的 node；會讓馬達轉的另開 launch，照安全規則。
 - 部署：Windows 跑 `tools/real/deploy.cmd`（git pull → tar 經 ssh 送到 Orin → `tools/real/orin_build.sh` build）。

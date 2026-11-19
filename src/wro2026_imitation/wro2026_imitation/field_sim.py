@@ -10,7 +10,10 @@ Car (R550_HARDWARE.md): base_link = rear axle, front 0.24 m, rear 0.031 m, width
 lidar 0.13 m ahead. Turning (2026-11-10 floor tests): the car never turns tighter than
 0.40 m (commanded 0.35 = full lock), commanded 0.5 m drives 0.524 m. The steering
 follows commands with a lag (steer_tau). Lidar: 480 beams, 10 Hz, black foam returns
-nothing closer than blind_range (0.4 m measured), small range noise.
+nothing closer than blind_range (0.4 m measured), small range noise. With `partial` the
+blind spot is as measured on 2026-11-13 instead: nothing below 0.29 m, then a return
+share rising to 100 % at 0.47 m, random per beam and scan (the edge that fooled run 4).
+Camera (camera()): the C70's wall bottoms, as wro2026_camera_c70 publishes them.
 """
 import math
 
@@ -19,6 +22,10 @@ import numpy as np
 FRONT, REAR, HALF_WIDTH, LASER_X = 0.24, 0.031, 0.09, 0.13
 MIN_RADIUS = 0.40          # driven radius at full lock
 RADIUS_SCALE = 1.048       # driven / commanded radius above full lock (0.5 -> 0.524)
+PARTIAL = (0.29, 0.47)     # m: black walls give no return below, always a return above
+CAMERA_X = 0.20            # lens in front of base_link (c70_extrinsics.yaml)
+CAMERA_HALF_VIEW = math.radians(45.0)   # floor seen within +-45 deg of the lens and
+CAMERA_NEAR = 0.26                      # >= 0.26 m from it (real calibration, 2026-11-20)
 
 
 def square(half):
@@ -101,13 +108,48 @@ class Car:
         self.y += vx * math.sin(self.yaw) * dt
 
 
-def lidar(field, car, n=480, blind_range=0.4, noise=0.003, rng=None):
-    """One scan (ROS order: beam 0 = ahead, counter-clockwise), blind spot applied."""
+def lidar(field, car, n=480, blind_range=0.4, noise=0.003, rng=None, partial=False):
+    """
+    One scan (ROS order: beam 0 = ahead, counter-clockwise), blind spot applied.
+
+    partial: the measured blind edge (PARTIAL, needs rng) instead of a sharp blind_range.
+    """
     lx = car.x + LASER_X * math.cos(car.yaw)
     ly = car.y + LASER_X * math.sin(car.yaw)
     a = 2.0 * math.pi * np.arange(n) / n
     r = field.raycast(lx, ly, a + car.yaw)
     if rng is not None and noise > 0:
         r = r + rng.normal(0.0, noise, n)
-    r[r < blind_range] = np.inf
+    if partial:
+        lo, hi = PARTIAL
+        r[rng.random(n) >= np.clip((r - lo) / (hi - lo), 0.0, 1.0)] = np.inf
+    else:
+        r[r < blind_range] = np.inf
     return r
+
+
+def camera(field, car, n=480, max_range=1.0, noise=0.01, bias=-0.018, rng=None, rays=181):
+    """
+    Wall bottoms the C70 sees, like camera/wall_scan: per lidar beam, range from the lidar.
+
+    Rays from the lens within CAMERA_HALF_VIEW; a wall bottom nearer to the lens than
+    CAMERA_NEAR is below the image. bias: the camera reads 1.8 cm short of the corrected
+    lidar (2026-11-19); noise along the range. Farther than max_range: dropped.
+    """
+    c, s = math.cos(car.yaw), math.sin(car.yaw)
+    cx, cy = car.x + CAMERA_X * c, car.y + CAMERA_X * s
+    b = np.linspace(-CAMERA_HALF_VIEW, CAMERA_HALF_VIEW, rays) + car.yaw
+    d = field.raycast(cx, cy, b)
+    ok = np.isfinite(d) & (d >= CAMERA_NEAR)
+    # the points in the lidar frame (lidar at LASER_X, same heading)
+    dx = cx + d[ok] * np.cos(b[ok]) - (car.x + LASER_X * c)
+    dy = cy + d[ok] * np.sin(b[ok]) - (car.y + LASER_X * s)
+    x, y = c * dx + s * dy, -s * dx + c * dy
+    r = np.hypot(x, y) + bias
+    if rng is not None and noise > 0:
+        r = r + rng.normal(0.0, noise, len(r))
+    out = np.full(n, np.inf)
+    k = np.round(np.arctan2(y, x) % (2.0 * math.pi) / (2.0 * math.pi / n)).astype(int) % n
+    keep = r <= max_range
+    np.minimum.at(out, k[keep], r[keep])
+    return out

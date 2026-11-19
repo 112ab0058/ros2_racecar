@@ -65,7 +65,7 @@ PARAMETERS = [
     ('min_turn_radius', 0.35, 'refuse to start below this commanded radius (m), as orin_map.sh; '
                               '0.35 = full steering lock, 0.40 m driven (2026-11-10)'),
     ('stop_margin', 0.04, 'stop for good when a lidar point is this close to the car (m)'),
-    ('memory_marks', False, 'true = the scan is scan_memory_node output: intensity 1.0 marks '
+    ('memory_marks', False, 'true = the scan is scan_memory_node output: intensity 1 or 2 marks '
                             'remembered points, which use memory_margin instead'),
     ('memory_margin', 0.0, 'stop margin for remembered points (m); they are up to ~1.7 cm '
                            'off, 0 = only inside the car outline itself'),
@@ -148,7 +148,7 @@ class BcNode(Node):
     def _on_scan(self, msg):
         remembered = None
         if self.memory_marks and len(msg.intensities) == len(msg.ranges):
-            remembered = [v == 1.0 for v in msg.intensities]
+            remembered = [v >= 1.0 for v in msg.intensities]
         self.driver.on_scan(time.monotonic(), msg.ranges, msg.angle_min, msg.angle_increment,
                             remembered)
         if self.driver.probs is not None:

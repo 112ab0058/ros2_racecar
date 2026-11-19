@@ -7,7 +7,7 @@ Orin: wall points around the car at one moment of an orin_auto.sh bag (lidar fra
 
 Uses the first /scan_filled at or after T_PRESS (unix time, e.g. when 自動 was pressed).
 For each side, 5 cm x-bins from -0.8 to +0.8 m with points 0.12-0.45 m to that side:
-'m' = at least one measured point, 'M' = memory only (scan_memory intensity 1.0),
+'m' = at least one measured point, 'M' = memory only (scan_memory intensity 1 or 2),
 '.' = nothing. The two '|' mark CornerPolicy's fit_window (-0.25..+0.30 m). Then the
 measured points themselves (x, y, range). READ ONLY. Used for the 2026-11-13 field report.
 """
@@ -32,7 +32,7 @@ def main():
     if msg is None:
         sys.exit('no /scan_filled after T_PRESS')
     rr = np.asarray(msg.ranges, float)
-    mem = np.asarray(msg.intensities, float) == 1.0
+    mem = np.asarray(msg.intensities, float) >= 1.0
     a = msg.angle_min + msg.angle_increment * np.arange(len(rr))
     ok = np.isfinite(rr)
     x, y = np.where(ok, rr, 0) * np.cos(a), np.where(ok, rr, 0) * np.sin(a)
