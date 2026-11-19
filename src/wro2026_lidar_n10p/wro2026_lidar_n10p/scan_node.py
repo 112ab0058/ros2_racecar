@@ -28,6 +28,8 @@ PARAMETERS = [
     ('range_min', 0.1, 'm; closer returns are dropped (N10P minimum range ~0.1 m)'),
     ('range_max', 25.0, 'm; farther returns are dropped'),
     ('angle_offset_deg', 0.0, 'added to every angle (lidar zero vs laser_link x axis)'),
+    ('range_offset_m', 0.036, 'm subtracted from every distance: this N10P reads 3.2-4.0 cm too '
+                              'far (tape vs lidar centre at 0.575 and 0.975 m, 2026-11-19)'),
     ('scan_timeout', 1.0, '/diagnostics ERROR when no scan for this long (s)'),
     ('mask_sectors_deg', '168:178,195:213,228:243',
      'hide our own car: "start:end,..." in ROS degrees (0 = front, CCW); beams inside '
@@ -48,7 +50,7 @@ class N10PScan(Node):
         self.ser = serial.Serial(self.p['port'], self.p['baud'], timeout=0.05)
         self.stream = PacketStream()
         self.scans = ScanAssembler(self.p['bins'], self.p['range_min'], self.p['range_max'],
-                                   self.p['angle_offset_deg'])
+                                   self.p['angle_offset_deg'], self.p['range_offset_m'])
         self.mask = parse_sectors(self.p['mask_sectors_deg'])
         self.pub = self.create_publisher(LaserScan, 'scan', 10)
         self.diag_pub = self.create_publisher(DiagnosticArray, 'diagnostics', 10)

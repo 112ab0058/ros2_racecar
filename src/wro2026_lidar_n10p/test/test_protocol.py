@@ -115,6 +115,21 @@ def test_scan_assembler_range_limits():
     assert not any(math.isfinite(r) for r in ranges)   # 2 m > range_max
 
 
+def test_scan_assembler_range_offset():
+    asm = ScanAssembler(bins=360, range_min=0.1, range_max=1.0, range_offset=0.036)
+    outs = [asm.add(decode_packet(p)) for p in revolution(1000) * 3]
+    ranges = [o for o in outs if o is not None][0]
+    finite = [r for r in ranges if math.isfinite(r)]
+    assert finite and all(r == pytest.approx(0.964) for r in finite)   # 1.036 m would be dropped
+
+
+def test_scan_assembler_offset_applies_before_range_min():
+    asm = ScanAssembler(bins=360, range_min=0.1, range_offset=0.036)
+    outs = [asm.add(decode_packet(p)) for p in revolution(120) * 3]
+    ranges = [o for o in outs if o is not None][0]
+    assert not any(math.isfinite(r) for r in ranges)   # 0.120 - 0.036 < range_min
+
+
 class FakeClock:
     def __init__(self):
         self.t = 0.0

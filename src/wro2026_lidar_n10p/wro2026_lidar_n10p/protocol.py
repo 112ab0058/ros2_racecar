@@ -156,13 +156,17 @@ class ScanAssembler:
     the number of beams constant, which slam_toolbox requires.
     add(packet) returns a list of ranges (inf = no return) when a revolution
     is complete, else None.
+    range_offset (m) is subtracted from every distance before the range limits:
+    the lidar reads a constant amount too far (see config/n10p.yaml).
     """
 
-    def __init__(self, bins=720, range_min=0.1, range_max=25.0, offset_deg=0.0):
+    def __init__(self, bins=720, range_min=0.1, range_max=25.0, offset_deg=0.0,
+                 range_offset=0.0):
         self.bins = bins
         self.range_min = range_min
         self.range_max = range_max
         self.offset_deg = offset_deg
+        self.range_offset = range_offset
         self.points = []
         self.last_start = None
         self.revolutions = 0
@@ -183,6 +187,7 @@ class ScanAssembler:
         ranges = [math.inf] * self.bins
         width = 2.0 * math.pi / self.bins
         for deg, rng, _ in self.points:
+            rng -= self.range_offset
             if not self.range_min <= rng <= self.range_max:
                 continue
             k = int(round(lidar_deg_to_ros_rad(deg, self.offset_deg) / width)) % self.bins
