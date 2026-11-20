@@ -162,7 +162,7 @@ setsid ros2 run wro2026_base_r550 web_teleop_node --ros-args \
     -p auto_topic:=bc/cmd_vel > "$OUT/web.log" 2>&1 < /dev/null &
 WEB_PID=$!
 for _ in $(seq 80); do grep -q "phone page" "$OUT/web.log" && break; sleep 0.25; done
-TOKEN=$(grep -o 'k=[0-9a-f]*' "$OUT/web.log" | head -n 1)
+TOKEN=$(grep -o 'k=[0-9A-Za-z]*' "$OUT/web.log" | head -n 1)
 if [ -z "$TOKEN" ]; then
     echo "phone page did not start, see $OUT/web.log"
     exit 1

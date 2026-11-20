@@ -219,3 +219,21 @@ def test_one_lap_with_the_measured_blind_edge_and_the_camera(direction):
     ok, why, laps, clear, policy = drive_laps(direction, partial=True, camera=True)
     assert ok, (why, laps)
     assert clear > 0.02 and policy.corners == 4
+
+
+def rotate(walls, deg):
+    """Walls (x0, y0, x1, y1) turned by deg about the lidar (the car yawed by -deg)."""
+    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    return [(c * x0 - s * y0, s * x0 + c * y0, c * x1 - s * y1, s * x1 + c * y1)
+            for x0, y0, x1, y1 in walls]
+
+
+@pytest.mark.parametrize('max_slope, turns', [(20.0, False), (40.0, True)])
+def test_a_car_still_yawed_after_a_turn_sees_the_corner(max_slope, turns):
+    """11-20 field run 3: 25 deg off the next wall; a 20 deg limit locked 6.5 cm late."""
+    walls = [(-1.0, -0.20, 0.10, -0.20), (0.10, -0.20, 0.10, -1.0),
+             (-1.0, 0.22, 0.70, 0.22), (0.70, 0.22, 0.70, -1.0), (-1.0, -0.62, 2.0, -0.62)]
+    policy = CornerPolicy('cw', corner_ahead=0.15, fit_max_slope_deg=max_slope)
+    policy.on_odom(0.0, 0.0, 0.0)
+    label, _ = policy(wall_scan(rotate(walls, -25.0)), 0.0, INC)
+    assert (label == FULL_RIGHT) == turns

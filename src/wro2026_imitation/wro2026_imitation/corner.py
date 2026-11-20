@@ -104,7 +104,7 @@ class CornerPolicy:
                  turn_delay=0.0, turn_deg=80.0, settle_dist=0.3, lookahead=0.3,
                  deadband_deg=4.0, fit_window=(-0.25, 0.30), max_side=0.6, gap=0.06,
                  entry_offset=0.05, entry_dist=0.6, confirm_scans=3, off_line=0.10,
-                 fit_min_span=0.10, fit_max_slope_deg=20.0, wall_dist=(0.12, 0.40)):
+                 fit_min_span=0.10, fit_max_slope_deg=40.0, wall_dist=(0.12, 0.40)):
         """
         Set the rule's distances (m) and angles (deg); see the module docstring.
 
@@ -113,7 +113,10 @@ class CornerPolicy:
         wall_dist m from the lidar (0 / None / None = no check, the 2026-11-13 rule).
         Replaying the 11-13 bags (LOGBOOK 2026-11-20): the false full locks of run 4 and of
         run 3 with the corrected lidar came from 6-7 points bunched within 3-5 cm behind
-        the car (a line 11-25 deg off, 0.05 m from the lidar); the real corners all passed.
+        the car (a line 11-25 deg off, 0.05 m from the lidar); the span and distance checks
+        reject them. The slope limit is loose (40, not 20 deg): on the 11-20 field run 3
+        the car came out of a turn still 21-25 deg off the next wall, a 20 deg limit
+        rejected that real wall and the lock came 6.5 cm late.
         """
         if direction not in ('ccw', 'cw', 'auto'):
             raise ValueError("direction must be 'ccw', 'cw' or 'auto'")
