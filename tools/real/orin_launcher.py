@@ -21,7 +21,7 @@ the CA trusts this page too; the certificate is made again when the Orin's addre
 change (home WiFi, iPhone hotspot, NetBird).
 
 The battery is read straight from the STM32 (read only, 0.6 s) only while no other
-program uses the port; a start is refused below 11.3 V.
+program uses the port; a start is refused below MIN_BATTERY (11.0 V).
 """
 import html
 import json
@@ -49,7 +49,10 @@ PORT, DRIVE_PORT = 8443, 8080
 # 112ab-jno.local: the Orin by name on any WiFi (avahi / mDNS; iPhone resolves .local),
 # so a bookmark works whatever address the hotspot gives the Orin
 DNS_NAMES = ('112ab-jno.netbird.cloud', '112ab-jno.local')
-MIN_BATTERY = 11.3
+# 11.0 V for these short runs (Ray, 2026-11-20 at the field): 120 s at 0.10 m/s took
+# 0.1-0.2 V; the STM32 cuts the motors at 10 V, the pack's own cut-off is 9 V.
+# 11.3 V stays the rule for long (soak) tests.
+MIN_BATTERY = 11.0
 # the same programs orin_auto.sh refuses to start next to
 BUSY = ('wro2026_base_r550/(feedback_node|base_node|web_teleop_node)|wro2026_lidar_n10p|'
         'robot_state_publisher|foxglove_bridge|ekf_node|slam_toolbox|bc_node|wro2026_camera_c70')
