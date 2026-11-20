@@ -34,6 +34,8 @@
 # Stop:   let go of 自動 / Motor switch OFF / touch ~/r550_map/latest/stop or
 #         kill -TERM <script pid> (stops driving, saves the map, stops everything).
 # Result: ~/r550_map/<time>/ (bag/, map.*, launch.log, camera.log, memory.log, bc.log, web.log)
+# DRIVE_TOKEN=<hex> (env) keeps the phone page's ?k= the same every run (orin_launcher.py);
+# unset = a new random one.
 set -o pipefail
 
 DIRECTION="${1:-auto}"
@@ -153,8 +155,10 @@ if ! grep -q "PUBLISHING" "$OUT/bc.log"; then
     exit 1
 fi
 
+TOKEN_ARG=()
+if [ -n "${DRIVE_TOKEN:-}" ]; then TOKEN_ARG=(-p "token:=$DRIVE_TOKEN"); fi
 setsid ros2 run wro2026_base_r550 web_teleop_node --ros-args \
-    -p speed:="$SPEED" -p max_speed:="$SPEED" -p https:=true \
+    -p speed:="$SPEED" -p max_speed:="$SPEED" -p https:=true "${TOKEN_ARG[@]}" \
     -p auto_topic:=bc/cmd_vel > "$OUT/web.log" 2>&1 < /dev/null &
 WEB_PID=$!
 for _ in $(seq 80); do grep -q "phone page" "$OUT/web.log" && break; sleep 0.25; done

@@ -26,7 +26,8 @@ mkdir -p "$WS/tools"
 cp "$STAGE"/tools/real/orin_*.sh "$STAGE"/tools/real/analyze_*.py \
    "$STAGE"/tools/real/cam_*.py "$STAGE"/tools/real/calibrate_*.py \
    "$STAGE"/tools/real/lidar_*.py "$STAGE"/tools/real/replay_*.py \
-   "$STAGE"/tools/real/start_*.py "$WS/tools/"
+   "$STAGE"/tools/real/start_*.py "$STAGE"/tools/real/orin_*.py \
+   "$STAGE"/tools/real/r550-*.service "$WS/tools/"
 rm -rf "$STAGE"
 
 source /opt/ros/jazzy/setup.bash
