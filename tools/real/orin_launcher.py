@@ -260,7 +260,7 @@ async function tick() {
     b.className = 'big' + (s.battery != null && s.battery < s.min_battery ? ' low' : '');
     document.getElementById('st').textContent = (NAMES[s.state] || s.state) +
       (s.args ? '　' + (s.args[0] == 'ccw' ? '逆時針' : '順時針') + ' ' + s.args[1] + ' 秒' : '');
-    document.getElementById('drive').innerHTML = (s.state == 'ready' || s.state == 'starting') ?
+    document.getElementById('drive').innerHTML = s.state == 'ready' ?
       '<a class="drive" href="' + s.drive_url + '">打開駕駛頁</a>' : '';
     document.getElementById('tail').textContent = s.tail.join('\\n');
     document.getElementById('last').textContent = s.last.join('\\n');
