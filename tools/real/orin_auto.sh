@@ -49,6 +49,12 @@ OUT="$HOME/r550_map/$(date +%Y%m%d_%H%M%S)_auto"
 
 source /opt/ros/jazzy/setup.bash
 source "$HOME/racecar_ws/install/setup.bash"
+# All our nodes run on this Orin and the phone talks https, not ROS: keep DDS on localhost.
+# 2026-11-20 field run 5: every topic stopped in the same second for the rest of the run
+# (nodes alive, bag and a fresh subscriber got nothing) while the phone hotspot was the
+# network; a WiFi / IPv6 address change breaks DDS bound to it. Check topics from ssh
+# with the same variable, or they look silent.
+export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
 
 BUSY="wro2026_base_r550/(feedback_node|base_node|web_teleop_node)|wro2026_lidar_n10p"
 BUSY="$BUSY|robot_state_publisher|foxglove_bridge|ekf_node|slam_toolbox|bc_node"
