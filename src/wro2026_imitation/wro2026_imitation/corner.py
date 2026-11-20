@@ -103,14 +103,28 @@ class CornerPolicy:
     def __init__(self, direction='ccw', corner_ahead=0.11, open_dist=0.5, min_open_beams=3,
                  turn_delay=0.0, turn_deg=80.0, settle_dist=0.3, lookahead=0.3,
                  deadband_deg=4.0, fit_window=(-0.25, 0.30), max_side=0.6, gap=0.06,
-                 entry_offset=0.05, entry_dist=0.6, confirm_scans=3, off_line=0.10):
-        """Set the rule's distances (m) and angles (deg); see the module docstring."""
+                 entry_offset=0.05, entry_dist=0.6, confirm_scans=3, off_line=0.10,
+                 fit_min_span=0.10, fit_max_slope_deg=20.0, wall_dist=(0.12, 0.40)):
+        """
+        Set the rule's distances (m) and angles (deg); see the module docstring.
+
+        fit_min_span, fit_max_slope_deg, wall_dist: a fitted inner wall counts only if its
+        points spread over fit_min_span m, it is within fit_max_slope_deg of parallel and
+        wall_dist m from the lidar (0 / None / None = no check, the 2026-11-13 rule).
+        Replaying the 11-13 bags (LOGBOOK 2026-11-20): the false full locks of run 4 and of
+        run 3 with the corrected lidar came from 6-7 points bunched within 3-5 cm behind
+        the car (a line 11-25 deg off, 0.05 m from the lidar); the real corners all passed.
+        """
         if direction not in ('ccw', 'cw', 'auto'):
             raise ValueError("direction must be 'ccw', 'cw' or 'auto'")
         # + = inner side is the left; 0 = auto, not decided yet
         self.sign = {'ccw': 1.0, 'cw': -1.0, 'auto': 0.0}[direction]
         self.confirm_scans = confirm_scans
         self.off_line = off_line
+        self.fit_min_span = fit_min_span
+        self.fit_max_slope = (None if fit_max_slope_deg is None
+                              else math.tan(math.radians(fit_max_slope_deg)))
+        self.wall_dist = wall_dist
         self.seen = {1.0: 0, -1.0: 0}    # auto: scans in a row on which that side ended
         self.auto_fit_hi = 0.8           # auto: fit the wall up to this far ahead (m)
         self.auto_min_span = 0.10        # auto: fitted points spread over at least (m)
@@ -157,7 +171,7 @@ class CornerPolicy:
         self.events.append((round(self.odo, 3), state))
 
     def inner_wall_end(self, r, angles, sign=None, off_line=0.0, min_span=0.0, max_slope=None,
-                       fit_hi=None):
+                       fit_hi=None, wall_dist=None):
         """
         Return x (lidar frame, m) where the inner wall ends, or None if no wall / not open.
 
@@ -172,6 +186,7 @@ class CornerPolicy:
         fit_hi (auto): use the points up to this far ahead instead (wall seen directly,
         beyond the blind range), find the line with parallel_line, not least squares, and
         only a line 0.12-0.40 m from the lidar counts (a corridor wall).
+        wall_dist (lo, hi): the same distance check for the least-squares line (follow).
         """
         sign = self.sign if sign is None else sign
         ok = np.isfinite(r)
@@ -196,6 +211,9 @@ class CornerPolicy:
             if not 0.12 <= abs(b) / math.hypot(1.0, a) <= 0.40:
                 return None
         if np.ptp(x[near]) < min_span or (max_slope is not None and abs(a) > max_slope):
+            return None
+        if wall_dist is not None and not (
+                wall_dist[0] <= abs(b) / math.hypot(1.0, a) <= wall_dist[1]):
             return None
         res = np.abs(a * x + b - y) / math.hypot(1.0, a)
         on = cand & (res < 0.03)
@@ -286,7 +304,8 @@ class CornerPolicy:
                 return self.center_label(r, angles), None
         full = FULL_LEFT if self.sign > 0 else FULL_RIGHT
         if self.state == FOLLOW:
-            end = self.inner_wall_end(r, angles)
+            end = self.inner_wall_end(r, angles, min_span=self.fit_min_span,
+                                      max_slope=self.fit_max_slope, wall_dist=self.wall_dist)
             self.approach = end is not None and end <= self.entry_dist
             if end is not None and end <= self.corner_ahead:
                 self._enter(DELAY)

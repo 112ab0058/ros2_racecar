@@ -2,10 +2,11 @@
 # Orin: AUTONOMOUS DRIVING with a phone dead-man switch. MAKES THE MOTORS TURN.
 #
 #   CONFIRM=YES bash ~/racecar_ws/tools/orin_auto.sh [direction auto] [speed 0.1] [seconds 180] \
-#       [corner_ahead 0.11]
+#       [corner_ahead 0.15]
 #
 # direction: auto (default) = at the first corner the side whose wall ends is the inside,
-# every corner turns that way; ccw = always left, cw = always right.
+# every corner turns that way; ccw = always left, cw = always right. On the field pass
+# ccw / cw: auto still picks the wrong side on the replay of 11-13 run 2 (LOGBOOK 11-20).
 #
 # Ray's corner technique (wro2026_imitation corner.py) drives, but ONLY while the phone
 # page's 自動 button is held: bc_node publishes to bc/cmd_vel, and web_teleop_node passes
@@ -39,8 +40,9 @@ DIRECTION="${1:-auto}"
 SPEED="${2:-0.1}"
 RUN_TIME="${3:-180}"
 # full lock when the inner wall ends this far ahead of the lidar (m); smaller = later.
-# Replaying Ray's 11-11 cw laps, 0.11 locked 0.11-0.15 m (driven) before he did.
-CORNER_AHEAD="${4:-0.11}"
+# 0.15: with the lidar corrected by 3.6 cm (11-19), replaying 11-13 run 3 (ccw, 0.17 then,
+# 11 corners without a stop) locks at the same places: mean +0.1 cm, -2..+3 cm per corner.
+CORNER_AHEAD="${4:-0.15}"
 OUT="$HOME/r550_map/$(date +%Y%m%d_%H%M%S)_auto"
 
 source /opt/ros/jazzy/setup.bash

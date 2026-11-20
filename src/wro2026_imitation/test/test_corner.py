@@ -168,34 +168,50 @@ def run4_scan(camera):
     """
     Run 4 of 2026-11-13 (cw, false full right lock 0.11 m after the start), lidar frame.
 
-    Inner (right) wall y -0.20, outer (left) wall y +0.22, both straight on. The black
-    walls answered only behind-right (r 0.27-0.32, x -0.25..-0.15) and from about 0.46 m
-    ahead; in between the lidar saw nothing. camera: add what the C70 sees, the wall
-    bottoms from x 0.28 m (lidar frame) to 1.0 m from the lidar.
+    Inner (right) wall y -0.20, outer (left) wall y +0.22, both straight on. Replayed from
+    the bag (2026-11-20): the black inner wall answered only with 7 points bunched behind
+    the car (x -0.25..-0.20, r 0.28-0.32) and from about 0.46 m ahead; in between the
+    lidar saw nothing. camera: add what the C70 sees, the wall bottoms from x 0.28 m
+    (lidar frame) to 1.0 m from the lidar.
     """
     walls = [(-1.0, -0.20, 2.0, -0.20), (-1.0, 0.22, 2.0, 0.22)]
     r = wall_scan(walls)
     x = r * np.cos(np.arange(480) * INC)
-    seen = ((x >= -0.25) & (x <= -0.15) & (r < 0.33) & (np.sin(np.arange(480) * INC) < 0)) \
-        | (r >= 0.46)
+    behind = (x >= -0.25) & (x <= -0.20) & (r < 0.33) & (np.sin(np.arange(480) * INC) < 0)
+    seen = behind | (r >= 0.46)
     if camera:
         seen |= (x >= 0.28) & (r <= 1.0)
     return np.where(seen, r, np.inf)
 
 
+OLD_RULE = {'fit_min_span': 0.0, 'fit_max_slope_deg': None, 'wall_dist': None}   # 2026-11-13
+
+
 @pytest.mark.parametrize('camera', [False, True])
-def test_run4_false_corner_and_the_camera(camera):
-    """Without the camera the 6 points behind make a short wall that 'ends' (the 11-13 fault)."""
-    policy = CornerPolicy('cw', corner_ahead=0.17)
+@pytest.mark.parametrize('old_rule', [True, False])
+def test_run4_false_corner(camera, old_rule):
+    """
+    The 11-13 fault: 7 points within 5 cm behind the car made a wall that 'ends' there.
+
+    Only the old rule without the camera turns: the fit checks (span >= 0.10 m) reject the
+    bunched points, and the camera's wall bottoms continue the wall ahead.
+    """
+    policy = CornerPolicy('cw', corner_ahead=0.15, **(OLD_RULE if old_rule else {}))
     policy.on_odom(0.0, 0.0, 0.0)
-    r = run4_scan(camera)
-    end = policy.inner_wall_end(r, np.arange(480) * INC)
-    label, _ = policy(r, 0.0, INC)
-    if camera:      # the walk now runs along the wall to where the beams thin out (~0.94 m)
-        assert end is None or end > policy.entry_dist
-        assert label != FULL_RIGHT and policy.state == FOLLOW and not policy.approach
+    label, _ = policy(run4_scan(camera), 0.0, INC)
+    if old_rule and not camera:
+        assert label == FULL_RIGHT
     else:
-        assert end == pytest.approx(-0.15, abs=0.02) and label == FULL_RIGHT
+        assert label != FULL_RIGHT and policy.state == FOLLOW and not policy.approach
+
+
+def test_fit_checks_keep_a_real_corner():
+    """Inner wall seen from x -0.25 to its end at 0.10 m, open beyond: still a corner."""
+    walls = [(-1.0, -0.20, 0.10, -0.20), (0.10, -0.20, 0.10, -1.0),
+             (-1.0, 0.22, 0.70, 0.22), (0.70, 0.22, 0.70, -1.0), (-1.0, -0.62, 2.0, -0.62)]
+    policy = CornerPolicy('cw', corner_ahead=0.15)
+    policy.on_odom(0.0, 0.0, 0.0)
+    assert policy(wall_scan(walls), 0.0, INC)[0] == FULL_RIGHT
 
 
 @pytest.mark.parametrize('direction', ['ccw', 'cw'])
