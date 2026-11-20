@@ -315,7 +315,13 @@ def make_handler(app):
             path, q = self._query()
             if path is None:
                 return
-            host = (self.headers.get('Host') or 'localhost').rsplit(':', 1)[0]
+            # the drive page listens on IPv4 only: link to the IPv4 address this phone
+            # reached us on (a .local name may resolve to IPv6 on the phone and fail)
+            host = self.connection.getsockname()[0]
+            if host.startswith('::ffff:'):
+                host = host[len('::ffff:'):]
+            if ':' in host:
+                host = (local_addresses() or ['127.0.0.1'])[0]
             if path == '/':
                 self._send(200, PAGE, 'text/html; charset=utf-8')
             elif path == '/status':
