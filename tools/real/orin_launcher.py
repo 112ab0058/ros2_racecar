@@ -28,6 +28,7 @@ import json
 import os
 import re
 import secrets
+import socket
 import ssl
 import subprocess
 import threading
@@ -45,7 +46,9 @@ AUTO = os.path.join(HOME, 'racecar_ws', 'tools', 'orin_auto.sh')
 MAP_DIR = os.path.join(HOME, 'r550_map')
 STM32 = '/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0002-if00'
 PORT, DRIVE_PORT = 8443, 8080
-DNS_NAMES = ('112ab-jno.netbird.cloud',)
+# 112ab-jno.local: the Orin by name on any WiFi (avahi / mDNS; iPhone resolves .local),
+# so a bookmark works whatever address the hotspot gives the Orin
+DNS_NAMES = ('112ab-jno.netbird.cloud', '112ab-jno.local')
 MIN_BATTERY = 11.3
 # the same programs orin_auto.sh refuses to start next to
 BUSY = ('wro2026_base_r550/(feedback_node|base_node|web_teleop_node)|wro2026_lidar_n10p|'
@@ -356,12 +359,27 @@ def tls_context():
     return ctx, own, addresses
 
 
+class Server(ThreadingHTTPServer):
+    """IPv4 and IPv6 (a .local name may resolve to IPv6 first); errors dropped quietly."""
+
+    address_family = socket.AF_INET6
+    daemon_threads = True
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
+
+    def handle_error(self, request, client_address):
+        pass    # e.g. a plain http request or a failed handshake: drop it
+
+
 def main():
     app = Launcher()
     ctx, own, addresses = tls_context()
-    server = ThreadingHTTPServer(('0.0.0.0', PORT), make_handler(app))
-    server.daemon_threads = True
-    server.socket = ctx.wrap_socket(server.socket, server_side=True)
+    server = Server(('::', PORT), make_handler(app))
+    # the TLS handshake runs in the request's thread, so a slow phone cannot block accept()
+    server.socket = ctx.wrap_socket(server.socket, server_side=True,
+                                    do_handshake_on_connect=False)
 
     def renew():
         nonlocal addresses

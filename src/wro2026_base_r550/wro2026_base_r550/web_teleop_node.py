@@ -56,7 +56,8 @@ PARAMETERS = [
     ('token', '', 'secret in the URL (?k=); empty = a new random one'),
     ('https', False, 'true = https only, certificate from the CA in cert_dir'),
     ('cert_dir', '~/.r550_web', 'CA and page certificate (CA key stays here, mode 600)'),
-    ('dns_names', '112ab-jno.netbird.cloud', 'comma-separated names for the certificate'),
+    ('dns_names', '112ab-jno.netbird.cloud,112ab-jno.local',
+     'comma-separated names for the certificate (.local: the Orin by name on any WiFi, mDNS)'),
     ('auto_topic', '', "Twist topic of the autonomous policy; '' = no 自動 button"),
     ('auto_timeout', 0.3, 'policy commands older than this count as stop (s)'),
 ]
