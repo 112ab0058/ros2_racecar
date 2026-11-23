@@ -141,8 +141,13 @@ class BcNode(Node):
         self.create_timer(1.0 / p['rate'], self._tick)
         mode = ('PUBLISHING %s (base_node with enable_commands moves the car)' % p['cmd_topic']
                 if self.publish_cmd else 'DRY RUN: bc/decision only, no /cmd_vel')
+        policy = p['policy']
+        if policy == 'corner':
+            policy += ' (%s, timing %s%s)' % (
+                p['direction'], p['timing'],
+                ', corner_ahead %.3f m' % p['corner_ahead'] if p['timing'] == 'ahead' else '')
         self.get_logger().warn('%s; policy %s, speed %.3f m/s, turn radius %.2f m'
-                               % (mode, p['policy'], speed, radius))
+                               % (mode, policy, speed, radius))
 
     def _on_odom(self, msg):
         q = msg.pose.pose.orientation
