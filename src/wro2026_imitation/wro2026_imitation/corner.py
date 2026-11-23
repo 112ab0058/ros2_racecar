@@ -10,11 +10,23 @@ States:
             centre line; walls found by fitting a line to each side's points); when the
             inner wall ends less than entry_dist ahead, aim entry_offset m towards the
             outer wall instead (racing line: a wide entry widens the turn-in window)
-  delay     the inner wall ends corner_ahead m in front of the lidar: drive straight
-            another turn_delay m (default 0)
+  delay     (timing 'ahead' only) the inner wall ends corner_ahead m in front of the
+            lidar: drive straight another turn_delay m (default 0)
   turn      full lock to the inner side until the heading changed by turn_deg
   settle    like follow, but corners are ignored for settle_dist m (just after a turn
             the inner side can still look open)
+
+When to go full lock (timing):
+  'predict' (default, 2026-11-23) once the inner wall's end has been seen within
+            entry_dist, every scan predicts the full-lock turn from where the car is now
+            (turn_predict.py: this side's measured radius, the steering lag, the car's
+            curvature, the outline) against the scan's points, and locks on the first
+            scan where no later lock would leave more room. Nothing to tune: on 11-20 a
+            fixed corner_ahead of 0.14 m passed ten left corners and cut the first right
+            one, because the car turns 0.293 m to the right and 0.40 m to the left.
+            If the end is not seen again for entry_dist m of driving, it was not a corner.
+  'ahead'   (until 2026-11-22) lock when the inner wall ends corner_ahead m in front of
+            the lidar
 
 Defaults corner_ahead 0.11 m, entry_offset 0.05 m: best of a 2026-11-12 sweep over 72
 field / car variations (corridor 0.39-0.43 m, driven full-lock radius 0.38-0.42 m,
@@ -50,9 +62,18 @@ import math
 import numpy as np
 
 from .features import LEFT, RIGHT, STRAIGHT
+from .turn_predict import LASER_X, TurnPredictor
 
 FULL_LEFT, FULL_RIGHT = 3, 4
 FOLLOW, DELAY, TURN, SETTLE = 'follow', 'delay', 'turn', 'settle'
+
+# Curvature (1/m, + = left) the R550 really drives for each decision, with bc_node's
+# turn_radius 0.5 m and full_turn_radius 0.35 m at 0.1 m/s: steady gyro z / speed while
+# the command was held >= 0.6 s, median over the 11-13 / 11-20 field bags
+# (tools/real/steer_lag.py --steering). The steering is not symmetric: the same small
+# turn drives 0.496 m to the left but 0.373 m to the right, full lock 0.403 / 0.292 m,
+# and "straight" drifts slightly left (7.5 m radius).
+DRIVEN = {STRAIGHT: 0.13, LEFT: 2.02, RIGHT: -2.68, FULL_LEFT: 2.48, FULL_RIGHT: -3.43}
 
 
 def _wrap(a):
@@ -104,9 +125,15 @@ class CornerPolicy:
                  turn_delay=0.0, turn_deg=80.0, settle_dist=0.3, lookahead=0.3,
                  deadband_deg=4.0, fit_window=(-0.25, 0.30), max_side=0.6, gap=0.06,
                  entry_offset=0.05, entry_dist=0.6, confirm_scans=3, off_line=0.10,
-                 fit_min_span=0.10, fit_max_slope_deg=40.0, wall_dist=(0.12, 0.40)):
+                 fit_min_span=0.10, fit_max_slope_deg=40.0, wall_dist=(0.12, 0.40),
+                 timing='predict', driven=None, speed=0.1, steer_dead=0.27, steer_rate=13.0):
         """
         Set the rule's distances (m) and angles (deg); see the module docstring.
+
+        timing 'predict' / 'ahead': see the module docstring. driven: curvature (1/m) the
+        car really drives for each label (default DRIVEN, measured), speed (m/s),
+        steer_dead (s) / steer_rate (1/m/s): the measured physics of the prediction, see
+        turn_predict.py.
 
         fit_min_span, fit_max_slope_deg, wall_dist: a fitted inner wall counts only if its
         points spread over fit_min_span m, it is within fit_max_slope_deg of parallel and
@@ -120,6 +147,18 @@ class CornerPolicy:
         """
         if direction not in ('ccw', 'cw', 'auto'):
             raise ValueError("direction must be 'ccw', 'cw' or 'auto'")
+        if timing not in ('predict', 'ahead'):
+            raise ValueError("timing must be 'predict' or 'ahead'")
+        self.driven = dict(DRIVEN if driven is None else driven)
+        self.predictor = (TurnPredictor(self.driven[FULL_LEFT], self.driven[FULL_RIGHT],
+                                        steer_dead, steer_rate, speed)
+                          if timing == 'predict' else None)
+        self.armed_odo = None        # predict: driven distance when the wall end was last seen
+        self.prediction = None       # predict: (room now, best room later, its wait) (m)
+        self.trail = []              # (driven distance, heading) of the last odometry
+        self.k_now = None            # curvature from the odometry's twist (1/m), if given
+        self.last_label = STRAIGHT   # what the car is driving on (the last decision)
+        self.sent = []               # (driven distance, label) of the recent decisions
         # + = inner side is the left; 0 = auto, not decided yet
         self.sign = {'ccw': 1.0, 'cw': -1.0, 'auto': 0.0}[direction]
         self.confirm_scans = confirm_scans
@@ -159,19 +198,43 @@ class CornerPolicy:
         """'ccw' (corners to the left), 'cw' (to the right), or None: auto, not decided yet."""
         return {1.0: 'ccw', -1.0: 'cw'}.get(self.sign)
 
-    def on_odom(self, x, y, yaw):
-        """Newest base_link pose in the odom frame (heading from the gyro)."""
+    def on_odom(self, x, y, yaw, vx=None, wz=None):
+        """
+        Take the newest odometry.
+
+        Newest base_link pose in the odom frame (heading from the gyro); vx (m/s) and wz
+        (rad/s): the odometry's twist, if there is one (the EKF's: gyro yaw rate).
+        """
         if self.pose is not None:
             self.odo += math.hypot(x - self.pose[0], y - self.pose[1])
         self.pose = (x, y, yaw)
+        self.k_now = wz / vx if vx is not None and wz is not None and vx > 0.05 else None
+        self.trail.append((self.odo, yaw))
+        while len(self.trail) > 2 and self.odo - self.trail[1][0] >= 0.02:
+            self.trail.pop(0)
 
-    def _enter(self, state):
+    def curvature(self):
+        """
+        Return the car's curvature now (1/m, + = left).
+
+        Yaw rate / speed from the odometry's twist, else the heading change over the last
+        ~2 cm driven.
+        """
+        if self.k_now is not None:
+            return self.k_now
+        if len(self.trail) < 2 or self.trail[-1][0] - self.trail[0][0] < 0.01:
+            return 0.0
+        (o0, y0), (o1, y1) = self.trail[0], self.trail[-1]
+        return _wrap(y1 - y0) / (o1 - o0)
+
+    def _enter(self, state, note=''):
         self.state = state
         self.mark_odo = self.odo
         if state == TURN:
             self.mark_yaw = self.pose[2] if self.pose else 0.0
             self.corners += 1
-        self.events.append((round(self.odo, 3), state))
+            self.armed_odo = None
+        self.events.append((round(self.odo, 3), state + note))
 
     def inner_wall_end(self, r, angles, sign=None, off_line=0.0, min_span=0.0, max_slope=None,
                        fit_hi=None, wall_dist=None):
@@ -295,8 +358,40 @@ class CornerPolicy:
             return RIGHT
         return STRAIGHT
 
+    def _predict(self, r, angles):
+        """Arm on a wall end in follow (timing 'predict'); lock when the prediction says so."""
+        if self.approach:
+            self.armed_odo = self.odo
+        elif self.armed_odo is not None and self.odo - self.armed_odo > self.entry_dist:
+            self.armed_odo = None                 # the end was not seen again: no corner
+        if self.armed_odo is None:
+            self.prediction = None
+            return
+        self.approach = True                      # keep the wide entry until the lock
+        ok = np.isfinite(r)
+        rr = np.where(ok, r, 0.0)
+        px = np.where(ok, rr * np.cos(angles) + LASER_X, np.nan)      # base_link frame
+        py = np.where(ok, rr * np.sin(angles), np.nan)
+        queued = [(self.odo - o, self.driven[lab]) for o, lab in self.sent] or None
+        lock, now, later, wait = self.predictor.ready(self.sign, px, py, self.curvature(),
+                                                      self.driven[self.last_label],
+                                                      queued=queued)
+        self.prediction = (now, later, wait)
+        if lock:
+            self._enter(TURN, ' (room %.3f m; best later %.3f m)' % (now, later))
+
     def __call__(self, ranges, angle_min, angle_increment):
         """Decide from one (filled) scan; see the module docstring."""
+        label = self._decide(ranges, angle_min, angle_increment)
+        self.last_label = label
+        if not self.sent or self.sent[-1][1] != label:
+            self.sent.append((self.odo, label))
+        # keep what can still be on its way to the steering, and the one before
+        while len(self.sent) > 1 and self.odo - self.sent[1][0] > 0.1:
+            self.sent.pop(0)
+        return label, None
+
+    def _decide(self, ranges, angle_min, angle_increment):
         r = np.asarray(ranges, dtype=float)
         angles = angle_min + angle_increment * np.arange(len(r))
         angles = (angles + math.pi) % (2.0 * math.pi) - math.pi
@@ -304,23 +399,26 @@ class CornerPolicy:
         if self.sign == 0.0:
             self._find_direction(r, angles)
             if self.sign == 0.0:
-                return self.center_label(r, angles), None
+                return self.center_label(r, angles)
         full = FULL_LEFT if self.sign > 0 else FULL_RIGHT
         if self.state == FOLLOW:
             end = self.inner_wall_end(r, angles, min_span=self.fit_min_span,
                                       max_slope=self.fit_max_slope, wall_dist=self.wall_dist)
             self.approach = end is not None and end <= self.entry_dist
-            if end is not None and end <= self.corner_ahead:
-                self._enter(DELAY)
+            if self.predictor is None:
+                if end is not None and end <= self.corner_ahead:
+                    self._enter(DELAY)
+            else:
+                self._predict(r, angles)
         if self.state == DELAY and self.odo - self.mark_odo >= self.turn_delay:
             self._enter(TURN)
         if self.state == TURN:
             turned = abs(_wrap(self.pose[2] - self.mark_yaw)) if self.pose else 0.0
             if turned < self.turn_rad:
-                return full, None
+                return full
             self._enter(SETTLE)
         if self.state == SETTLE and self.odo - self.mark_odo >= self.settle_dist:
             self._enter(FOLLOW)
         if self.state == DELAY:
-            return STRAIGHT, None
-        return self.center_label(r, angles), None
+            return STRAIGHT
+        return self.center_label(r, angles)

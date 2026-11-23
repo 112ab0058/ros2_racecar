@@ -191,11 +191,15 @@ class Driver:
         self.reason = NO_SCAN
         self.latched = False
 
-    def on_odom(self, t, x, y, yaw):
-        """Pass odometry to a policy that uses it (corner); others ignore it."""
+    def on_odom(self, t, x, y, yaw, vx=None, wz=None):
+        """
+        Pass odometry to a policy that uses it (corner); others ignore it.
+
+        vx, wz: the odometry's twist (m/s, rad/s), if known.
+        """
         self.odom_time = t
         if self.needs_odom:
-            self.decide.on_odom(x, y, yaw)
+            self.decide.on_odom(x, y, yaw, vx, wz)
 
     def on_scan(self, t, ranges, angle_min, angle_increment, remembered=None):
         """

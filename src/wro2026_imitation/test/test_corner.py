@@ -13,40 +13,49 @@ INC = 2.0 * math.pi / 480
 
 
 def drive_laps(direction, laps=1, island=0.80, memory=True, seed=0, policy_direction=None,
-               partial=False, camera=False):
-    """Drive the corner policy around the field; return (ok, why, laps, min clearance, policy)."""
+               partial=False, camera=False, car=None, **policy_kw):
+    """
+    Drive the corner policy around the field; return (ok, why, laps, min clearance, policy).
+
+    car: Car keyword arguments (default: the measured car, 0.403 m left / 0.292 m right);
+    policy_kw: CornerPolicy keyword arguments.
+    """
     field = Field(1.6, island)
     centre = (0.8 + island / 2.0) / 2.0
     car = Car(-0.35 if direction == 'ccw' else 0.35, -centre,
-              0.0 if direction == 'ccw' else math.pi)
-    policy = CornerPolicy(policy_direction or direction)
+              0.0 if direction == 'ccw' else math.pi, **(car or {}))
+    policy = CornerPolicy(policy_direction or direction, **policy_kw)
     driver = Driver(policy, 0.1, 0.5, stop_margin=0.02, full_turn_radius=0.35)
     mem = ScanMemory()
     rng = np.random.default_rng(seed)
     dt, t, vx, wz, turned, last, clear = 0.02, 0.0, 0.0, 0.0, 0.0, car.yaw, 9.0
     while t < laps * 50.0:
         if int(round(t / dt)) % 5 == 0:                       # odometry and lidar at 10 Hz
-            driver.on_odom(t, car.x, car.y, car.yaw)
+            driver.on_odom(t, car.x, car.y, car.yaw, vx, vx * car.curv)   # EKF twist
             mem.on_odom(car.x, car.y, car.yaw)
             if camera:
                 mem.add_camera(t, camera_view(field, car, rng=rng), 0.0, INC)
             r = lidar(field, car, rng=rng, partial=partial)
+            remembered = None
             if memory:
-                r, _ = mem.on_scan(t, r, 0.0, INC)
-            driver.on_scan(t, r, 0.0, INC)
+                r, remembered = mem.on_scan(t, r, 0.0, INC)
+            # as orin_auto.sh: stop_margin 0.02 for measured points, memory_margin 0 for
+            # remembered ones (memory_marks): the camera reads 1.8 cm short, so a
+            # remembered wall can sit 2-3 cm inside the real one
+            driver.on_scan(t, r, 0.0, INC, remembered)
             vx, wz, decision, reason = driver.command(t)
             if decision == STOP:
-                return False, reason, turned / (2 * math.pi), clear, policy
+                return False, reason, abs(turned) / (2 * math.pi), clear, policy
         car.step(vx, wz, dt)
-        turned += abs(car.yaw - last)
+        turned += car.yaw - last          # net heading: small corrections cancel out
         last = car.yaw
         clear = min(clear, field.clearance(car.x, car.y, car.yaw))
         if clear < 0:
-            return False, 'crash', turned / (2 * math.pi), clear, policy
-        if turned >= laps * 2 * math.pi:
-            return True, 'done', turned / (2 * math.pi), clear, policy
+            return False, 'crash', abs(turned) / (2 * math.pi), clear, policy
+        if abs(turned) >= laps * 2 * math.pi:
+            return True, 'done', abs(turned) / (2 * math.pi), clear, policy
         t += dt
-    return False, 'too slow', turned / (2 * math.pi), clear, policy
+    return False, 'too slow', abs(turned) / (2 * math.pi), clear, policy
 
 
 @pytest.mark.parametrize('direction', ['ccw', 'cw'])
@@ -196,7 +205,8 @@ def test_run4_false_corner(camera, old_rule):
     Only the old rule without the camera turns: the fit checks (span >= 0.10 m) reject the
     bunched points, and the camera's wall bottoms continue the wall ahead.
     """
-    policy = CornerPolicy('cw', corner_ahead=0.15, **(OLD_RULE if old_rule else {}))
+    policy = CornerPolicy('cw', timing='ahead', corner_ahead=0.15,
+                          **(OLD_RULE if old_rule else {}))
     policy.on_odom(0.0, 0.0, 0.0)
     label, _ = policy(run4_scan(camera), 0.0, INC)
     if old_rule and not camera:
@@ -209,7 +219,7 @@ def test_fit_checks_keep_a_real_corner():
     """Inner wall seen from x -0.25 to its end at 0.10 m, open beyond: still a corner."""
     walls = [(-1.0, -0.20, 0.10, -0.20), (0.10, -0.20, 0.10, -1.0),
              (-1.0, 0.22, 0.70, 0.22), (0.70, 0.22, 0.70, -1.0), (-1.0, -0.62, 2.0, -0.62)]
-    policy = CornerPolicy('cw', corner_ahead=0.15)
+    policy = CornerPolicy('cw', timing='ahead', corner_ahead=0.15)
     policy.on_odom(0.0, 0.0, 0.0)
     assert policy(wall_scan(walls), 0.0, INC)[0] == FULL_RIGHT
 
@@ -218,7 +228,8 @@ def test_fit_checks_keep_a_real_corner():
 def test_one_lap_with_the_measured_blind_edge_and_the_camera(direction):
     ok, why, laps, clear, policy = drive_laps(direction, partial=True, camera=True)
     assert ok, (why, laps)
-    assert clear > 0.02 and policy.corners == 4
+    # 5: the next lap's first corner can lock just before the net heading reaches 360 deg
+    assert clear > 0.02 and policy.corners in (4, 5)
 
 
 def rotate(walls, deg):
@@ -233,7 +244,31 @@ def test_a_car_still_yawed_after_a_turn_sees_the_corner(max_slope, turns):
     """11-20 field run 3: 25 deg off the next wall; a 20 deg limit locked 6.5 cm late."""
     walls = [(-1.0, -0.20, 0.10, -0.20), (0.10, -0.20, 0.10, -1.0),
              (-1.0, 0.22, 0.70, 0.22), (0.70, 0.22, 0.70, -1.0), (-1.0, -0.62, 2.0, -0.62)]
-    policy = CornerPolicy('cw', corner_ahead=0.15, fit_max_slope_deg=max_slope)
+    policy = CornerPolicy('cw', timing='ahead', corner_ahead=0.15,
+                          fit_max_slope_deg=max_slope)
     policy.on_odom(0.0, 0.0, 0.0)
     label, _ = policy(wall_scan(rotate(walls, -25.0)), 0.0, INC)
     assert (label == FULL_RIGHT) == turns
+
+
+@pytest.mark.parametrize('ahead', [0.10, 0.04])
+def test_one_corner_ahead_cannot_serve_both_ways(ahead):
+    """
+    One fixed corner_ahead cannot pass both ways on the asymmetric car.
+
+    The car turns 0.403 m to the left and 0.292 m to the right. Sweep in this field
+    (2026-11-23, corner_ahead -0.04 to 0.20): a lap ccw passes with 0.08-0.12, cw with
+    0.00-0.06; no value passes both. On the 2026-11-20 field 0.14 passed ten left corners
+    and cut the first right one (the field's numbers differ by a few cm: wall ends are
+    seen differently there). timing 'predict' passes both (next test).
+    """
+    passed = [drive_laps(d, timing='ahead', corner_ahead=ahead)[0] for d in ('ccw', 'cw')]
+    assert passed == ([True, False] if ahead > 0.07 else [False, True])
+
+
+@pytest.mark.parametrize('direction', ['ccw', 'cw'])
+def test_predicted_turn_both_ways_on_the_asymmetric_car(direction):
+    """Timing 'predict' (the default) passes both ways: each side has its own radius."""
+    ok, why, laps, clear, policy = drive_laps(direction, laps=2)
+    assert ok, (why, laps)
+    assert clear > 0.02 and policy.corners == 8

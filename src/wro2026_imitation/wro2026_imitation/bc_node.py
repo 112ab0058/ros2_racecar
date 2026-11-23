@@ -75,7 +75,11 @@ PARAMETERS = [
     ('side_margin', 0.05, 'center: steer when one side is this much closer (m)'),
     ('direction', 'ccw', "corner: 'ccw' turns left at corners, 'cw' right, 'auto' = the "
                          'side whose wall ends first at the first corner'),
-    ('corner_ahead', 0.11, 'corner: full lock when the inner wall ends this far ahead (m)'),
+    ('timing', 'ahead', "corner: when to go full lock: 'ahead' = corner_ahead (the field "
+                        "runs until 2026-11-20), 'predict' = predicted turn (turn_predict.py; "
+                        'replayed and simulated 2026-11-23, not driven yet)'),
+    ('corner_ahead', 0.11, "corner, timing 'ahead': full lock when the inner wall ends this "
+                           'far ahead (m)'),
     ('entry_offset', 0.05, 'corner: before a corner aim this far towards the outer wall (m)'),
     ('turn_deg', 80.0, 'corner: full lock until the heading changed this much (deg)'),
     ('full_turn_radius', 0.35, 'corner: radius of full lock (m), >= min_turn_radius'),
@@ -104,9 +108,10 @@ class BcNode(Node):
             decide = center_policy(p['front_dist'], p['side_margin'])
             speed, radius = speed or 0.1, radius or 0.5
         elif p['policy'] == 'corner':
-            decide = CornerPolicy(p['direction'], corner_ahead=p['corner_ahead'],
-                                  turn_deg=p['turn_deg'], entry_offset=p['entry_offset'])
             speed, radius = speed or 0.1, radius or 0.5
+            decide = CornerPolicy(p['direction'], corner_ahead=p['corner_ahead'],
+                                  turn_deg=p['turn_deg'], entry_offset=p['entry_offset'],
+                                  timing=p['timing'], speed=speed)
         else:
             raise ValueError("policy must be 'model', 'center' or 'corner', not %r"
                              % p['policy'])
@@ -143,7 +148,8 @@ class BcNode(Node):
         q = msg.pose.pose.orientation
         yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
         self.driver.on_odom(time.monotonic(), msg.pose.pose.position.x,
-                            msg.pose.pose.position.y, yaw)
+                            msg.pose.pose.position.y, yaw, msg.twist.twist.linear.x,
+                            msg.twist.twist.angular.z)
 
     def _on_scan(self, msg):
         remembered = None
