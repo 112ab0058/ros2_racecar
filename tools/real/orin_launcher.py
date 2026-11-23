@@ -8,12 +8,18 @@ Started at boot by tools/real/r550-launcher.service (systemd, see the README in 
 file); by hand: python3 ~/racecar_ws/tools/orin_launcher.py (ROS sourced).
 
 The page shows the battery, the state of the run and the last run's summary. Its
-buttons start `orin_auto.sh <ccw|cw> 0.1 <seconds> <corner_ahead> <ahead|predict>`
-(timing: the 設定 menu, default ahead), the stack tested in
+buttons start `orin_auto.sh <auto|ccw|cw> 0.1 <seconds> <corner_ahead> <ahead|predict>`,
+the stack tested in
 the air on 2026-11-20, and stop it. Pressing a start button next to the car IS the
 confirmation orin_auto.sh asks for (CONFIRM=YES). The car still moves only while the
 drive page's 自動 button is held, and every limit of orin_auto.sh stays (0.10 m/s,
 cmd_timeout 0.3 s, run time, the too-close latch). Speed is fixed at 0.10 m/s here.
+
+Two switches pick the modes (2026-11-24, Ray: every new mode must switch back to the tested
+one with one tap): 方向 自動判斷 (one start button, direction auto) / 手動選 (逆時針 and
+順時針 buttons), and 打滿時機 預測式 (timing predict) / 固定距離 (corner_ahead). The phone
+remembers the last choice (localStorage); the first default is the tested pair, 手動選 +
+固定距離.
 
 Both tokens are fixed (~/.r550_web/launcher_token, drive_token, made once), so the
 bookmarks keep working; the drive page link uses the host the launcher was opened with.
@@ -57,6 +63,8 @@ MIN_BATTERY = 11.0
 # the same programs orin_auto.sh refuses to start next to
 BUSY = ('wro2026_base_r550/(feedback_node|base_node|web_teleop_node)|wro2026_lidar_n10p|'
         'robot_state_publisher|foxglove_bridge|ekf_node|slam_toolbox|bc_node|wro2026_camera_c70')
+DIRECTION_NAMES = {'auto': '自動判斷方向', 'ccw': '逆時針', 'cw': '順時針'}
+TIMING_NAMES = {'predict': '預測式打滿', 'ahead': '固定距離打滿'}
 
 
 def read_token(name):
@@ -158,8 +166,20 @@ def last_run_summary():
         except OSError:
             return ''
     bc, web = read('bc.log'), read('web.log')
+    # 'turn at' (timing ahead) or 'turn (room ...) at' (timing predict)
+    turns = len(re.findall(r'corner policy: turn\b', bc))
     lines = ['%s' % dirs[-1],
-             '按住「自動」%d 次，轉彎 %d 次' % (web.count('phone: 自動'), bc.count(' turn at '))]
+             '按住「自動」%d 次，轉彎 %d 次' % (web.count('phone: 自動'), turns)]
+    mode = re.search(r'policy corner \((auto|ccw|cw), timing (\w+)', bc)
+    if mode:
+        lines.append('模式：%s，%s' % (DIRECTION_NAMES[mode.group(1)],
+                                     TIMING_NAMES.get(mode.group(2), mode.group(2))))
+    picked = re.search(r'corner policy: direction (ccw|cw) at ([\d.]+) m', bc)
+    if picked:
+        lines.append('自動判斷方向：%s（開出 %s m 時決定）'
+                     % (DIRECTION_NAMES[picked.group(1)], picked.group(2)))
+    elif mode and mode.group(1) == 'auto':
+        lines.append('自動判斷方向：還沒決定')
     states = re.findall(r'state: (\w+)(?: \(([^)]*)\))?', bc)
     if states:
         name, why = states[-1]
@@ -231,17 +251,27 @@ button:disabled{background:#bbb}.low{color:#d1242f}a.drive{display:block;text-al
 font-size:20px;font-weight:600;background:#1a7f37;color:#fff;padding:16px;border-radius:10px;
 text-decoration:none}pre{white-space:pre-wrap;font-size:12px;color:#555;margin:0}
 label{display:block;margin:6px 0}input{font-size:16px;width:90px}
+.mode{margin:4px 0 8px}.seg{display:flex;gap:6px}.seg button{flex:1;font-size:16px;
+padding:11px 6px;margin:4px 0;background:#e6e4df;color:#111}.seg button.on{background:#111;
+color:#fff}.hint{font-size:13px;color:#8a5a00;margin:2px 0 4px}[hidden]{display:none}
 </style></head><body><h1>R550 啟動頁</h1>
 <div class="card"><div>電池</div><div id="bat" class="big">讀取中…</div></div>
 <div class="card"><div>狀態</div><div id="st" class="big">…</div><div id="drive"></div>
 <pre id="tail"></pre></div>
 <div class="card" id="startcard">
-<button class="go" onclick="go('ccw')">逆時針（左轉）開始</button>
-<button class="go" onclick="go('cw')">順時針（右轉）開始</button>
+<div class="mode"><div>方向</div><div class="seg">
+<button id="dir_auto" onclick="setMode('dir', 'auto')">自動判斷</button>
+<button id="dir_hand" onclick="setMode('dir', 'hand')">手動選</button></div>
+<div class="hint" id="dir_hint" hidden>自動判斷還沒在場地驗證過；選錯就按停止，切回「手動選」</div></div>
+<div class="mode"><div>打滿時機</div><div class="seg">
+<button id="timing_predict" onclick="setMode('timing', 'predict')">預測式</button>
+<button id="timing_ahead" onclick="setMode('timing', 'ahead')">固定距離</button></div>
+<div class="hint" id="timing_hint" hidden>預測式還沒在地上跑過；不對就按停止，切回「固定距離」</div></div>
+<button class="go" id="go_auto" onclick="go('auto')">開始（自動判斷方向）</button>
+<button class="go" id="go_ccw" onclick="go('ccw')">逆時針（左轉）開始</button>
+<button class="go" id="go_cw" onclick="go('cw')">順時針（右轉）開始</button>
 <details><summary>設定</summary>
 <label>時間（秒，10–600）<input id="secs" type="number" value="120"></label>
-<label>打滿時機<select id="timing"><option value="ahead">固定距離（corner_ahead）</option>
-<option value="predict">預測式（還沒在地上跑過）</option></select></label>
 <label>corner_ahead（m，固定距離才用）<input id="ahead" type="number" step="0.01" value="0.15"></label>
 </details></div>
 <div class="card"><button class="stop" onclick="stopRun()">停止</button>
@@ -262,8 +292,8 @@ async function tick() {
     b.textContent = s.battery == null ? '讀不到（程式在跑時不讀）' : s.battery.toFixed(2) + ' V';
     b.className = 'big' + (s.battery != null && s.battery < s.min_battery ? ' low' : '');
     document.getElementById('st').textContent = (NAMES[s.state] || s.state) +
-      (s.args ? '　' + (s.args[0] == 'ccw' ? '逆時針' : '順時針') + ' ' + s.args[1] + ' 秒' +
-       (s.args[3] == 'predict' ? '　預測式' : '') : '');
+      (s.args ? '　' + DIR_NAMES[s.args[0]] + ' ' + s.args[1] + ' 秒　' +
+       (s.args[3] == 'predict' ? '預測式' : '固定距離 ' + s.args[2] + ' m') : '');
     document.getElementById('drive').innerHTML = s.state == 'ready' ?
       '<a class="drive" href="' + s.drive_url + '">打開駕駛頁</a>' : '';
     document.getElementById('tail').textContent = s.tail.join('\\n');
@@ -272,10 +302,34 @@ async function tick() {
     document.querySelectorAll('.go').forEach(x => x.disabled = running);
   } catch (e) { document.getElementById('st').textContent = '連不到 Orin'; }
 }
+// mode switches: the phone remembers them; first default = the tested pair
+const DIR_NAMES = {auto: '自動判斷方向', ccw: '逆時針', cw: '順時針'};
+const mode = {dir: 'hand', timing: 'ahead'};
+function load(key, ok) {
+  try { const v = localStorage.getItem('r550_' + key); if (ok.includes(v)) mode[key] = v; }
+  catch (e) {}
+}
+function setMode(key, value) {
+  mode[key] = value;
+  try { localStorage.setItem('r550_' + key, value); } catch (e) {}
+  show();
+}
+function show() {
+  for (const v of ['auto', 'hand']) document.getElementById('dir_' + v).className =
+    mode.dir == v ? 'on' : '';
+  for (const v of ['predict', 'ahead']) document.getElementById('timing_' + v).className =
+    mode.timing == v ? 'on' : '';
+  document.getElementById('dir_hint').hidden = mode.dir != 'auto';
+  document.getElementById('timing_hint').hidden = mode.timing != 'predict';
+  document.getElementById('go_auto').hidden = mode.dir != 'auto';
+  document.getElementById('go_ccw').hidden = mode.dir == 'auto';
+  document.getElementById('go_cw').hidden = mode.dir == 'auto';
+}
+load('dir', ['auto', 'hand']); load('timing', ['predict', 'ahead']); show();
 async function go(dir) {
   const secs = document.getElementById('secs').value, ahead = document.getElementById('ahead').value;
-  const timing = document.getElementById('timing').value;
-  if (!confirm((dir == 'ccw' ? '逆時針' : '順時針') + ' ' + secs + ' 秒，0.10 m/s，' +
+  const timing = mode.timing;
+  if (!confirm(DIR_NAMES[dir] + ' ' + secs + ' 秒，0.10 m/s，' +
       (timing == 'predict' ? '預測式打滿' : '固定距離打滿 ' + ahead + ' m') + '。\\n' +
       '有人在 Motor 開關旁、周圍淨空？\\n車子只在按住「自動」時會動。')) return;
   const r = await api('/start?dir=' + dir + '&secs=' + secs + '&ahead=' + ahead +
@@ -348,9 +402,9 @@ def make_handler(app):
                     timing = q.get('timing', 'ahead')
                 except (KeyError, ValueError):
                     return self._json({'error': '參數不對'}, 400)
-                if direction not in ('ccw', 'cw') or not 10 <= seconds <= 600 \
-                        or not -0.10 <= ahead <= 0.25 or timing not in ('ahead', 'predict'):
-                    return self._json({'error': '方向要 ccw/cw，時間 10–600 秒，'
+                if direction not in DIRECTION_NAMES or not 10 <= seconds <= 600 \
+                        or not -0.10 <= ahead <= 0.25 or timing not in TIMING_NAMES:
+                    return self._json({'error': '方向要 auto/ccw/cw，時間 10–600 秒，'
                                        'corner_ahead -0.10–0.25，打滿時機 ahead/predict'}, 400)
                 self._json({'error': app.start(direction, seconds, ahead, timing)})
             elif path == '/stop':
