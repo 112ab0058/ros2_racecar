@@ -6,7 +6,8 @@ Orin: on a recorded orin_auto.sh run, compare where the car went to full lock (t
 corner_ahead of that day) with where the turn prediction (turn_predict.py) would have.
 
     source /opt/ros/jazzy/setup.bash; source ~/racecar_ws/install/setup.bash
-    python3 ~/racecar_ws/tools/replay_predict.py BAG_DIR DIRECTION CORNER_AHEAD [SLOPE_DEG] [--why]
+    python3 ~/racecar_ws/tools/replay_predict.py BAG_DIR DIRECTION CORNER_AHEAD [SLOPE_DEG] \
+        [--why] [--no-camera] [--rebuild] [--cam-max=M]
 
 DIRECTION / CORNER_AHEAD: the orin_auto.sh arguments of that run (ccw|cw, m); SLOPE_DEG:
 CornerPolicy fit_max_slope_deg of that day's code (20 before commit a3e33ba, 2026-11-20
@@ -14,8 +15,12 @@ CornerPolicy fit_max_slope_deg of that day's code (20 before commit a3e33ba, 202
 
 Feeds /odometry/filtered and /scan_filled (what bc_node got) to CornerPolicy(timing
 'ahead') with that day's settings, so its lock events must match the run's bc.log (they
-are printed next to each other). On every scan from the moment the inner wall's end was
-seen until the real lock, it also asks TurnPredictor: lock now? For each corner it prints
+are printed next to each other). --rebuild builds /scan_filled again from /scan and
+camera/wall_scan with ScanMemory as scan_memory_node does (bags with the camera, whose
+/scan already has the range offset); --cam-max=M (implies --rebuild) first drops camera
+wall points farther than M from the lidar, as wall_node max_range would.
+On every scan from the moment the inner wall's end was seen until the real lock, it also
+asks TurnPredictor: lock now? For each corner it prints
   real lock     driven distance (m) and where the inner wall end was (lidar x, m)
   predicted     the first scan on which the prediction said "lock", if that came before
                 the real lock: how much earlier (cm)
@@ -35,6 +40,7 @@ from rosbag2_py import ConverterOptions, SequentialReader, StorageOptions
 from rosidl_runtime_py.utilities import get_message
 from wro2026_imitation.corner import CornerPolicy, DELAY, FOLLOW, TURN
 from wro2026_imitation.turn_predict import FRONT, HALF_WIDTH, LASER_X, REAR, TurnPredictor
+from wro2026_lidar_n10p.scan_memory import PoseHistory, ScanMemory
 
 
 def point_gaps(pred, sign, px, py, k0, k_cmd, queued):
@@ -52,7 +58,10 @@ def point_gaps(pred, sign, px, py, k0, k_cmd, queued):
 def main():
     why = '--why' in sys.argv
     no_camera = '--no-camera' in sys.argv
-    args = [a for a in sys.argv[1:] if a not in ('--why', '--no-camera')]
+    cam_max = [float(a.split('=', 1)[1]) for a in sys.argv[1:] if a.startswith('--cam-max=')]
+    cam_max = cam_max[0] if cam_max else None
+    rebuild = '--rebuild' in sys.argv or cam_max is not None
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
     bag, direction, ahead = args[0], args[1], float(args[2])
     slope = float(args[3]) if len(args) > 3 else 40.0
     uri = bag.rstrip('/') + ('' if bag.rstrip('/').endswith('bag') else '/bag')
@@ -62,18 +71,41 @@ def main():
     pol = CornerPolicy(direction, timing='ahead', corner_ahead=ahead, fit_max_slope_deg=slope)
     pred = TurnPredictor()
     armed, first, n_events = None, None, 0
+    memory, history, frames = ScanMemory(), PoseHistory(), 0
+    wanted = (('/odometry/filtered', '/scan', '/camera/wall_scan') if rebuild
+              else ('/odometry/filtered', '/scan_filled'))
     while reader.has_next():
         topic, raw, t = reader.read_next()
-        if topic not in ('/odometry/filtered', '/scan_filled'):
+        if topic not in wanted:
             continue
+        t *= 1e-9
         m = deserialize_message(raw, get_message(types[topic]))
         if topic == '/odometry/filtered':
             q = m.pose.pose.orientation
             yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
-            pol.on_odom(m.pose.pose.position.x, m.pose.pose.position.y, yaw,
-                        m.twist.twist.linear.x, m.twist.twist.angular.z)
+            x, y = m.pose.pose.position.x, m.pose.pose.position.y
+            pol.on_odom(x, y, yaw, m.twist.twist.linear.x, m.twist.twist.angular.z)
+            memory.on_odom(x, y, yaw)
+            history.add(m.header.stamp.sec + 1e-9 * m.header.stamp.nanosec, x, y, yaw)
             continue
-        r = np.asarray(m.ranges, float)
+        if topic == '/camera/wall_scan':
+            pose = history.at(m.header.stamp.sec + 1e-9 * m.header.stamp.nanosec)
+            if pose is not None:
+                cam = np.asarray(m.ranges, float)
+                if cam_max is not None:
+                    cam[cam > cam_max] = np.inf
+                memory.add_camera(t, cam, m.angle_min, m.angle_increment, pose)
+                frames += 1
+            continue
+        if rebuild:                       # /scan: what scan_memory_node would publish
+            scan = np.asarray(m.ranges, float)
+            scan[scan < m.range_min] = np.inf
+            r, filled = memory.on_scan(t, scan, m.angle_min, m.angle_increment)
+            kind = np.where(memory.filled_by_camera, 2.0, np.where(filled, 1.0, 0.0))
+        else:
+            r = np.asarray(m.ranges, float)
+            kind = (np.asarray(m.intensities, float) if len(m.intensities) == len(r)
+                    else np.zeros(len(r)))
         angles = m.angle_min + m.angle_increment * np.arange(len(r))
         angles = (angles + math.pi) % (2 * math.pi) - math.pi
         before = pol.state
@@ -93,8 +125,8 @@ def main():
         if armed is None:
             continue
         ok = np.isfinite(r)
-        if no_camera and len(m.intensities) == len(r):     # drop camera memory (intensity 2)
-            ok &= np.asarray(m.intensities, float) < 1.5
+        if no_camera:                                     # drop camera memory (intensity 2)
+            ok &= kind < 1.5
         rr = np.where(ok, r, 0.0)
         px = np.where(ok, rr * np.cos(angles) + LASER_X, np.nan)
         py = np.where(ok, rr * np.sin(angles), np.nan)
@@ -115,13 +147,14 @@ def main():
                      ' -> prediction says LOCK NOW' if lock else ' -> prediction says WAIT'))
             if why:                                       # the points closest to that turn
                 gap = point_gaps(pred, pol.sign, px, py, k0, k_cmd, queued)
-                kind = (np.asarray(m.intensities, float) if len(m.intensities) == len(r)
-                        else np.zeros(len(r)))
                 for i in np.argsort(gap)[:6]:
                     print('      point base_link (%+.3f, %+.3f) gap %+.3f %s' % (
                         px[i], py[i], gap[i], ('measured', 'lidar memory', 'camera memory')[
                             int(min(max(kind[i], 0), 2))]))
             armed, first = None, None
+    if rebuild:
+        print('memory rebuilt from /scan, camera frames used: %d%s' % (
+            frames, ', camera points beyond %.2f m dropped' % cam_max if cam_max else ''))
     print('ALL EVENTS', pol.events)
 
 
