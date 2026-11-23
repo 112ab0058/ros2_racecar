@@ -45,7 +45,8 @@ PARAMETERS = [
     ('max_saturation', 60, 'HSV saturation 0-255: the floor below a wall bottom must be '
                            'whiter than this (beige tape on the walls: 93-103, floor: 9-27)'),
     ('step', 4, 'use every step-th image column'),
-    ('max_range', 1.0, 'm from the lidar; farther wall points are dropped'),
+    ('max_range', 0.5, 'm from the lidar; farther wall points are dropped (the lidar sees '
+                       'there; the camera error grows with the distance squared)'),
     ('frame_timeout', 1.0, '/diagnostics ERROR when no camera frame for this long (s)'),
     ('image_rate', 0.0, 'frames per second also published as JPEG on camera/image/compressed '
                         '(for bags); 0 = none'),
