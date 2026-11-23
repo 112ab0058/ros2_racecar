@@ -31,6 +31,11 @@ Publishes:
                                            and why (too close: where), nearest point
   bc/probs     std_msgs/Float32MultiArray  network output for each scan (policy model)
   cmd_vel      geometry_msgs/Twist         only with publish_cmd true (topic cmd_topic)
+Subscribes (besides scan and odometry):
+  bc/reset     std_msgs/Empty              the phone page's 重置 (web_teleop_node): unlatch a
+                                           too_close stop if the newest scan is clear
+                                           (policy.Driver.reset); corner then starts again
+                                           in follow
 """
 import collections
 import math
@@ -46,7 +51,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.signals import SignalHandlerOptions
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Float32MultiArray, Int8, String
+from std_msgs.msg import Empty, Float32MultiArray, Int8, String
 
 from .corner import CornerPolicy, FULL_LEFT, FULL_RIGHT
 from .features import LABELS
@@ -64,7 +69,8 @@ PARAMETERS = [
     ('max_speed', 0.15, 'refuse to start above this speed (m/s)'),
     ('min_turn_radius', 0.35, 'refuse to start below this commanded radius (m), as orin_map.sh; '
                               '0.35 = full steering lock, 0.40 m driven (2026-11-10)'),
-    ('stop_margin', 0.04, 'stop for good when a lidar point is this close to the car (m)'),
+    ('stop_margin', 0.04, 'stop (latched until the phone 重置 finds a clear scan) when a '
+                          'lidar point is this close to the car (m)'),
     ('memory_marks', False, 'true = the scan is scan_memory_node output: intensity 1 or 2 marks '
                             'remembered points, which use memory_margin instead'),
     ('memory_margin', 0.0, 'stop margin for remembered points (m); they are up to ~1.7 cm '
@@ -138,6 +144,7 @@ class BcNode(Node):
         self.create_subscription(LaserScan, 'scan', self._on_scan, qos_profile_sensor_data)
         if self.driver.needs_odom:
             self.create_subscription(Odometry, p['odom_topic'], self._on_odom, 20)
+        self.create_subscription(Empty, 'bc/reset', self._on_reset, 10)
         self.create_timer(1.0 / p['rate'], self._tick)
         mode = ('PUBLISHING %s (base_node with enable_commands moves the car)' % p['cmd_topic']
                 if self.publish_cmd else 'DRY RUN: bc/decision only, no /cmd_vel')
@@ -164,6 +171,12 @@ class BcNode(Node):
                             remembered)
         if self.driver.probs is not None:
             self.probs_pub.publish(Float32MultiArray(data=[float(v) for v in self.driver.probs]))
+
+    def _on_reset(self, msg):
+        done, why = self.driver.reset(time.monotonic())
+        if done and hasattr(self.policy, 'reset'):
+            self.policy.reset()
+        self.get_logger().warn('reset from the phone: %s' % why)
 
     def _tick(self):
         vx, wz, decision, reason = self.driver.command(time.monotonic())

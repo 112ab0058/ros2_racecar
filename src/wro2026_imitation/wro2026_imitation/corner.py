@@ -227,6 +227,25 @@ class CornerPolicy:
         (o0, y0), (o1, y1) = self.trail[0], self.trail[-1]
         return _wrap(y1 - y0) / (o1 - o0)
 
+    def reset(self):
+        """
+        Start again in follow after the phone's 重置 unlatched a too_close stop.
+
+        Keeps the direction (also auto's, once decided) and the corner count. A corner
+        stopped half way is not finished: drive it by hand first, the rule only sees
+        corners ahead. The last decision counts as straight (the steering was moved by
+        hand or stopped).
+        """
+        self.state = FOLLOW
+        self.mark_odo = self.odo
+        self.armed_odo = None
+        self.prediction = None
+        self.approach = False
+        self.last_label = STRAIGHT
+        self.sent = []
+        self.seen = {1.0: 0, -1.0: 0}
+        self.events.append((round(self.odo, 3), 'reset'))
+
     def _enter(self, state, note=''):
         self.state = state
         self.mark_odo = self.odo

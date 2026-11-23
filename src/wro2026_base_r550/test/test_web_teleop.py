@@ -135,3 +135,29 @@ def test_speed_and_joystick_over_http(server):
     with pytest.raises(urllib.error.HTTPError) as e:
         request(base + '/speed?d=up', post=True)
     assert e.value.code == 403 and teleop.speed == pytest.approx(0.1)
+
+
+def test_reset_reaches_the_policy_only_with_auto():
+    """重置 calls the node's reset only when the 自動 button exists; it never drives."""
+    calls = []
+    for auto in (False, True):
+        teleop = WebTeleop(auto=auto)
+        srv = make_server(teleop, 'abc123', 0, lambda: 10.0, reset=lambda: calls.append(1))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = 'http://127.0.0.1:%d' % srv.server_address[1]
+        try:
+            if auto:
+                s = json.loads(request(base + '/reset?k=abc123', post=True)[1])
+                assert (s['action'], s['vx'], s['wz']) == ('stop', 0.0, 0.0)
+                assert 'reset-btn' in request(base + '/?k=abc123')[1]
+            else:
+                with pytest.raises(urllib.error.HTTPError) as e:
+                    request(base + '/reset?k=abc123', post=True)
+                assert e.value.code == 404
+            with pytest.raises(urllib.error.HTTPError) as e:
+                request(base + '/reset', post=True)              # no token
+            assert e.value.code == 403
+        finally:
+            srv.shutdown()
+            srv.server_close()
+    assert calls == [1]

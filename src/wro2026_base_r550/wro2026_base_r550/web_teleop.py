@@ -19,6 +19,9 @@ through ROS and base_node, so its limits and timeouts apply and the bag gets
              it stops. The policy never reaches /cmd_vel by itself: this is its
              dead-man switch. Its commands older than auto_timeout count as stop, and
              they are clamped to 0..max_speed and a radius of at least 0.35 m.
+             重置 (shown while the policy says 鎖住): asks the policy to unlatch its
+             too-close stop; bc_node does it only if the newest scan is clear, so first
+             drive away from the wall with the keys. It never drives by itself.
 Not offered: the app's parameter / PID page (it writes the STM32 flash).
 
 Hold to drive: while a key, the joystick or the tilt hold button is pressed,
@@ -135,7 +138,8 @@ class WebTeleop:
         return vx, steer * vx / radius
 
 
-def make_server(teleop, token, port, clock, status=dict, ssl_context=None, ca_cert=None):
+def make_server(teleop, token, port, clock, status=dict, ssl_context=None, ca_cert=None,
+                reset=None):
     """
     Return a ThreadingHTTPServer for the page (call serve_forever in a thread).
 
@@ -143,6 +147,8 @@ def make_server(teleop, token, port, clock, status=dict, ssl_context=None, ca_ce
     GET  /state?k=TOKEN         JSON: action, vx, wz, speed, text, plus status()
     POST /cmd?k=TOKEN&a=ACT     press ACT (see ACTIONS, auto if enabled, or stop); JSON reply
     POST /speed?k=TOKEN&d=up    faster (d=down: slower); JSON reply
+    POST /reset?k=TOKEN         call reset() (the 重置 button; only with auto and a reset
+                                callable, else 404); JSON reply
     GET  /ca.crt                the CA certificate file ca_cert (public, no token)
     ssl_context: an ssl.SSLContext for https (the server then speaks https only).
     """
@@ -209,6 +215,8 @@ def make_server(teleop, token, port, clock, status=dict, ssl_context=None, ca_ce
                 teleop.press(clock(), query.get('a', ['stop'])[0])
             elif path == '/speed':
                 teleop.change_speed(1 if query.get('d', [''])[0] == 'up' else -1)
+            elif path == '/reset' and teleop.auto and reset is not None:
+                reset()
             else:
                 self._reply(404, 'not found', 'text/plain; charset=utf-8')
                 return

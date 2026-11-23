@@ -34,7 +34,8 @@
 # (black walls are blind closer): 2-D sim 2026-11-13, starts 0.05 / 0.2 m in: 40/40 laps,
 # 0.4 m (the middle) / 0.55 m: 0/40 (drove into the first corner, too_close stop).
 # Limits: speed <= 0.12 m/s, 10-600 s, cmd_timeout 0.3 s, firmware timeout ~1.3 s;
-#         bc_node stops for good when anything comes within 2 cm of the car outline.
+#         bc_node stops (latched) when anything comes within 2 cm of the car outline;
+#         drive away with the page's keys, then 重置 in the 自動 tab unlatches it.
 # Stop:   let go of 自動 / Motor switch OFF / touch ~/r550_map/latest/stop or
 #         kill -TERM <script pid> (stops driving, saves the map, stops everything).
 # Result: ~/r550_map/<time>/ (bag/, map.*, launch.log, camera.log, memory.log, bc.log, web.log)

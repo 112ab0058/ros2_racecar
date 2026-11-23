@@ -12,6 +12,8 @@ is pressed and the phone keeps sending; otherwise 0 within hold_timeout
 auto_topic:=bc/cmd_vel (orin_auto.sh) adds the 自動 hold button: while it is held,
 the autonomous policy's commands from that topic go to /cmd_vel (clamped, and
 only while they are fresh); released, 0 again. bc/decision and bc/state are shown.
+Its 重置 button publishes std_msgs/Empty on bc/reset (bc_node unlatches a too-close
+stop only if its newest scan is clear).
 
 https:=true serves https only, with a certificate signed by the Orin's own CA
 in cert_dir for the addresses it has at start (web_cert.py). The phone trusts
@@ -39,7 +41,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from sensor_msgs.msg import BatteryState, Imu
-from std_msgs.msg import Int8, String
+from std_msgs.msg import Empty, Int8, String
 
 from .web_cert import ensure_ca, local_addresses, make_server_cert
 from .web_teleop import make_server, NAMES, WebTeleop
@@ -79,7 +81,10 @@ class WebTeleopNode(Node):
         self.state = {'battery': None, 'odom_vx': None, 'gyro_z': None, 'base': None,
                       'bc': None, 'bc_state': None}
         self.last_action = 'none'
+        self.reset_asked = threading.Event()     # set by the web thread, sent by _tick
         self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.reset_pub = (self.create_publisher(Empty, 'bc/reset', 10)
+                          if p['auto_topic'] else None)
         self.create_subscription(BatteryState, 'battery', self._on_battery, 10)
         self.create_subscription(Odometry, 'odom', self._on_odom, 10)
         self.create_subscription(Imu, 'imu/data', self._on_imu, 10)
@@ -98,7 +103,8 @@ class WebTeleopNode(Node):
             context.load_cert_chain(crt, key)
             scheme = 'https'
         self.server = make_server(self.teleop, self.token, p['port'], time.monotonic,
-                                  self._status, context, ca_cert)
+                                  self._status, context, ca_cert,
+                                  self.reset_asked.set if self.reset_pub else None)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.create_timer(1.0 / p['rate'], self._tick)
         self.get_logger().warn(
@@ -142,6 +148,10 @@ class WebTeleopNode(Node):
         if action != self.last_action:
             self.get_logger().info('phone: %s (vx %+.2f, wz %+.2f)' % (NAMES[action], vx, wz))
             self.last_action = action
+        if self.reset_asked.is_set():
+            self.reset_asked.clear()
+            self.reset_pub.publish(Empty())
+            self.get_logger().info('phone: 重置')
 
     def publish(self, vx, wz):
         """Publish one /cmd_vel."""

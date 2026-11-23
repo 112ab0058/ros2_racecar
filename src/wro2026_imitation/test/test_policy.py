@@ -188,3 +188,24 @@ def test_check_model_refuses_other_inputs():
         check_model(MLP(N_BINS), dict(good, max_range=5.0))
     with pytest.raises(ValueError, match='layer sizes'):
         check_model(MLP(N_BINS - 2), good)
+
+
+def test_reset_unlatches_only_when_the_newest_scan_is_clear():
+    """The phone's 重置: refused while something is still too close or the scan is old."""
+    d = Driver(always(STRAIGHT), 0.1, 0.5)
+    assert d.reset(0.0) == (False, '沒有鎖住')
+    d.on_scan(0.0, put(0.0, 0.13), 0.0, INC)                   # 2 cm in front: latched
+    assert d.command(0.05)[3] == TOO_CLOSE
+    done, why = d.reset(0.05)
+    assert not done and '還太靠近' in why and '前' in why
+    assert '鎖住' in state_text(TOO_CLOSE, d) and '現在還有' in state_text(TOO_CLOSE, d)
+    d.on_scan(0.1, corridor(0.3, 0.3), 0.0, INC)               # driven away by hand
+    assert d.command(0.15)[3] == TOO_CLOSE                      # still latched ...
+    assert '可以按「重置」' in state_text(TOO_CLOSE, d)          # ... but the page may reset
+    assert d.reset(0.5) == (False, '沒有新的光達資料')           # newest scan 0.4 s old
+    assert d.reset(0.15) == (True, '已解除鎖住')
+    assert d.command(0.16) == (0.0, 0.0, STOP, NO_SCAN)         # waits for the next scan
+    d.on_scan(0.2, corridor(0.3, 0.3), 0.0, INC)
+    assert d.command(0.25)[3] == OK
+    d.on_scan(0.3, put(0.0, 0.13), 0.0, INC)                   # too close again: latched again
+    assert d.command(0.35)[3] == TOO_CLOSE

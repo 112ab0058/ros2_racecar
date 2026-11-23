@@ -15,11 +15,13 @@
 :root{
   --bg:#f3f4f1;--panel:#ffffff;--fg:#1b1c1a;--dim:#686b64;--line:#d7d9d2;--press:#e9ebe5;
   --accent:#1f63d6;--accent-fg:#ffffff;--good:#25803a;--warn:#b85c00;--bad:#c62828;
+  --warn-fg:#ffffff;
   --radius:16px;--gap:10px;
 }
 @media (prefers-color-scheme:dark){:root{
   --bg:#121314;--panel:#1d1f20;--fg:#ecede8;--dim:#9a9d95;--line:#33363a;--press:#272a2c;
   --accent:#4d8dff;--accent-fg:#0b1220;--good:#5cc172;--warn:#ffa84a;--bad:#ff6b6b;
+  --warn-fg:#1a1205;
 }}
 *{box-sizing:border-box;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
   -webkit-tap-highlight-color:transparent}
@@ -95,6 +97,9 @@ section.on{display:grid}
 .autostate small{font-size:13px;color:var(--dim)}
 #auto-btn{font-size:20px;font-weight:700;line-height:1.4}
 #auto-btn.held{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.autotop{display:flex;flex-direction:column;gap:6px}
+#reset-btn{min-height:48px;font-size:16px;font-weight:700;background:var(--warn);
+  border-color:var(--warn);color:var(--warn-fg)}
 /* wave */
 #wave{grid-template-rows:1fr auto;gap:6px}
 canvas{width:100%;height:100%;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
@@ -160,9 +165,12 @@ dialog .row a{background:var(--accent);color:var(--accent-fg);text-decoration:no
   <button id="deadman" hidden>按住才走 · 傾斜控制方向</button>
   <div class="hint" id="tilt-hint">直拿手機。按下時的角度＝不動；前傾＝前進，左右傾＝轉彎</div></section>
 <section id="auto">
+  <div class="autotop">
   <div class="autostate"><span>程式想要</span><b id="bc-dec">-</b><small id="bc-state"></small></div>
+  <button id="reset-btn" hidden>重置（解除鎖住）</button></div>
   <button id="auto-btn" class="drive" data-a="auto">按住＝自動駕駛<br>放開＝停</button>
-  <div class="hint">只有按住時車子才會照程式開；放開、切 App、斷線都會在 0.35 秒內停。</div></section>
+  <div class="hint">只有按住時車子才會照程式開；放開、切 App、斷線都會在 0.35 秒內停。
+  鎖住時：先用「按鍵」把車開離牆，回來按「重置」，再按住自動。</div></section>
 <section id="wave"><canvas id="plot"></canvas>
   <div class="legend"><span><i style="background:var(--accent)"></i>角速度 Z（±1 rad/s）</span>
   <span><i style="background:var(--warn)"></i>速度（±0.2 m/s）</span><span>最近 10 秒</span></div></section>
@@ -218,6 +226,8 @@ function show(s) {
   $('speed').innerHTML = s.speed.toFixed(2) + ' m/s' + (off ? '<small>錄訓練資料請用 0.10</small>' : '');
   $('tab-auto').hidden = !s.auto;
   if (s.auto) { $('bc-dec').textContent = s.bc || '-'; $('bc-state').textContent = s.bc_state || ''; }
+  // bc_node's too-close text (policy.state_text) contains 鎖住 while it is latched
+  $('reset-btn').hidden = !(s.auto && (s.bc_state || '').includes('鎖住'));
   $('g-vx').textContent = fmt(s.odom_vx, 3) + ' m/s';
   $('g-gz').textContent = fmt(s.gyro_z, 2) + ' rad/s';
   $('debug').textContent = 'vx ' + s.vx.toFixed(2) + ' wz ' + s.wz.toFixed(2) + ' · #' + s.requests;
@@ -281,6 +291,9 @@ for (const b of document.querySelectorAll('.drive')) {
   b.addEventListener('pointerdown', e => { hold(e, b); heldBtn = b; b.classList.add('held'); drive(b.dataset.a); });
   b.addEventListener('contextmenu', e => e.preventDefault());
 }
+
+// 重置: one tap asks bc_node to unlatch (it checks the scan itself); never drives
+$('reset-btn').addEventListener('click', () => call('POST', '/reset'));
 
 // dial labels (joystick and tilt)
 const LABELS = {straight: '前進', right: '右轉', full_right: '右滿舵', back_right: '右後退',

@@ -11,10 +11,12 @@ also uses full lock (FULL_LEFT / FULL_RIGHT) and odometry.
 
 Driver puts safety rules before every policy (first one that fires wins):
   too_close  a lidar point inside the car outline + stop_margin -> stop, latched
-             (stays stopped until bc_node is restarted). Points that scan_memory_node
-             filled in (remembered, up to ~1.7 cm off) use memory_margin (default 0:
-             only inside the outline itself): on 2026-11-12 a remembered point 2.5 cm
-             from the side was drawn 2.0 cm away and latched the car on the stand.
+             (stays stopped until reset(): the phone's 重置 button, accepted only when
+             the newest scan is fresh and clear; or bc_node is restarted). Points that
+             scan_memory_node filled in (remembered, up to ~1.7 cm off) use memory_margin
+             (default 0: only inside the outline itself): on 2026-11-12 a remembered
+             point 2.5 cm from the side was drawn 2.0 cm away and latched the car on the
+             stand.
   no_scan    no scan yet, or the newest is older than scan_timeout -> stop
   bad_scan   the scan does not start at 0 deg and cover 360 deg   -> stop
   no_odom    a policy that needs odometry has none newer than scan_timeout -> stop
@@ -96,8 +98,11 @@ def state_text(reason, driver, policy_state=None, corners=0, direction=None):
     direction: corner policy only, 'ccw' / 'cw' / 'auto' (not decided yet).
     """
     if reason == TOO_CLOSE:
+        # the phone page shows its 重置 button while this text contains 鎖住
         where = point_text(driver.close_point) if driver.close_point else ''
-        return '太靠近，鎖住停車（要重開程式）：%s' % where
+        now = ('現在還有：%s，先用按鍵開離' % point_text(driver.close_now) if driver.close_now
+               else '現在周圍淨空，可以按「重置」')
+        return '太靠近，鎖住停車：%s｜%s' % (where, now)
     if reason != OK:
         return REASON_TEXT.get(reason, reason)
     text = ('%s，過了 %d 個彎' % (CORNER_TEXT.get(policy_state, policy_state), corners)
@@ -177,6 +182,7 @@ class Driver:
             raise ValueError('speed, turn radii, scan_timeout must be > 0, margins >= 0')
         self.memory_margin = memory_margin
         self.close_point = None     # (deg, gap m, remembered) that latched too_close
+        self.close_now = None       # same, the closest point inside the margins now (or None)
         self.nearest = None         # (deg, gap m, remembered) closest point of the last scan
         self.decide = decide
         self.speed = speed
@@ -222,10 +228,13 @@ class Driver:
                         (math.degrees(angle_min + angle_increment * k), float(gap[k]),
                          bool(mem[k])))
         hit = np.nonzero(gap < np.where(mem, self.memory_margin, self.stop_margin))[0]
-        if not self.latched and len(hit):
+        self.close_now = None
+        if len(hit):
             k = int(hit[np.argmin(gap[hit])])
-            self.close_point = (math.degrees(angle_min + angle_increment * k), float(gap[k]),
-                                bool(mem[k]))
+            self.close_now = (math.degrees(angle_min + angle_increment * k), float(gap[k]),
+                              bool(mem[k]))
+        if not self.latched and self.close_now:
+            self.close_point = self.close_now
             self.latched = True
         if self.latched:
             self.reason = TOO_CLOSE
@@ -239,6 +248,28 @@ class Driver:
         else:
             self.label, self.probs = self.decide(scan_features(r))
         self.reason = OK
+
+    def reset(self, t):
+        """
+        Unlatch too_close (the phone's 重置); return (done, why in Chinese).
+
+        Done only when the newest scan is fresh (scan_timeout) and has no point inside the
+        margins; then the car waits for the next scan before it may drive again, and still
+        only while the phone's 自動 button is held.
+        """
+        if not self.latched:
+            return False, '沒有鎖住'
+        if (self.scan_time is None or t - self.scan_time > self.scan_timeout
+                or self.reason != TOO_CLOSE):
+            return False, '沒有新的光達資料'
+        if self.close_now:
+            return False, '還太靠近：%s' % point_text(self.close_now)
+        self.latched = False
+        self.close_point = None
+        self.scan_time = None           # drive again only after the next scan
+        self.reason = NO_SCAN
+        self.label, self.probs = STOP, None
+        return True, '已解除鎖住'
 
     def command(self, t):
         """Return (vx, wz, decision, reason) to publish now; decision STOP means 0, 0."""

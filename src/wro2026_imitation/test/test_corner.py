@@ -272,3 +272,15 @@ def test_predicted_turn_both_ways_on_the_asymmetric_car(direction):
     ok, why, laps, clear, policy = drive_laps(direction, laps=2)
     assert ok, (why, laps)
     assert clear > 0.02 and policy.corners == 8
+
+
+def test_reset_starts_again_in_follow_and_keeps_direction_and_corners():
+    """After the phone's 重置 the corner rule follows again; direction and count stay."""
+    p = CornerPolicy('cw')
+    p.on_odom(0.0, 0.0, 0.0)
+    p.on_odom(0.5, 0.0, 0.0)
+    p._enter(TURN)                                  # stopped half way through a corner
+    p.last_label = FULL_RIGHT
+    p.reset()
+    assert (p.state, p.corners, p.direction, p.last_label) == (FOLLOW, 1, 'cw', STRAIGHT)
+    assert p.events[-1] == (0.5, 'reset') and p.armed_odo is None and p.sent == []
