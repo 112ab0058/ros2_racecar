@@ -32,11 +32,15 @@
 #   bc_node              policy corner on /scan_filled -> bc/cmd_vel (+ bc/decision, bc/state)
 #   web_teleop_node      phone page, https, 自動 tab
 #
-# Start the car at the BEGINNING of a straight, just past the corner (rear axle at most
-# ~0.2 m past the inner wall's corner, so the next corner is >= 0.6 m ahead), centred,
-# pointing along the straight. The memory has to see the inner wall's end from >= 0.4 m
-# (black walls are blind closer): 2-D sim 2026-11-13, starts 0.05 / 0.2 m in: 40/40 laps,
-# 0.4 m (the middle) / 0.55 m: 0/40 (drove into the first corner, too_close stop).
+# Start the car in the FIRST PART of a straight (rear axle at most ~0.3 m past the inner
+# wall's corner, so the next corner is >= 0.5 m ahead), centred, pointing along the
+# straight. The inner wall's end must be seen before the turn: black walls are blind to
+# the lidar closer than ~0.4 m and the camera sees the floor only >= 0.26 m ahead of the
+# lens within +-45 deg. 2-D sim 2026-11-24 (predict, measured blind edge, 5 seeds each,
+# fixed and auto direction, with and without the camera): starts 0.05-0.35 m in: all laps;
+# 0.45 m: ccw 0/5, cw 2/5; 0.55 m: ccw 0/5, cw 2-3/5 (the island's end is in both
+# sensors' blind spot until it is too late; with the camera these end in a too_close
+# stop, without it in a crash). Until 11-23 (no camera, timing ahead) only ~0.2 m worked.
 # Limits: speed <= 0.12 m/s, 10-600 s, cmd_timeout 0.3 s, firmware timeout ~1.3 s;
 #         bc_node stops (latched) when anything comes within 2 cm of the car outline;
 #         drive away with the page's keys, then 重置 in the 自動 tab unlatches it.
