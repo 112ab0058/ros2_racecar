@@ -2,7 +2,11 @@
 # Orin: AUTONOMOUS DRIVING with a phone dead-man switch. MAKES THE MOTORS TURN.
 #
 #   CONFIRM=YES bash ~/racecar_ws/tools/orin_auto.sh [direction auto] [speed 0.1] [seconds 180] \
-#       [corner_ahead 0.15] [timing ahead]
+#       [corner_ahead 0.15] [timing ahead] [laps 3]
+#
+# laps: after this many laps (4 corners each) the car stops where it started (back on the
+# start straight, the start point at most 5 cm ahead) and stays stopped; 0 = no lap limit
+# (the time limit still ends the run). 3 laps at 0.10 m/s take about 150 s.
 #
 # timing: ahead (default, the field runs until 2026-11-20) = full lock when the inner wall
 # ends corner_ahead m ahead; predict = the predicted turn (wro2026_imitation turn_predict.py,
@@ -51,6 +55,7 @@ RUN_TIME="${3:-180}"
 # 11 corners without a stop) locks at the same places: mean +0.1 cm, -2..+3 cm per corner.
 CORNER_AHEAD="${4:-0.15}"
 TIMING="${5:-ahead}"
+LAPS="${6:-3}"
 OUT="$HOME/r550_map/$(date +%Y%m%d_%H%M%S)_auto"
 
 source /opt/ros/jazzy/setup.bash
@@ -84,6 +89,10 @@ case "$TIMING" in
     ahead|predict) ;;
     *) echo "timing $TIMING: must be ahead or predict."; exit 1 ;;
 esac
+case "$LAPS" in
+    [0-9]|10) ;;
+    *) echo "laps $LAPS: must be a whole number 0 to 10 (0 = no limit)."; exit 1 ;;
+esac
 if [ "${CONFIRM:-}" != YES ]; then
     echo "Refused: set CONFIRM=YES only after Ray has confirmed speed, time and how to stop."
     exit 1
@@ -93,7 +102,7 @@ CORNER_AHEAD=$(awk "BEGIN{printf \"%.3f\", $CORNER_AHEAD}")
 mkdir -p "$OUT"
 ln -sfn "$OUT" "$HOME/r550_map/latest"
 echo $$ > "$OUT/script.pid"
-echo "Autonomous ($DIRECTION, timing $TIMING, corner_ahead $CORNER_AHEAD m)" \
+echo "Autonomous ($DIRECTION, timing $TIMING, corner_ahead $CORNER_AHEAD m, laps $LAPS)" \
      "with the phone 自動 button:" \
      "speed $SPEED m/s, $RUN_TIME s"
 echo "RESULT_DIR=$OUT"
@@ -161,6 +170,7 @@ setsid ros2 run wro2026_lidar_n10p scan_memory_node > "$OUT/memory.log" 2>&1 < /
 MEM_PID=$!
 setsid ros2 run wro2026_imitation bc_node --ros-args -p policy:=corner \
     -p direction:="$DIRECTION" -p corner_ahead:="$CORNER_AHEAD" -p timing:="$TIMING" \
+    -p laps:="$LAPS" \
     -p speed:="$SPEED" -p publish_cmd:=true \
     -p cmd_topic:=bc/cmd_vel -p stop_margin:=0.02 -p memory_marks:=true \
     -r scan:=scan_filled \

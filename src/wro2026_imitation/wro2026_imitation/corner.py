@@ -15,6 +15,11 @@ States:
   turn      full lock to the inner side until the heading changed by turn_deg
   settle    like follow, but corners are ignored for settle_dist m (just after a turn
             the inner side can still look open)
+  done      (stop_after_laps > 0) after 4 x stop_after_laps corners, back on the start
+            straight (heading within 45 deg of the start's) with the start point at most
+            finish_ahead m ahead along the start heading: STOP for good (2026-11-24, Ray:
+            three laps, then stop where it started). finish_ahead 0.05 m: the wheels
+            still turn ~5 cm after the stop (11-24 air test)
 
 When to go full lock (timing):
   'predict' (default, 2026-11-23) once the inner wall's end has been seen within
@@ -65,7 +70,8 @@ from .features import LEFT, RIGHT, STRAIGHT
 from .turn_predict import LASER_X, TurnPredictor
 
 FULL_LEFT, FULL_RIGHT = 3, 4
-FOLLOW, DELAY, TURN, SETTLE = 'follow', 'delay', 'turn', 'settle'
+STOP = -1        # = policy.STOP (policy imports this module, so it cannot come from there)
+FOLLOW, DELAY, TURN, SETTLE, DONE = 'follow', 'delay', 'turn', 'settle', 'done'
 
 # Curvature (1/m, + = left) the R550 really drives for each decision, with bc_node's
 # turn_radius 0.5 m and full_turn_radius 0.35 m at 0.1 m/s: steady gyro z / speed while
@@ -126,9 +132,13 @@ class CornerPolicy:
                  deadband_deg=4.0, fit_window=(-0.25, 0.30), max_side=0.6, gap=0.06,
                  entry_offset=0.05, entry_dist=0.6, confirm_scans=3, off_line=0.10,
                  fit_min_span=0.10, fit_max_slope_deg=40.0, wall_dist=(0.12, 0.40),
-                 timing='predict', driven=None, speed=0.1, steer_dead=0.27, steer_rate=13.0):
+                 timing='predict', driven=None, speed=0.1, steer_dead=0.27, steer_rate=13.0,
+                 stop_after_laps=0, finish_ahead=0.05):
         """
         Set the rule's distances (m) and angles (deg); see the module docstring.
+
+        stop_after_laps: stop at the start after this many laps (0 = never); finish_ahead:
+        stop when the start point is this close ahead (m), see state done.
 
         timing 'predict' / 'ahead': see the module docstring. driven: curvature (1/m) the
         car really drives for each label (default DRIVEN, measured), speed (m/s),
@@ -149,6 +159,12 @@ class CornerPolicy:
             raise ValueError("direction must be 'ccw', 'cw' or 'auto'")
         if timing not in ('predict', 'ahead'):
             raise ValueError("timing must be 'predict' or 'ahead'")
+        if stop_after_laps < 0:
+            raise ValueError('stop_after_laps must be >= 0')
+        self.stop_after_laps = stop_after_laps
+        self.finish_ahead = finish_ahead
+        self.finish_heading = math.radians(45.0)
+        self.start = None            # (x, y, yaw) of the first odometry: where the run began
         self.driven = dict(DRIVEN if driven is None else driven)
         self.predictor = (TurnPredictor(self.driven[FULL_LEFT], self.driven[FULL_RIGHT],
                                         steer_dead, steer_rate, speed)
@@ -207,6 +223,8 @@ class CornerPolicy:
         """
         if self.pose is not None:
             self.odo += math.hypot(x - self.pose[0], y - self.pose[1])
+        if self.start is None:
+            self.start = (x, y, yaw)
         self.pose = (x, y, yaw)
         self.k_now = wz / vx if vx is not None and wz is not None and vx > 0.05 else None
         self.trail.append((self.odo, yaw))
@@ -402,6 +420,8 @@ class CornerPolicy:
     def __call__(self, ranges, angle_min, angle_increment):
         """Decide from one (filled) scan; see the module docstring."""
         label = self._decide(ranges, angle_min, angle_increment)
+        if label == STOP:                 # done: not a steering command to remember
+            return label, None
         self.last_label = label
         if not self.sent or self.sent[-1][1] != label:
             self.sent.append((self.odo, label))
@@ -410,7 +430,28 @@ class CornerPolicy:
             self.sent.pop(0)
         return label, None
 
+    def laps_done(self):
+        """
+        Return True when the set laps are driven and the car is back at the start (done).
+
+        If the start was placed close to a corner, the last turn can end past it: then the
+        car stops right after that turn (up to ~10 cm past the start, 2-D field 11-24).
+        """
+        if (not self.stop_after_laps or self.corners < 4 * self.stop_after_laps
+                or self.pose is None or self.start is None):
+            return False
+        x, y, yaw = self.pose
+        sx, sy, syaw = self.start
+        if abs(_wrap(yaw - syaw)) > self.finish_heading:
+            return False                              # not on the start straight's heading
+        ahead = (sx - x) * math.cos(syaw) + (sy - y) * math.sin(syaw)
+        return ahead <= self.finish_ahead
+
     def _decide(self, ranges, angle_min, angle_increment):
+        if self.state in (FOLLOW, SETTLE) and self.laps_done():
+            self._enter(DONE)
+        if self.state == DONE:
+            return STOP
         r = np.asarray(ranges, dtype=float)
         angles = angle_min + angle_increment * np.arange(len(r))
         angles = (angles + math.pi) % (2.0 * math.pi) - math.pi

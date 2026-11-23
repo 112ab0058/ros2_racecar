@@ -8,8 +8,8 @@ Started at boot by tools/real/r550-launcher.service (systemd, see the README in 
 file); by hand: python3 ~/racecar_ws/tools/orin_launcher.py (ROS sourced).
 
 The page shows the battery, the state of the run and the last run's summary. Its
-buttons start `orin_auto.sh <auto|ccw|cw> 0.1 <seconds> <corner_ahead> <ahead|predict>`,
-the stack tested in
+buttons start `orin_auto.sh <auto|ccw|cw> 0.1 <seconds> <corner_ahead> <ahead|predict>
+<laps>` (設定: time 180 s, laps 3 = stop at the start after three laps), the stack tested in
 the air on 2026-11-20, and stop it. Pressing a start button next to the car IS the
 confirmation orin_auto.sh asks for (CONFIRM=YES). The car still moves only while the
 drive page's 自動 button is held, and every limit of orin_auto.sh stays (0.10 m/s,
@@ -101,16 +101,17 @@ def read_battery(seconds=0.6):
 class Run:
     """One orin_auto.sh started from the page."""
 
-    def __init__(self, direction, seconds, ahead, timing, drive_token):
+    def __init__(self, direction, seconds, ahead, timing, laps, drive_token):
         os.makedirs(MAP_DIR, exist_ok=True)
         self.log = os.path.join(MAP_DIR, 'launcher_%s.out' % time.strftime('%Y%m%d_%H%M%S'))
-        self.args = (direction, seconds, ahead, timing)
+        self.args = (direction, seconds, ahead, timing, laps)
         self.started = time.time()
         self.stop_requested = None
         env = dict(os.environ, CONFIRM='YES', DRIVE_TOKEN=drive_token)
         with open(self.log, 'w') as out:
             self.proc = subprocess.Popen(
-                ['bash', AUTO, direction, '0.1', str(seconds), '%.3f' % ahead, timing],
+                ['bash', AUTO, direction, '0.1', str(seconds), '%.3f' % ahead, timing,
+                 str(laps)],
                 stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env,
                 start_new_session=True)
 
@@ -180,6 +181,8 @@ def last_run_summary():
                      % (DIRECTION_NAMES[picked.group(1)], picked.group(2)))
     elif mode and mode.group(1) == 'auto':
         lines.append('自動判斷方向：還沒決定')
+    if 'corner policy: done' in bc:
+        lines.append('跑完設定的圈數，停在起點')
     states = re.findall(r'state: (\w+)(?: \(([^)]*)\))?', bc)
     if states:
         name, why = states[-1]
@@ -216,7 +219,7 @@ class Launcher:
                 'drive_url': 'https://%s:%d/?k=%s' % (host, DRIVE_PORT, self.drive_token),
                 'tail': tail, 'last': last_run_summary(), 'min_battery': MIN_BATTERY}
 
-    def start(self, direction, seconds, ahead, timing='ahead'):
+    def start(self, direction, seconds, ahead, timing='ahead', laps=3):
         with self.lock:
             if self.run is not None and self.run.alive():
                 return '已經在跑了'
@@ -228,7 +231,7 @@ class Launcher:
                 return '讀不到電池電壓（STM32 沒接好或沒開電源）'
             if volts < MIN_BATTERY:
                 return '電池 %.2f V，低於 %.1f V，先充電' % (volts, MIN_BATTERY)
-            self.run = Run(direction, seconds, ahead, timing, self.drive_token)
+            self.run = Run(direction, seconds, ahead, timing, laps, self.drive_token)
             return None
 
     def stop(self):
@@ -271,7 +274,8 @@ color:#fff}.hint{font-size:13px;color:#8a5a00;margin:2px 0 4px}[hidden]{display:
 <button class="go" id="go_ccw" onclick="go('ccw')">逆時針（左轉）開始</button>
 <button class="go" id="go_cw" onclick="go('cw')">順時針（右轉）開始</button>
 <details><summary>設定</summary>
-<label>時間（秒，10–600）<input id="secs" type="number" value="120"></label>
+<label>時間（秒，10–600；3 圈約 150 秒）<input id="secs" type="number" value="180"></label>
+<label>圈數（跑完停在起點；0＝不停）<input id="laps" type="number" min="0" max="10" value="3"></label>
 <label>corner_ahead（m，固定距離才用）<input id="ahead" type="number" step="0.01" value="0.15"></label>
 </details></div>
 <div class="card"><button class="stop" onclick="stopRun()">停止</button>
@@ -293,7 +297,8 @@ async function tick() {
     b.className = 'big' + (s.battery != null && s.battery < s.min_battery ? ' low' : '');
     document.getElementById('st').textContent = (NAMES[s.state] || s.state) +
       (s.args ? '　' + DIR_NAMES[s.args[0]] + ' ' + s.args[1] + ' 秒　' +
-       (s.args[3] == 'predict' ? '預測式' : '固定距離 ' + s.args[2] + ' m') : '');
+       (s.args[3] == 'predict' ? '預測式' : '固定距離 ' + s.args[2] + ' m') + '　' +
+       (s.args[4] ? s.args[4] + ' 圈' : '不限圈數') : '');
     document.getElementById('drive').innerHTML = s.state == 'ready' ?
       '<a class="drive" href="' + s.drive_url + '">打開駕駛頁</a>' : '';
     document.getElementById('tail').textContent = s.tail.join('\\n');
@@ -328,12 +333,13 @@ function show() {
 load('dir', ['auto', 'hand']); load('timing', ['predict', 'ahead']); show();
 async function go(dir) {
   const secs = document.getElementById('secs').value, ahead = document.getElementById('ahead').value;
-  const timing = mode.timing;
+  const timing = mode.timing, laps = document.getElementById('laps').value;
   if (!confirm(DIR_NAMES[dir] + ' ' + secs + ' 秒，0.10 m/s，' +
-      (timing == 'predict' ? '預測式打滿' : '固定距離打滿 ' + ahead + ' m') + '。\\n' +
+      (timing == 'predict' ? '預測式打滿' : '固定距離打滿 ' + ahead + ' m') + '，' +
+      (laps > 0 ? laps + ' 圈後停在起點' : '不限圈數') + '。\\n' +
       '有人在 Motor 開關旁、周圍淨空？\\n車子只在按住「自動」時會動。')) return;
   const r = await api('/start?dir=' + dir + '&secs=' + secs + '&ahead=' + ahead +
-                      '&timing=' + timing, {method:'POST'});
+                      '&timing=' + timing + '&laps=' + laps, {method:'POST'});
   if (r.error) alert(r.error);
   tick();
 }
@@ -400,13 +406,16 @@ def make_handler(app):
                     seconds = int(q.get('secs', 120))
                     ahead = float(q.get('ahead', 0.15))
                     timing = q.get('timing', 'ahead')
+                    laps = int(q.get('laps', 3))
                 except (KeyError, ValueError):
                     return self._json({'error': '參數不對'}, 400)
                 if direction not in DIRECTION_NAMES or not 10 <= seconds <= 600 \
-                        or not -0.10 <= ahead <= 0.25 or timing not in TIMING_NAMES:
+                        or not -0.10 <= ahead <= 0.25 or timing not in TIMING_NAMES \
+                        or not 0 <= laps <= 10:
                     return self._json({'error': '方向要 auto/ccw/cw，時間 10–600 秒，'
-                                       'corner_ahead -0.10–0.25，打滿時機 ahead/predict'}, 400)
-                self._json({'error': app.start(direction, seconds, ahead, timing)})
+                                       'corner_ahead -0.10–0.25，打滿時機 ahead/predict，'
+                                       '圈數 0–10'}, 400)
+                self._json({'error': app.start(direction, seconds, ahead, timing, laps)})
             elif path == '/stop':
                 self._json({'error': app.stop()})
             else:

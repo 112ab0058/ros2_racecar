@@ -3,7 +3,8 @@ import math
 
 import numpy as np
 import pytest
-from wro2026_imitation.corner import CornerPolicy, FOLLOW, FULL_LEFT, FULL_RIGHT, TURN
+from wro2026_imitation.corner import (CornerPolicy, DONE, FOLLOW, FULL_LEFT, FULL_RIGHT,
+                                      STOP as CORNER_STOP, TURN)
 from wro2026_imitation.features import LEFT, RIGHT, STRAIGHT
 from wro2026_imitation.field_sim import camera as camera_view, Car, Field, lidar
 from wro2026_imitation.policy import Driver, NO_ODOM, OK, STOP
@@ -284,3 +285,36 @@ def test_reset_starts_again_in_follow_and_keeps_direction_and_corners():
     p.reset()
     assert (p.state, p.corners, p.direction, p.last_label) == (FOLLOW, 1, 'cw', STRAIGHT)
     assert p.events[-1] == (0.5, 'reset') and p.armed_odo is None and p.sent == []
+
+
+@pytest.mark.parametrize('direction', ['ccw', 'cw'])
+def test_stops_at_the_start_after_the_set_laps(direction):
+    """
+    Stop_after_laps 1: four corners, then STOP on the start straight near the start.
+
+    The field's start is 5 cm past the island corner, so the ccw lap's last turn ends
+    past it and the car stops right after the turn; the start point must be within
+    5 cm ahead to 15 cm behind, within 8 cm of the corridor's middle.
+    """
+    ok, why, laps, clear, policy = drive_laps(direction, laps=1.5, stop_after_laps=1)
+    assert (ok, why, policy.state, policy.corners) == (False, OK, DONE, 4), (why, laps)
+    (x, y, _), (sx, sy, syaw) = policy.pose, policy.start
+    ahead = (sx - x) * math.cos(syaw) + (sy - y) * math.sin(syaw)
+    side = -(sx - x) * math.sin(syaw) + (sy - y) * math.cos(syaw)
+    assert -0.15 <= ahead <= 0.05 and abs(side) < 0.08 and clear > 0.02
+
+
+def test_laps_done_needs_the_corners_the_start_heading_and_the_start_point():
+    assert CORNER_STOP == STOP
+    p = CornerPolicy('ccw', stop_after_laps=1)
+    p.on_odom(0.0, 0.0, 0.0)                         # the start
+    p.on_odom(-0.02, 0.0, 0.0)
+    p.corners = 3
+    assert not p.laps_done()                         # one corner missing
+    p.corners = 4
+    assert p.laps_done()                             # start 2 cm ahead
+    p.on_odom(-0.02, 0.0, math.radians(90.0))
+    assert not p.laps_done()                         # another straight's heading
+    p.on_odom(-0.20, 0.0, 0.0)
+    assert not p.laps_done()                         # start still 20 cm ahead
+    assert not CornerPolicy('ccw').laps_done()       # 0 = never

@@ -86,6 +86,8 @@ PARAMETERS = [
                         'replayed and simulated 2026-11-23, not driven yet)'),
     ('corner_ahead', 0.11, "corner, timing 'ahead': full lock when the inner wall ends this "
                            'far ahead (m)'),
+    ('laps', 0, 'corner: after this many laps (4 corners each) stop at the start for good; '
+                '0 = never'),
     ('entry_offset', 0.05, 'corner: before a corner aim this far towards the outer wall (m)'),
     ('turn_deg', 80.0, 'corner: full lock until the heading changed this much (deg)'),
     ('full_turn_radius', 0.35, 'corner: radius of full lock (m), >= min_turn_radius'),
@@ -117,7 +119,8 @@ class BcNode(Node):
             speed, radius = speed or 0.1, radius or 0.5
             decide = CornerPolicy(p['direction'], corner_ahead=p['corner_ahead'],
                                   turn_deg=p['turn_deg'], entry_offset=p['entry_offset'],
-                                  timing=p['timing'], speed=speed)
+                                  timing=p['timing'], speed=speed,
+                                  stop_after_laps=int(p['laps']))
         else:
             raise ValueError("policy must be 'model', 'center' or 'corner', not %r"
                              % p['policy'])
@@ -150,9 +153,10 @@ class BcNode(Node):
                 if self.publish_cmd else 'DRY RUN: bc/decision only, no /cmd_vel')
         policy = p['policy']
         if policy == 'corner':
-            policy += ' (%s, timing %s%s)' % (
+            policy += ' (%s, timing %s%s, %s)' % (
                 p['direction'], p['timing'],
-                ', corner_ahead %.3f m' % p['corner_ahead'] if p['timing'] == 'ahead' else '')
+                ', corner_ahead %.3f m' % p['corner_ahead'] if p['timing'] == 'ahead' else '',
+                'stop after %d laps' % p['laps'] if p['laps'] else 'no lap limit')
         self.get_logger().warn('%s; policy %s, speed %.3f m/s, turn radius %.2f m'
                                % (mode, policy, speed, radius))
 

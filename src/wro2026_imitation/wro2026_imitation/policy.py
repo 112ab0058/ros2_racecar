@@ -84,7 +84,7 @@ def point_text(point):
 REASON_TEXT = {'no_scan': '沒有光達資料，停', 'bad_scan': '光達資料格式不對，停',
                'no_odom': '沒有里程計（EKF），停'}
 CORNER_TEXT = {'follow': '保持中線', 'delay': '等著打滿', 'turn': '打滿轉彎',
-               'settle': '轉完回正'}
+               'settle': '轉完回正', 'done': '跑完了，停在起點'}
 
 
 DIRECTION_TEXT = {'ccw': '彎道往左（逆時針）', 'cw': '彎道往右（順時針）',
@@ -284,6 +284,8 @@ class Driver:
             reason = self.reason
         if reason != OK:
             return 0.0, 0.0, STOP, reason
+        if self.label == STOP:              # the policy itself stops (corner: laps done)
+            return 0.0, 0.0, STOP, OK
         wz = {LEFT: self.wz, STRAIGHT: 0.0, RIGHT: -self.wz,
               FULL_LEFT: self.full_wz, FULL_RIGHT: -self.full_wz}[self.label]
         return self.speed, wz, self.label, OK

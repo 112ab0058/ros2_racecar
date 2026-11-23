@@ -209,3 +209,11 @@ def test_reset_unlatches_only_when_the_newest_scan_is_clear():
     assert d.command(0.25)[3] == OK
     d.on_scan(0.3, put(0.0, 0.13), 0.0, INC)                   # too close again: latched again
     assert d.command(0.35)[3] == TOO_CLOSE
+
+
+def test_a_policy_stop_stops_the_car_with_reason_ok():
+    """The corner rule's state done says STOP itself: the car stops, the phone says why."""
+    d = Driver(always(STOP), 0.1, 0.5)
+    d.on_scan(0.0, corridor(0.3, 0.3), 0.0, INC)
+    assert d.command(0.05) == (0.0, 0.0, STOP, OK)
+    assert state_text(OK, d, 'done', 12).startswith('跑完了，停在起點，過了 12 個彎')
