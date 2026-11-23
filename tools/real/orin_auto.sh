@@ -2,7 +2,11 @@
 # Orin: AUTONOMOUS DRIVING with a phone dead-man switch. MAKES THE MOTORS TURN.
 #
 #   CONFIRM=YES bash ~/racecar_ws/tools/orin_auto.sh [direction auto] [speed 0.1] [seconds 180] \
-#       [corner_ahead 0.15]
+#       [corner_ahead 0.15] [timing ahead]
+#
+# timing: ahead (default, the field runs until 2026-11-20) = full lock when the inner wall
+# ends corner_ahead m ahead; predict = the predicted turn (wro2026_imitation turn_predict.py,
+# replayed and simulated 2026-11-23, not driven yet); corner_ahead is then not used.
 #
 # direction: auto (default) = at the first corner the side whose wall ends is the inside,
 # every corner turns that way; ccw = always left, cw = always right. On the field pass
@@ -45,6 +49,7 @@ RUN_TIME="${3:-180}"
 # 0.15: with the lidar corrected by 3.6 cm (11-19), replaying 11-13 run 3 (ccw, 0.17 then,
 # 11 corners without a stop) locks at the same places: mean +0.1 cm, -2..+3 cm per corner.
 CORNER_AHEAD="${4:-0.15}"
+TIMING="${5:-ahead}"
 OUT="$HOME/r550_map/$(date +%Y%m%d_%H%M%S)_auto"
 
 source /opt/ros/jazzy/setup.bash
@@ -74,6 +79,10 @@ fi
 if ! awk "BEGIN{exit !($CORNER_AHEAD >= -0.10 && $CORNER_AHEAD <= 0.25)}"; then
     echo "corner_ahead $CORNER_AHEAD: must be -0.10 to 0.25 m."; exit 1
 fi
+case "$TIMING" in
+    ahead|predict) ;;
+    *) echo "timing $TIMING: must be ahead or predict."; exit 1 ;;
+esac
 if [ "${CONFIRM:-}" != YES ]; then
     echo "Refused: set CONFIRM=YES only after Ray has confirmed speed, time and how to stop."
     exit 1
@@ -83,7 +92,8 @@ CORNER_AHEAD=$(awk "BEGIN{printf \"%.3f\", $CORNER_AHEAD}")
 mkdir -p "$OUT"
 ln -sfn "$OUT" "$HOME/r550_map/latest"
 echo $$ > "$OUT/script.pid"
-echo "Autonomous ($DIRECTION, corner_ahead $CORNER_AHEAD m) with the phone 自動 button:" \
+echo "Autonomous ($DIRECTION, timing $TIMING, corner_ahead $CORNER_AHEAD m)" \
+     "with the phone 自動 button:" \
      "speed $SPEED m/s, $RUN_TIME s"
 echo "RESULT_DIR=$OUT"
 
@@ -149,7 +159,7 @@ fi
 setsid ros2 run wro2026_lidar_n10p scan_memory_node > "$OUT/memory.log" 2>&1 < /dev/null &
 MEM_PID=$!
 setsid ros2 run wro2026_imitation bc_node --ros-args -p policy:=corner \
-    -p direction:="$DIRECTION" -p corner_ahead:="$CORNER_AHEAD" \
+    -p direction:="$DIRECTION" -p corner_ahead:="$CORNER_AHEAD" -p timing:="$TIMING" \
     -p speed:="$SPEED" -p publish_cmd:=true \
     -p cmd_topic:=bc/cmd_vel -p stop_margin:=0.02 -p memory_marks:=true \
     -r scan:=scan_filled \
