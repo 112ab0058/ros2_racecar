@@ -270,6 +270,7 @@ color:#fff}.hint{font-size:13px;color:#8a5a00;margin:2px 0 4px}[hidden]{display:
 <button id="timing_predict" onclick="setMode('timing', 'predict')">預測式</button>
 <button id="timing_ahead" onclick="setMode('timing', 'ahead')">固定距離</button></div>
 <div class="hint" id="timing_hint" hidden>預測式還沒在地上跑過；不對就按停止，切回「固定距離」</div></div>
+<div class="hint">放車：整台車在任一段直道裡、車頭朝要跑的方向（照 WRO 規則）。逆時針時，直道後半段不要貼著島放，也不要車頭朝外牆。</div>
 <button class="go" id="go_auto" onclick="go('auto')">開始（自動判斷方向）</button>
 <button class="go" id="go_ccw" onclick="go('ccw')">逆時針（左轉）開始</button>
 <button class="go" id="go_cw" onclick="go('cw')">順時針（右轉）開始</button>

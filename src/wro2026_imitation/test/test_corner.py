@@ -13,18 +13,30 @@ from wro2026_lidar_n10p.scan_memory import ScanMemory
 INC = 2.0 * math.pi / 480
 
 
+def start_pose(direction, island=0.80, start=0.05, lat=0.0, head=0.0):
+    """
+    Return the rear-axle pose (x, y, yaw) on the bottom straight.
+
+    start m past the island's corner, lat m and head deg towards the island (inner side).
+    """
+    y = -(0.8 + island / 2.0) / 2.0 + lat
+    if direction == 'ccw':
+        return -island / 2.0 + start, y, math.radians(head)
+    return island / 2.0 - start, y, math.pi - math.radians(head)
+
+
 def drive_laps(direction, laps=1, island=0.80, memory=True, seed=0, policy_direction=None,
-               partial=False, camera=False, car=None, **policy_kw):
+               partial=False, camera=False, car=None, start=0.05, lat=0.0, head=0.0,
+               cam_max=1.0, **policy_kw):
     """
     Drive the corner policy around the field; return (ok, why, laps, min clearance, policy).
 
     car: Car keyword arguments (default: the measured car, 0.403 m left / 0.292 m right);
+    start, lat, head: start pose (start_pose); cam_max: the camera's max_range (m);
     policy_kw: CornerPolicy keyword arguments.
     """
     field = Field(1.6, island)
-    centre = (0.8 + island / 2.0) / 2.0
-    car = Car(-0.35 if direction == 'ccw' else 0.35, -centre,
-              0.0 if direction == 'ccw' else math.pi, **(car or {}))
+    car = Car(*start_pose(direction, island, start, lat, head), **(car or {}))
     policy = CornerPolicy(policy_direction or direction, **policy_kw)
     driver = Driver(policy, 0.1, 0.5, stop_margin=0.02, full_turn_radius=0.35)
     mem = ScanMemory()
@@ -35,7 +47,7 @@ def drive_laps(direction, laps=1, island=0.80, memory=True, seed=0, policy_direc
             driver.on_odom(t, car.x, car.y, car.yaw, vx, vx * car.curv)   # EKF twist
             mem.on_odom(car.x, car.y, car.yaw)
             if camera:
-                mem.add_camera(t, camera_view(field, car, rng=rng), 0.0, INC)
+                mem.add_camera(t, camera_view(field, car, rng=rng, max_range=cam_max), 0.0, INC)
             r = lidar(field, car, rng=rng, partial=partial)
             remembered = None
             if memory:
@@ -71,7 +83,8 @@ def test_one_lap_each_way_with_the_blind_black_walls(direction):
 def test_auto_finds_the_direction_and_drives_the_lap(direction, seed):
     ok, why, laps, clear, policy = drive_laps(direction, seed=seed, policy_direction='auto')
     assert ok, (why, laps)
-    assert policy.direction == direction and policy.corners == 4 and clear > 0.02
+    # 5: the next lap's first corner can lock just before the net heading reaches 360 deg
+    assert policy.direction == direction and policy.corners in (4, 5) and clear > 0.02
 
 
 def wall_scan(walls):
@@ -121,10 +134,17 @@ def test_auto_the_side_that_opens_is_the_inside(flip, expected):
     assert policy.direction == expected
 
 
-def test_without_memory_the_lap_fails():
-    """No memory: the blind inner wall is not seen in time; the safety stop ends the run."""
-    ok, why, laps, clear, policy = drive_laps('ccw', memory=False)
+def test_without_memory_only_the_silhouette_sees_the_wall_end():
+    """
+    No memory: the wall's own points never show its end in time (old rule: the run ends).
+
+    The beams past the end (crossing_end) still show it: a lap passes on them alone
+    (2026-11-24). The memory stays on: the too_close stop needs the near walls.
+    """
+    ok, why, laps, clear, policy = drive_laps('ccw', memory=False, crossing=False)
     assert not ok and why in ('too_close', 'crash') and laps < 0.5
+    ok, why, laps, clear, policy = drive_laps('ccw', memory=False)
+    assert ok and clear > 0.01, (why, laps)
 
 
 def test_open_side_with_no_returns_is_not_a_corner():
@@ -194,7 +214,8 @@ def run4_scan(camera):
     return np.where(seen, r, np.inf)
 
 
-OLD_RULE = {'fit_min_span': 0.0, 'fit_max_slope_deg': None, 'wall_dist': None}   # 2026-11-13
+OLD_RULE = {'fit_min_span': 0.0, 'fit_max_slope_deg': None, 'wall_dist': None,     # 11-13
+            'crossing': False}
 
 
 @pytest.mark.parametrize('camera', [False, True])
@@ -214,6 +235,32 @@ def test_run4_false_corner(camera, old_rule):
         assert label == FULL_RIGHT
     else:
         assert label != FULL_RIGHT and policy.state == FOLLOW and not policy.approach
+
+
+@pytest.mark.parametrize('crossing', [False, True])
+def test_where_the_lidar_stops_seeing_the_wall_is_not_its_end(crossing):
+    """
+    2-D field 11-24 (cw, start 0.56 m, 5 cm from the outer wall, 10 deg into the island).
+
+    The black inner wall answered only with points 0.10 m long behind the car, at the
+    edge of what the lidar sees; it goes on, blind, to 0.30 m ahead. The span and
+    distance checks pass; only the beams that went through the line tell: none do just
+    past that "end", so with crossing it is not one (the real end is found from them).
+    """
+    walls = [(-1.0, -0.26, 0.30, -0.26), (0.30, -0.26, 0.30, -1.2),
+             (-1.0, 0.14, 0.70, 0.14), (0.70, 0.14, 0.70, -1.2), (-1.0, -1.06, 2.0, -1.06)]
+    r = wall_scan(walls)
+    x, y = r * np.cos(np.arange(480) * INC), r * np.sin(np.arange(480) * INC)
+    edge = (y < -0.2) & (y > -0.3) & (x >= -0.25) & (x <= -0.13)    # the edge points
+    r = np.where(edge | (r >= 0.47), r, np.inf)
+    ang = (np.arange(480) * INC + math.pi) % (2 * math.pi) - math.pi
+    policy = CornerPolicy('cw', crossing=crossing)
+    end = policy.inner_wall_end(r, ang, min_span=policy.fit_min_span,
+                                max_slope=policy.fit_max_slope, wall_dist=policy.wall_dist)
+    if crossing:
+        assert end == pytest.approx(0.30, abs=0.02)
+    else:
+        assert end == pytest.approx(-0.13, abs=0.02)
 
 
 def test_fit_checks_keep_a_real_corner():
@@ -302,6 +349,91 @@ def test_stops_at_the_start_after_the_set_laps(direction):
     ahead = (sx - x) * math.cos(syaw) + (sy - y) * math.sin(syaw)
     side = -(sx - x) * math.sin(syaw) + (sy - y) * math.cos(syaw)
     assert -0.15 <= ahead <= 0.05 and abs(side) < 0.08 and clear > 0.02
+
+
+def late_start_scan(end=0.12, lat=0.20, visible=0.47):
+    """
+    Lidar frame scan of a start in the second half of a straight (ccw, inner wall left).
+
+    The school field's shape (corridor 0.40 m, island 0.80 m): the island's wall (y = lat)
+    ends end m ahead of the lidar, its next side runs left; the wall ahead (x = end + 0.40)
+    runs on past the island as the next corridor's outer wall, up to the far wall.
+    Black walls answer only from visible m (the 2026-11-13 measurement): the island's end
+    and the side walls near the car are blind, only the walls far behind and ahead return
+    (on 11-13 also at 1.4 m: intensity 37-47).
+    """
+    walls = [(end - 0.80, lat, end, lat), (end, lat, end, lat + 0.80),   # island
+             (-1.2, lat - 0.40, end + 0.40, lat - 0.40),                 # outer wall
+             (end + 0.40, lat - 0.40, end + 0.40, lat + 1.20),           # wall ahead
+             (-1.2, lat + 1.20, end + 0.40, lat + 1.20)]                 # far wall
+    r = wall_scan(walls)
+    return np.where(r >= visible, r, np.inf)
+
+
+@pytest.mark.parametrize('end', [0.05, 0.12, 0.25])
+def test_crossing_finds_the_island_end_in_the_blind_spot(end):
+    """No point of the island near its end; the beams past it give the end within 2 cm."""
+    policy = CornerPolicy('ccw')
+    r = late_start_scan(end)
+    ang = (np.arange(480) * INC + math.pi) % (2 * math.pi) - math.pi
+    assert policy.walk_end(r, ang) is None                     # the old rule sees nothing
+    found = policy.inner_wall_end(r, ang)
+    assert found == pytest.approx(end, abs=0.02) and policy.end_line is not None
+
+
+def test_crossing_needs_beams_past_the_wall_line():
+    """A wall that goes on (blind near the car, seen far behind and ahead) has no end."""
+    walls = [(-1.0, 0.2, 2.0, 0.2), (-1.0, -0.2, 2.0, -0.2)]
+    r = wall_scan(walls)
+    r = np.where(r >= 0.47, r, np.inf)
+    ang = (np.arange(480) * INC + math.pi) % (2 * math.pi) - math.pi
+    policy = CornerPolicy('ccw')
+    assert policy.inner_wall_end(r, ang) is None and policy.end_line is None
+
+
+@pytest.mark.parametrize('flip, expected', [(1.0, 'ccw'), (-1.0, 'cw')])
+def test_auto_direction_from_a_late_start(flip, expected):
+    """Only the island's side has beams past its line: that side is the inside."""
+    walls_r = late_start_scan(0.12)
+    if flip < 0:
+        walls_r = np.roll(walls_r[::-1], 1)                    # mirror left / right
+    policy = CornerPolicy('auto')
+    policy.on_odom(0.0, 0.0, 0.0)
+    for _ in range(3):
+        policy(walls_r, 0.0, INC)
+    assert policy.direction == expected
+
+
+@pytest.mark.parametrize('direction', ['ccw', 'cw'])
+@pytest.mark.parametrize('start', [0.45, 0.56])
+def test_late_start_drives_the_corners(direction, start):
+    """
+    WRO 2026 lets the car start anywhere in the straight (rule 9.7, six zones).
+
+    0.56 m: the front bumper at the straight's end. Without crossing_end the island's
+    end stays in the blind spot and the car drives into the first corner (11-24 sweep).
+    """
+    ok, why, laps, clear, policy = drive_laps(direction, start=start, partial=True,
+                                              camera=True, cam_max=0.5)
+    assert ok, (why, laps, policy.events[:3])
+    assert clear > 0.01
+    ok, why, *_ = drive_laps(direction, start=start, partial=True, camera=True, cam_max=0.5,
+                             crossing=False)
+    assert not ok
+
+
+@pytest.mark.parametrize('direction', ['ccw', 'cw'])
+def test_late_start_stops_inside_the_start_straight(direction):
+    """After the laps the whole car is in the start straight (WRO 9.24.2), wheels rolled."""
+    ok, why, laps, clear, policy = drive_laps(direction, laps=1.5, stop_after_laps=1,
+                                              start=0.56, partial=True, camera=True,
+                                              cam_max=0.5)
+    assert (why, policy.state, policy.corners) == (OK, DONE, 4), (why, laps)
+    x, y, yaw = policy.pose
+    along = x + 0.40 if direction == 'ccw' else 0.40 - x       # past the island's corner
+    c = math.cos(yaw) if direction == 'ccw' else -math.cos(yaw)
+    front = along + 0.24 * c + 0.05                           # + ~5 cm still rolling
+    assert along - 0.031 > 0.0 and front < 0.80
 
 
 def test_laps_done_needs_the_corners_the_start_heading_and_the_start_point():

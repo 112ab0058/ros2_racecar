@@ -59,6 +59,13 @@ never "ends" like that: at a corner it runs into the wall ahead.
 It needs the scan with the blind beams filled (scan_memory_node): the black walls give
 no return closer than about 0.4 m, and a blind inner side would look "open" everywhere.
 
+Start anywhere in the straight (2026-11-24, Ray: like WRO 2026, whose rules 9.4-9.8 put
+the car in one of six zones of the start straight, facing the driving direction): from
+the second half of the straight the island's end is in both sensors' blind spots and
+was never in the memory either, so the car drove into the first corner (2-D field: 0/5
+ccw from 0.45 m past the island's corner). crossing_end finds that end from the beams
+that went past it to the far walls (the island's silhouette), see there.
+
 decide(ranges, angle_min, angle_increment) -> (label, None); on_odom(x, y, yaw) feeds
 the heading and driven distance (EKF odometry).
 """
@@ -67,7 +74,7 @@ import math
 import numpy as np
 
 from .features import LEFT, RIGHT, STRAIGHT
-from .turn_predict import LASER_X, TurnPredictor
+from .turn_predict import FRONT, LASER_X, TurnPredictor
 
 FULL_LEFT, FULL_RIGHT = 3, 4
 STOP = -1        # = policy.STOP (policy imports this module, so it cannot come from there)
@@ -116,7 +123,7 @@ def parallel_line(x, y, use, max_slope, band=0.02, cell=0.02):
                 best = (score[0], score[1], th, d[i] + band / 2.0)
     _, _, th, d0 = best
     inl = use & (np.abs(y * math.cos(th) - x * math.sin(th) - d0) <= band)
-    if inl.sum() < 6:
+    if inl.sum() < 6 or np.ptp(x[inl]) < 0.02:      # not a wall along the car
         return None
     a, b = np.polyfit(x[inl], y[inl], 1)
     return a, b, inl
@@ -133,9 +140,15 @@ class CornerPolicy:
                  entry_offset=0.05, entry_dist=0.6, confirm_scans=3, off_line=0.10,
                  fit_min_span=0.10, fit_max_slope_deg=40.0, wall_dist=(0.12, 0.40),
                  timing='predict', driven=None, speed=0.1, steer_dead=0.27, steer_rate=13.0,
-                 stop_after_laps=0, finish_ahead=0.05):
+                 stop_after_laps=0, finish_ahead=0.05, crossing=True, cross_back=0.9):
         """
         Set the rule's distances (m) and angles (deg); see the module docstring.
+
+        crossing: also find the inner wall's end from the beams that went past it
+        (crossing_end, for starts in the second half of a straight), and accept an end of
+        the wall's own points only with such beams just past it (walk_end); False = the
+        rule before 2026-11-24. cross_back: how far behind the lidar crossing_end's wall
+        line is fitted (m).
 
         stop_after_laps: stop at the start after this many laps (0 = never); finish_ahead:
         stop when the start point is this close ahead (m), see state done.
@@ -163,6 +176,22 @@ class CornerPolicy:
             raise ValueError('stop_after_laps must be >= 0')
         self.stop_after_laps = stop_after_laps
         self.finish_ahead = finish_ahead
+        self.finish_end = (FRONT - LASER_X) + 0.05 + 0.03   # see laps_done
+        self.crossing = crossing
+        self.cross_back = cross_back
+        self.end_line = None         # last inner_wall_end: (end, a, b) if from crossing_end
+        self.wall_line = None        # last inner_wall_end: (end, a, b) by either way
+        self.walk_line = None        # last walk_end: (a, b)
+        self.island = None           # the inner wall's end last found, odom (_keep_island)
+        self.end_seen = None         # predict: (driven distance, end ahead of the lidar) last seen
+        # predict: no lock while the end is farther ahead of the lidar than this (m). The
+        # right lock comes with the end -0.03..0.11 m ahead (left, 0.40 m radius; right
+        # later). A car put down pointing 10 deg into the island 0.5 m before its end
+        # (2-D field, cw) locked at once: the bumper's first contact was the island's wall
+        # right ahead, which ready() counted as the wall ahead, "too late". The fix is
+        # island_mask (ready() is told which points are the island); this stays as a
+        # backstop.
+        self.max_lock_end = 0.30
         self.finish_heading = math.radians(45.0)
         self.start = None            # (x, y, yaw) of the first odometry: where the run began
         self.driven = dict(DRIVEN if driven is None else driven)
@@ -258,6 +287,8 @@ class CornerPolicy:
         self.mark_odo = self.odo
         self.armed_odo = None
         self.prediction = None
+        self.island = None
+        self.end_seen = None
         self.approach = False
         self.last_label = STRAIGHT
         self.sent = []
@@ -271,12 +302,95 @@ class CornerPolicy:
             self.mark_yaw = self.pose[2] if self.pose else 0.0
             self.corners += 1
             self.armed_odo = None
+            self.island = None
+            self.end_seen = None
         self.events.append((round(self.odo, 3), state + note))
 
     def inner_wall_end(self, r, angles, sign=None, off_line=0.0, min_span=0.0, max_slope=None,
                        fit_hi=None, wall_dist=None):
         """
         Return x (lidar frame, m) where the inner wall ends, or None if no wall / not open.
+
+        From the wall's own points (walk_end); if they do not show it, from the beams that
+        went past it (crossing_end, the island's silhouette). self.wall_line: (end, a, b)
+        of the wall found (lidar frame, y = a x + b) or None; self.end_line: the same if it
+        came from crossing_end, else None.
+        """
+        self.end_line = None
+        self.wall_line = None
+        self.walk_line = None
+        end = self.walk_end(r, angles, sign, off_line, min_span, max_slope, fit_hi, wall_dist)
+        if end is not None:
+            self.wall_line = (end,) + self.walk_line
+        if end is not None or not self.crossing:
+            return end
+        sign = self.sign if sign is None else sign
+        slope = max_slope if max_slope is not None else math.tan(math.radians(40.0))
+        found = self.crossing_end(r, angles, sign, slope, max(off_line, 0.05))
+        if found is None:
+            return None
+        self.end_line = self.wall_line = found
+        return found[0]
+
+    def crossing_end(self, r, angles, sign, max_slope, beyond_line=0.05):
+        """
+        Return (end, a, b): the inner wall's end, from the beams that went past it; or None.
+
+        The late start (2026-11-24, WRO 2026 rule 9.4/9.7: the car may be put anywhere in
+        the start straight): from the second half of a straight the island's end is in both
+        sensors' blind spots, the black wall returns nothing to the lidar closer than about
+        0.3-0.47 m and the camera sees only +-45 deg. The lidar does see the walls far
+        behind that end: the wall ahead runs on past the island as the next corridor's outer
+        wall. A beam that returns from beyond the inner wall's line went through that line,
+        so the island is not there; the island ends where the first such beams cross the
+        line (its silhouette against the far wall). end is the first crossing ahead of the
+        wall's points seen (behind them is the island's start) with min_open_beams
+        crossings within 0.05 m (one stray return cannot make an end; taking the third
+        crossing instead put far ends ~5 cm late, one beam is ~1.6 cm at 0.5 m), and the
+        wall's own points must not go on within 0.15 m past it.
+
+        The line is fitted to this side's points from cross_back m behind the lidar to
+        entry_dist ahead (behind the car the black wall is seen from >= 0.47 m, or
+        remembered), with parallel_line (within atan(max_slope) of parallel), spread over
+        fit_min_span, 0.12-0.40 m from the lidar. Only beams landing beyond_line m or more
+        beyond it count.
+        """
+        ok = np.isfinite(r)
+        rr = np.where(ok, r, 0.0)
+        x, y = rr * np.cos(angles), rr * np.sin(angles)
+        side = sign * y
+        cand = (ok & (side > 0.03) & (side < self.max_side) & (x > -self.cross_back)
+                & (x < self.entry_dist))
+        line = parallel_line(x, y, cand, max_slope)
+        if line is None:
+            return None
+        # the wall is the longest run of line points without a 0.10 m gap: a point of
+        # the wall ahead that happens to lie on the line (one point 0.9 m away) tilted
+        # the fit by 2 deg and put the end 3 cm late (test, end 0.05 m)
+        xi = np.sort(x[line[2]])
+        runs = np.split(xi, np.nonzero(np.diff(xi) > 0.10)[0] + 1)
+        run = max(runs, key=len)
+        inl = line[2] & (x >= run[0]) & (x <= run[-1])
+        if inl.sum() < 6 or np.ptp(x[inl]) < max(self.fit_min_span, 0.10):
+            return None
+        a, b = np.polyfit(x[inl], y[inl], 1)
+        if abs(a) > max_slope or not 0.12 <= abs(b) / math.hypot(1.0, a) <= 0.40:
+            return None
+        xc = self._crossings(x, y, rr, angles, sign, a, b, beyond_line)
+        # ahead of the wall seen: behind it the beams pass the island's START (the corner
+        # before, 2-D field start 0.05 m past it: a full lock at once into the island)
+        xc = xc[xc >= x[inl].max() - 0.03]
+        xi = x[cand & (np.abs(a * x + b - y) < 0.03)]          # all points on the line
+        n_in = np.searchsorted(xc, xc + 0.05, side='right') - np.arange(len(xc))
+        for end in xc[n_in >= self.min_open_beams]:
+            if not ((xi > end + 0.01) & (xi < end + 0.15)).any():
+                return float(end), float(a), float(b)
+        return None
+
+    def walk_end(self, r, angles, sign=None, off_line=0.0, min_span=0.0, max_slope=None,
+                 fit_hi=None, wall_dist=None):
+        """
+        Return x (lidar frame, m) where the wall's own points end, or None (no wall / not open).
 
         The inner wall line is fitted near the car (fit_window); its points are walked
         forward until a gap wider than gap. The end counts only if at least
@@ -334,7 +448,32 @@ class CornerPolicy:
             beyond &= sign * (y - (a * x + b)) > off_line
         if beyond.sum() < self.min_open_beams:
             return None
+        # and beams that went through the line just past the end: the wall really ends
+        # there. The last point seen can be where the lidar stops seeing a wall that goes
+        # on (2-D field 11-24, cw start 0.56 m, 5 cm from the outer wall, 10 deg: six
+        # points behind the car made an end 0.3 m before the island's, full lock at once
+        # into the island; the 11-13 run 4 was the same kind)
+        if self.crossing:
+            xc = self._crossings(x, y, rr, angles, sign, a, b, 0.05)
+            if ((xc >= end - 0.03) & (xc <= end + 0.15)).sum() < self.min_open_beams:
+                return None
+        self.walk_line = (float(a), float(b))
         return float(end)
+
+    def _crossings(self, x, y, rr, angles, sign, a, b, beyond_line):
+        """
+        Return where beams that went through the line y = a x + b cross it (x, sorted).
+
+        Beams that measured farther than open_dist and landed beyond_line m or more beyond
+        the line (on the sign side), lidar frame.
+        """
+        ok = rr > 0.0
+        beyond = ok & (rr > self.open_dist) & (sign * (y - (a * x + b)) > beyond_line)
+        den = np.sin(angles) - a * np.cos(angles)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            t = b / den                                   # along the beam to the line
+        cross = beyond & np.isfinite(t) & (t > 0.0) & (t < rr)
+        return np.sort((t * np.cos(angles))[cross])
 
     def walls(self, r, angles):
         """
@@ -395,6 +534,68 @@ class CornerPolicy:
             return RIGHT
         return STRAIGHT
 
+    def _keep_island(self):
+        """
+        Store the inner wall's end just found (self.wall_line) in the odom frame.
+
+        self.island = (end x, end y, wall heading, driven distance, from crossing_end?).
+        """
+        if self.wall_line is None or self.pose is None:
+            return
+        end, a, b = self.wall_line
+        x, y, yaw = self.pose
+        bx, by = end + LASER_X, a * end + b                  # base_link frame
+        c, s = math.cos(yaw), math.sin(yaw)
+        self.island = (x + c * bx - s * by, y + s * bx + c * by, yaw + math.atan(a), self.odo,
+                       self.end_line is not None)
+
+    def _island_now(self):
+        """Return the island (end, wall direction) in base_link now, or None if not kept."""
+        if self.island is not None and self.odo - self.island[3] > self.entry_dist:
+            self.island = None
+        if self.island is None or self.pose is None:
+            return None
+        ex, ey, wyaw = self.island[:3]
+        x, y, yaw = self.pose
+        c, s = math.cos(yaw), math.sin(yaw)
+        return (c * (ex - x) + s * (ey - y), -s * (ex - x) + c * (ey - y), wyaw - yaw)
+
+    def island_points(self, length=0.6, step=0.01):
+        """
+        Return the island's wall up to the end crossing_end found: (x, y) in base_link (m).
+
+        The end itself is in the blind spot and in no scan, so the turn prediction would
+        see no island there and lock too early; these points (the wall's line, length m
+        back from the end) stand in for it. Forgotten after entry_dist m of driving, and
+        as soon as a scan shows the wall's own end (walk_end): a stand-in kept from a far,
+        4.5 cm late crossing then made the lock late (2-D field, start 0.10 m, seed 1).
+        """
+        now = self._island_now()
+        if now is None or not self.island[4]:
+            return np.zeros(0), np.zeros(0)
+        ex, ey, wyaw = now
+        d = np.arange(0.0, length + 1e-9, step)
+        return ex - d * math.cos(wyaw), ey - d * math.sin(wyaw)
+
+    def island_mask(self, px, py, tol=0.03):
+        """
+        Return which points (base_link, m) are the island, or None if no island is kept.
+
+        The island: on the inner wall's line or beyond it (towards the inner side, tol m
+        slack) and not past its end along the wall. The turn prediction uses it to tell
+        "touches the island first: too early" from "touches the wall ahead or the outer
+        wall first: too late" (TurnPredictor._curves).
+        """
+        now = self._island_now()
+        if now is None:
+            return None
+        ex, ey, wyaw = now
+        c, s = math.cos(wyaw), math.sin(wyaw)
+        along = (px - ex) * c + (py - ey) * s
+        across = -(px - ex) * s + (py - ey) * c                # + = left of the wall's line
+        with np.errstate(invalid='ignore'):
+            return (self.sign * across > -tol) & (along < tol)
+
     def _predict(self, r, angles):
         """Arm on a wall end in follow (timing 'predict'); lock when the prediction says so."""
         if self.approach:
@@ -409,13 +610,21 @@ class CornerPolicy:
         rr = np.where(ok, r, 0.0)
         px = np.where(ok, rr * np.cos(angles) + LASER_X, np.nan)      # base_link frame
         py = np.where(ok, rr * np.sin(angles), np.nan)
+        ix, iy = self.island_points()
+        px, py = np.concatenate([px, ix]), np.concatenate([py, iy])
         queued = [(self.odo - o, self.driven[lab]) for o, lab in self.sent] or None
         lock, now, later, wait = self.predictor.ready(self.sign, px, py, self.curvature(),
                                                       self.driven[self.last_label],
-                                                      queued=queued)
+                                                      queued=queued,
+                                                      island=self.island_mask(px, py))
         self.prediction = (now, later, wait)
+        if lock and self.end_seen is not None:
+            # never lock while the end is still far ahead (see max_lock_end)
+            lock = self.end_seen[1] - (self.odo - self.end_seen[0]) <= self.max_lock_end
         if lock:
-            self._enter(TURN, ' (room %.3f m; best later %.3f m)' % (now, later))
+            self._enter(TURN, ' (room %.3f m; best later %.3f m%s)' % (
+                now, later,
+                '; island end from the beams past it' if self.island and self.island[4] else ''))
 
     def __call__(self, ranges, angle_min, angle_increment):
         """Decide from one (filled) scan; see the module docstring."""
@@ -430,12 +639,17 @@ class CornerPolicy:
             self.sent.pop(0)
         return label, None
 
-    def laps_done(self):
+    def laps_done(self, end=None):
         """
         Return True when the set laps are driven and the car is back at the start (done).
 
         If the start was placed close to a corner, the last turn can end past it: then the
         car stops right after that turn (up to ~10 cm past the start, 2-D field 11-24).
+        end: the inner wall's end ahead (lidar frame, m), if seen. A start in the second
+        half of the straight lies where the car already turns for the next corner; WRO
+        2026 (9.24.2) wants the car to stop completely inside the start straight, so it
+        also stops once the front bumper, plus the ~5 cm the wheels still roll, would
+        come within 3 cm of the straight's end (end <= finish_end).
         """
         if (not self.stop_after_laps or self.corners < 4 * self.stop_after_laps
                 or self.pose is None or self.start is None):
@@ -445,7 +659,7 @@ class CornerPolicy:
         if abs(_wrap(yaw - syaw)) > self.finish_heading:
             return False                              # not on the start straight's heading
         ahead = (sx - x) * math.cos(syaw) + (sy - y) * math.sin(syaw)
-        return ahead <= self.finish_ahead
+        return ahead <= self.finish_ahead or (end is not None and end <= self.finish_end)
 
     def _decide(self, ranges, angle_min, angle_increment):
         if self.state in (FOLLOW, SETTLE) and self.laps_done():
@@ -464,7 +678,13 @@ class CornerPolicy:
         if self.state == FOLLOW:
             end = self.inner_wall_end(r, angles, min_span=self.fit_min_span,
                                       max_slope=self.fit_max_slope, wall_dist=self.wall_dist)
+            if self.laps_done(end):
+                self._enter(DONE)
+                return STOP
             self.approach = end is not None and end <= self.entry_dist
+            if self.approach:
+                self.end_seen = (self.odo, end)
+                self._keep_island()       # from walk_end: no stand-in points (see there)
             if self.predictor is None:
                 if end is not None and end <= self.corner_ahead:
                     self._enter(DELAY)

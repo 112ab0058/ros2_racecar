@@ -159,15 +159,18 @@ class TurnPredictor:
         """
         return self._curves(sign, px, py, k0, k_cmd, waits, queued)[0]
 
-    def _curves(self, sign, px, py, k0, k_cmd, waits, queued=None):
+    def _curves(self, sign, px, py, k0, k_cmd, waits, queued=None, island=None):
         """
         Return the clearance and the side of the first contact, per wait.
 
         Per wait: (clearance, first contact on the inner side?). The side is that of the
-        point the outline touches first (sign of its lateral offset in the car frame at
-        that pose; a point right ahead of the bumper counts as outer). At the first contact
-        the point only just touches the outline, so its side is clear; deeper in, a point
-        the path runs straight through has none.
+        point the outline touches first: with island (a mask like px: the points that are
+        the island, from where the corner rule found its wall and end) whether that point
+        is the island; without, the sign of its lateral offset in the car frame at that
+        pose (a point right ahead of the bumper counts as outer; wrong for a car pointing
+        into the island, whose bumper then touches the island's wall right ahead). At the
+        first contact the point only just touches the outline, so its side is clear;
+        deeper in, a point the path runs straight through has none.
         """
         waits = self.waits if waits is None else np.asarray(waits, float)
         px, py = np.asarray(px, float), np.asarray(py, float)
@@ -176,6 +179,7 @@ class TurnPredictor:
         inner = np.zeros(len(waits), bool)
         if not keep.any():
             return room, inner
+        isl = None if island is None else np.asarray(island, bool)[keep]
         qx, qy = px[keep][None, :], py[keep][None, :]
         for i, d in enumerate(waits):
             p = self.path(sign, k0, k_cmd, d, queued)
@@ -188,15 +192,17 @@ class TurnPredictor:
             if room[i] < 0.0:
                 h = int(np.argmax(per_pose < 0.0))
                 j = int(np.argmin(g[h]))
-                inner[i] = sign * w[h, j] > 0.0 and u[h, j] <= FRONT
+                inner[i] = (isl[j] if isl is not None
+                            else sign * w[h, j] > 0.0 and u[h, j] <= FRONT)
         return room, inner
 
-    def ready(self, sign, px, py, k0=0.0, k_cmd=None, queued=None):
+    def ready(self, sign, px, py, k0=0.0, k_cmd=None, queued=None, island=None):
         """
         Decide whether to lock now.
 
         (lock now?, clearance now, best clearance of a later lock, its wait in m).
-        k0, k_cmd, queued: the steering now, see path.
+        k0, k_cmd, queued: the steering now, see path. island: which points are the
+        island (see _curves), if known.
 
         If full lock now would touch something: the inner side first (the island) means
         too early, wait; the outer side or the bumper first (the wall ahead) means too
@@ -207,7 +213,7 @@ class TurnPredictor:
         early in the 2-D field; "distance before the first contact" ties along a long
         inner wall, or prefers driving straight into the wall ahead.)
         """
-        room0, inner0 = self._curves(sign, px, py, k0, k_cmd, self.waits[:1], queued)
+        room0, inner0 = self._curves(sign, px, py, k0, k_cmd, self.waits[:1], queued, island)
         if not np.isfinite(room0[0]):
             return False, float(room0[0]), float(room0[0]), 0.0
         if room0[0] < 0.0:
