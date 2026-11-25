@@ -69,6 +69,7 @@ section.on{display:grid}
 .key svg{width:44px;height:44px}
 .key.held{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 #k-back{grid-column:2}
+.key.full{font-size:15px}.key.full svg{width:36px;height:36px}
 /* joystick and tilt dial */
 #stick,#tilt{place-items:center;align-content:center;gap:10px}
 .dial{position:relative;width:min(80vw,36vh,420px);aspect-ratio:1;border-radius:50%;
@@ -156,7 +157,9 @@ dialog .row a{background:var(--accent);color:var(--accent-fg);text-decoration:no
   <button class="key drive" data-a="left"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M34 42V26c0-8-6-14-14-14H10"/><path d="M17 4l-8 8 8 8"/></svg>左前</button>
   <button class="key drive" data-a="straight"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M24 42V8"/><path d="M12 20L24 8l12 12"/></svg>直走</button>
   <button class="key drive" data-a="right"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 42V26c0-8 6-14 14-14h10"/><path d="M31 4l8 8-8 8"/></svg>右前</button>
+  <button class="key drive full" data-a="full_left"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M30 42V24c0-5-3-8-8-8H10"/><path d="M17 9l-7 7 7 7"/></svg>左滿舵</button>
   <button class="key drive" id="k-back" data-a="back"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M24 6v34"/><path d="M12 28l12 12 12-12"/></svg>後退</button>
+  <button class="key drive full" data-a="full_right"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 42V24c0-5 3-8 8-8h12"/><path d="M31 9l7 7-7 7"/></svg>右滿舵</button>
 </section>
 <section id="stick"><div class="dial" id="pad"><div class="knob" id="knob"></div></div>
   <div class="hint">拖到哪個方向就往哪開；回中心或放開就停</div></section>

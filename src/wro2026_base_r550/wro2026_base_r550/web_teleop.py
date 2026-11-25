@@ -5,7 +5,8 @@ For driving without a laptop. The page (web_teleop_page.html) offers what the
 vendor's WHEELTEC app offers (APP遥控用户手册 2026.6.30), but every command goes
 through ROS and base_node, so its limits and timeouts apply and the bag gets
 /cmd_vel_out:
-  keys       left / straight / right forward, back: for training data
+  keys       left / straight / right forward, full lock left / right, back: for the
+             imitation network's training data (its 5 labels; full lock keys 2026-11-25)
   joystick   8 directions, Ackermann table 3-1 of the manual: up forward,
              up-left/right turn, left/right full lock, down-left/right back
              turning, down back

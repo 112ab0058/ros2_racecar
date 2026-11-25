@@ -27,8 +27,8 @@ import math
 import numpy as np
 
 from .corner import FULL_LEFT, FULL_RIGHT
-from .features import (BIN_DEG, HALF_FOV_DEG, LABELS, LEFT, MAX_RANGE, N_BINS, RIGHT,
-                       scan_features, STRAIGHT)
+from .features import (BIN_DEG, HALF_FOV_DEG, LABELS, LABELS_3, LEFT, MAX_RANGE, N_BINS,
+                       RIGHT, scan_features, STRAIGHT)
 
 # Car outline seen from the lidar (m). R550_HARDWARE.md: rear axle to the front 0.24 m,
 # to the back 0.031 m, width 0.18 m; urdf: lidar 0.13 m in front of the rear axle.
@@ -155,11 +155,18 @@ def model_policy(model):
 
 
 def check_model(model, meta):
-    """Raise ValueError if the network was trained on other inputs than features.py makes."""
-    expected = {'half_fov_deg': HALF_FOV_DEG, 'bin_deg': BIN_DEG, 'max_range': MAX_RANGE,
-                'labels': list(LABELS)}
+    """
+    Raise ValueError if the network was trained on other inputs than features.py makes.
+
+    Labels: the 5 of features.LABELS (with full lock, 2026-11-25) or the first 3 (older
+    models, never full lock); the numbers are the same, so both drive the same way.
+    """
+    expected = {'half_fov_deg': HALF_FOV_DEG, 'bin_deg': BIN_DEG, 'max_range': MAX_RANGE}
     wrong = [k for k, v in expected.items() if meta.get(k) != v]
-    if model.w[0].shape[0] != N_BINS or model.w[-1].shape[1] != len(LABELS):
+    labels = meta.get('labels')
+    if labels not in (list(LABELS), list(LABELS_3)):
+        wrong.append('labels')
+    elif model.w[0].shape[0] != N_BINS or model.w[-1].shape[1] != len(labels):
         wrong.append('layer sizes')
     if wrong:
         raise ValueError('model does not match features.py (%s); train it again with bc_train'

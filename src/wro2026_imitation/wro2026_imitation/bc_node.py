@@ -62,7 +62,7 @@ from .policy import center_policy, check_model, Driver, model_policy, OK, state_
 PARAMETERS = [
     ('policy', 'model', "'model' = network from bc_train, 'center' = keep-centred baseline, "
                         "'corner' = Ray's corner technique (corner.py)"),
-    ('model', '', 'model file from bc_train (policy model)'),
+    ('model', '', 'model file from bc_train (policy model); it also gives speed and radii'),
     ('publish_cmd', False, 'false = only bc/decision, no /cmd_vel; true = drive'),
     ('speed', 0.0, 'm/s; 0 = speed of the recordings (model) or 0.1 (center)'),
     ('turn_radius', 0.0, 'm; 0 = radius of the recordings (model) or 0.5 (center)'),
@@ -90,7 +90,8 @@ PARAMETERS = [
                 '0 = never'),
     ('entry_offset', 0.05, 'corner: before a corner aim this far towards the outer wall (m)'),
     ('turn_deg', 80.0, 'corner: full lock until the heading changed this much (deg)'),
-    ('full_turn_radius', 0.35, 'corner: radius of full lock (m), >= min_turn_radius'),
+    ('full_turn_radius', 0.35, 'radius of full lock (m), >= min_turn_radius; policy model '
+                               'uses the radius of the recordings when the model has it'),
     ('odom_topic', '/odometry/filtered', 'corner: odometry (EKF, gyro heading)'),
     ('cmd_topic', 'cmd_vel', "where publish_cmd goes; 'bc/cmd_vel' = only via the phone"),
 ]
@@ -104,6 +105,8 @@ class BcNode(Node):
         p = {name: self.declare_parameter(name, default).value
              for name, default, _ in PARAMETERS}
         speed, radius = p['speed'], p['turn_radius']
+        full_radius = p['full_turn_radius']
+        about = ''
         if p['policy'] == 'model':
             if not p['model']:
                 raise ValueError('policy model needs model:=<file from bc_train>')
@@ -112,6 +115,12 @@ class BcNode(Node):
             decide = model_policy(model)
             speed = speed or meta.get('speed') or 0.0
             radius = radius or meta.get('turn_radius') or 0.0
+            # full lock: the recordings' radius, as speed and turn radius (2026-11-25)
+            full_radius = meta.get('full_turn_radius') or full_radius
+            about = ' (%s, %d labels, trained %s from %s, %s samples, validation %.0f %%)' % (
+                p['model'], len(meta.get('labels', ())), meta.get('trained', '?'),
+                meta.get('source', 'hand'), meta.get('samples', '?'),
+                100.0 * meta.get('val_accuracy', float('nan')))
         elif p['policy'] == 'center':
             decide = center_policy(p['front_dist'], p['side_margin'])
             speed, radius = speed or 0.1, radius or 0.5
@@ -127,11 +136,12 @@ class BcNode(Node):
         if not 0.0 < speed <= p['max_speed']:
             raise ValueError('speed %.3f m/s is not in (0, max_speed %.2f]; set speed:='
                              % (speed, p['max_speed']))
-        if min(radius, p['full_turn_radius']) < p['min_turn_radius']:
+        # 1 mm tolerance: a recorded full lock is 0.1 / 0.2857 = 0.35 m give or take rounding
+        if min(radius, full_radius) < p['min_turn_radius'] - 1e-3:
             raise ValueError('turn radius %.2f / %.2f m is below min_turn_radius %.2f'
-                             % (radius, p['full_turn_radius'], p['min_turn_radius']))
+                             % (radius, full_radius, p['min_turn_radius']))
         self.driver = Driver(decide, speed, radius, p['stop_margin'], p['scan_timeout'],
-                             p['full_turn_radius'], p['memory_margin'])
+                             max(full_radius, p['min_turn_radius']), p['memory_margin'])
         self.memory_marks = bool(p['memory_marks'])
         self.policy = decide
         self.events_seen = 0
@@ -151,14 +161,14 @@ class BcNode(Node):
         self.create_timer(1.0 / p['rate'], self._tick)
         mode = ('PUBLISHING %s (base_node with enable_commands moves the car)' % p['cmd_topic']
                 if self.publish_cmd else 'DRY RUN: bc/decision only, no /cmd_vel')
-        policy = p['policy']
-        if policy == 'corner':
+        policy = p['policy'] + about
+        if p['policy'] == 'corner':
             policy += ' (%s, timing %s%s, %s)' % (
                 p['direction'], p['timing'],
                 ', corner_ahead %.3f m' % p['corner_ahead'] if p['timing'] == 'ahead' else '',
                 'stop after %d laps' % p['laps'] if p['laps'] else 'no lap limit')
-        self.get_logger().warn('%s; policy %s, speed %.3f m/s, turn radius %.2f m'
-                               % (mode, policy, speed, radius))
+        self.get_logger().warn('%s; policy %s, speed %.3f m/s, turn radius %.2f m, full lock '
+                               '%.2f m' % (mode, policy, speed, radius, full_radius))
 
     def _on_odom(self, msg):
         q = msg.pose.pose.orientation

@@ -2,7 +2,14 @@
 # Orin: AUTONOMOUS DRIVING with a phone dead-man switch. MAKES THE MOTORS TURN.
 #
 #   CONFIRM=YES bash ~/racecar_ws/tools/orin_auto.sh [direction auto] [speed 0.1] [seconds 180] \
-#       [corner_ahead 0.15] [timing ahead] [laps 3]
+#       [corner_ahead 0.15] [timing ahead] [laps 3] [policy corner]
+#
+# policy (2026-11-25): corner (default) = Ray's corner technique (corner.py); model = the
+# imitation network ~/r550_map/model.npz (orin_train.sh), or the path of another model file.
+# The network decides left / straight / right / full lock from /scan_filled by itself:
+# direction, timing, corner_ahead and laps are not used (no lap stop: the time limit ends
+# the run). The model file is copied into the result folder. All the safety rules below
+# stay the same (自動 hold button, too-close latch, limits).
 #
 # laps: after this many laps (4 corners each) the car stops where it started (back on the
 # start straight, the start point at most 5 cm ahead) and stays stopped; 0 = no lap limit
@@ -62,6 +69,7 @@ RUN_TIME="${3:-180}"
 CORNER_AHEAD="${4:-0.15}"
 TIMING="${5:-ahead}"
 LAPS="${6:-3}"
+POLICY="${7:-corner}"
 OUT="$HOME/r550_map/$(date +%Y%m%d_%H%M%S)_auto"
 
 source /opt/ros/jazzy/setup.bash
@@ -87,6 +95,15 @@ if ! awk "BEGIN{exit !($SPEED > 0 && $SPEED <= 0.12)}"; then
 fi
 if ! awk "BEGIN{exit !($RUN_TIME >= 10 && $RUN_TIME <= 600)}"; then
     echo "seconds $RUN_TIME: must be 10 to 600."; exit 1
+fi
+MODEL=""
+case "$POLICY" in
+    corner) ;;
+    model) MODEL="$HOME/r550_map/model.npz" ;;
+    *) MODEL="$POLICY" ;;
+esac
+if [ -n "$MODEL" ] && [ ! -f "$MODEL" ]; then
+    echo "policy $POLICY: no model file $MODEL (train one with orin_train.sh)."; exit 1
 fi
 if ! awk "BEGIN{exit !($CORNER_AHEAD >= -0.10 && $CORNER_AHEAD <= 0.25)}"; then
     echo "corner_ahead $CORNER_AHEAD: must be -0.10 to 0.25 m."; exit 1
@@ -174,7 +191,12 @@ if ! grep -q "READ ONLY" "$OUT/camera.log" || ! kill -0 "$CAM_PID" 2>/dev/null; 
 fi
 setsid ros2 run wro2026_lidar_n10p scan_memory_node > "$OUT/memory.log" 2>&1 < /dev/null &
 MEM_PID=$!
-setsid ros2 run wro2026_imitation bc_node --ros-args -p policy:=corner \
+POLICY_ARGS=(-p policy:=corner)
+if [ -n "$MODEL" ]; then
+    cp "$MODEL" "$OUT/model.npz"        # which network drove this run
+    POLICY_ARGS=(-p policy:=model -p model:="$OUT/model.npz")
+fi
+setsid ros2 run wro2026_imitation bc_node --ros-args "${POLICY_ARGS[@]}" \
     -p direction:="$DIRECTION" -p corner_ahead:="$CORNER_AHEAD" -p timing:="$TIMING" \
     -p laps:="$LAPS" \
     -p speed:="$SPEED" -p publish_cmd:=true \

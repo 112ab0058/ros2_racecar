@@ -21,6 +21,13 @@ one with one tap): 方向 自動判斷 (one start button, direction auto) / 手�
 remembers the last choice (localStorage); the first default is the tested pair, 手動選 +
 固定距離.
 
+Imitation learning (2026-11-25): a third switch 駕駛 picks 規則 (the corner technique, the
+default) or 網路 (the network ~/r550_map/model.npz drives: orin_auto.sh policy model; one
+start button, no direction or timing). The 訓練 button runs orin_train.sh (reads the
+recorded runs, writes the model; no motors) while nothing else runs. Every run started
+here records the data the network learns from: drive with the drive page's keys
+(Ray's driving) or hold 自動 (the rule's driving).
+
 Both tokens are fixed (~/.r550_web/launcher_token, drive_token, made once), so the
 bookmarks keep working; the drive page link uses the host the launcher was opened with.
 HTTPS with the Orin's own CA (web_cert.py), like the drive page, so a phone that trusts
@@ -50,7 +57,9 @@ from wro2026_base_r550.web_cert import ensure_ca, local_addresses, make_server_c
 HOME = os.path.expanduser('~')
 CERT_DIR = os.path.join(HOME, '.r550_web')
 AUTO = os.path.join(HOME, 'racecar_ws', 'tools', 'orin_auto.sh')
+TRAIN = os.path.join(HOME, 'racecar_ws', 'tools', 'orin_train.sh')
 MAP_DIR = os.path.join(HOME, 'r550_map')
+MODEL = os.path.join(MAP_DIR, 'model.npz')
 STM32 = '/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0002-if00'
 PORT, DRIVE_PORT = 8443, 8080
 # 112ab-jno.local: the Orin by name on any WiFi (avahi / mDNS; iPhone resolves .local),
@@ -65,6 +74,27 @@ BUSY = ('wro2026_base_r550/(feedback_node|base_node|web_teleop_node)|wro2026_lid
         'robot_state_publisher|foxglove_bridge|ekf_node|slam_toolbox|bc_node|wro2026_camera_c70')
 DIRECTION_NAMES = {'auto': '自動判斷方向', 'ccw': '逆時針', 'cw': '順時針'}
 TIMING_NAMES = {'predict': '預測式打滿', 'ahead': '固定距離打滿'}
+POLICY_NAMES = {'corner': '規則', 'model': '網路'}
+
+
+def model_info():
+    """Chinese lines about ~/r550_map/model.npz (what policy model drives), [] if none."""
+    try:
+        import numpy as np
+        with np.load(MODEL) as d:
+            meta = json.loads(str(d['meta']))
+    except (OSError, ValueError, KeyError):
+        return []
+    full = len(meta.get('labels', ())) == 5
+    lines = ['模型：%s 訓練，%s 筆資料（%s）' % (
+        meta.get('trained', '?'), meta.get('samples', '?'),
+        {'all': '人和規則', 'hand': '只有人開的', 'rule': '只有規則開的'}.get(
+            meta.get('source', 'hand'), meta.get('source')))]
+    if 'val_accuracy' in meta:
+        lines.append('驗證：準確率 %.0f %%，各動作平均 %.0f %%%s' % (
+            100.0 * meta['val_accuracy'], 100.0 * meta.get('val_balanced', float('nan')),
+            '' if full else '（舊模型，不會打滿）'))
+    return lines
 
 
 def read_token(name):
@@ -101,17 +131,17 @@ def read_battery(seconds=0.6):
 class Run:
     """One orin_auto.sh started from the page."""
 
-    def __init__(self, direction, seconds, ahead, timing, laps, drive_token):
+    def __init__(self, direction, seconds, ahead, timing, laps, drive_token, policy='corner'):
         os.makedirs(MAP_DIR, exist_ok=True)
         self.log = os.path.join(MAP_DIR, 'launcher_%s.out' % time.strftime('%Y%m%d_%H%M%S'))
-        self.args = (direction, seconds, ahead, timing, laps)
+        self.args = (direction, seconds, ahead, timing, laps, policy)
         self.started = time.time()
         self.stop_requested = None
         env = dict(os.environ, CONFIRM='YES', DRIVE_TOKEN=drive_token)
         with open(self.log, 'w') as out:
             self.proc = subprocess.Popen(
                 ['bash', AUTO, direction, '0.1', str(seconds), '%.3f' % ahead, timing,
-                 str(laps)],
+                 str(laps), policy],
                 stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env,
                 start_new_session=True)
 
@@ -152,6 +182,26 @@ class Run:
         threading.Thread(target=later, daemon=True).start()
 
 
+class Training:
+    """One orin_train.sh started from the page (reads files, no motors)."""
+
+    def __init__(self):
+        self.log = os.path.join(MAP_DIR, 'train_%s.out' % time.strftime('%Y%m%d_%H%M%S'))
+        with open(self.log, 'w') as out:
+            self.proc = subprocess.Popen(['bash', TRAIN], stdout=out, stderr=subprocess.STDOUT,
+                                         stdin=subprocess.DEVNULL, start_new_session=True)
+
+    def alive(self):
+        return self.proc.poll() is None
+
+    def text(self):
+        try:
+            with open(self.log, encoding='utf-8', errors='replace') as f:
+                return f.read()
+        except OSError:
+            return ''
+
+
 def last_run_summary():
     """A few lines about the newest ~/r550_map/*_auto run (Chinese, for the page)."""
     dirs = sorted(d for d in os.listdir(MAP_DIR) if d.endswith('_auto')) if os.path.isdir(
@@ -171,6 +221,8 @@ def last_run_summary():
     turns = len(re.findall(r'corner policy: turn\b', bc))
     lines = ['%s' % dirs[-1],
              '按住「自動」%d 次，轉彎 %d 次' % (web.count('phone: 自動'), turns)]
+    if re.search(r'policy model \(', bc):
+        lines.append('模式：網路（模仿學習）')
     mode = re.search(r'policy corner \((auto|ccw|cw), timing (\w+)', bc)
     if mode:
         lines.append('模式：%s，%s' % (DIRECTION_NAMES[mode.group(1)],
@@ -200,6 +252,7 @@ class Launcher:
         self.token = read_token('launcher_token')
         self.drive_token = read_token('drive_token')
         self.run = None
+        self.training = None
         self.lock = threading.Lock()
         self.battery = (None, 0.0)          # (volts, monotonic time read)
 
@@ -213,16 +266,34 @@ class Launcher:
         st = 'other' if other else (run.state() if run else 'idle')
         tail = [line for line in (run.text() if run else '').splitlines()
                 if not line.startswith('PHONE_URL')][-6:]
+        training = self.training
+        if training is not None and training.alive() and st in ('idle', 'ended'):
+            st = 'training'
         return {'state': st, 'battery': self.battery[0],
                 'battery_age': round(time.monotonic() - self.battery[1]),
                 'args': run.args if run else None,
                 'drive_url': 'https://%s:%d/?k=%s' % (host, DRIVE_PORT, self.drive_token),
-                'tail': tail, 'last': last_run_summary(), 'min_battery': MIN_BATTERY}
+                'tail': tail, 'last': last_run_summary(), 'min_battery': MIN_BATTERY,
+                'model': model_info(),
+                'train_tail': training.text().splitlines()[-8:] if training else []}
 
-    def start(self, direction, seconds, ahead, timing='ahead', laps=3):
+    def train(self):
+        with self.lock:
+            if self.training is not None and self.training.alive():
+                return '已經在訓練了'
+            if (self.run is not None and self.run.alive()) or busy():
+                return '車子的程式在跑，先按停止再訓練'
+            self.training = Training()
+            return None
+
+    def start(self, direction, seconds, ahead, timing='ahead', laps=3, policy='corner'):
         with self.lock:
             if self.run is not None and self.run.alive():
                 return '已經在跑了'
+            if self.training is not None and self.training.alive():
+                return '正在訓練，等它結束'
+            if policy == 'model' and not os.path.exists(MODEL):
+                return '還沒有模型：先按「訓練」'
             if busy():
                 return 'Orin 上有其他車子的程式在跑，先停掉它們'
             volts = read_battery()
@@ -231,7 +302,7 @@ class Launcher:
                 return '讀不到電池電壓（STM32 沒接好或沒開電源）'
             if volts < MIN_BATTERY:
                 return '電池 %.2f V，低於 %.1f V，先充電' % (volts, MIN_BATTERY)
-            self.run = Run(direction, seconds, ahead, timing, laps, self.drive_token)
+            self.run = Run(direction, seconds, ahead, timing, laps, self.drive_token, policy)
             return None
 
     def stop(self):
@@ -250,6 +321,7 @@ h1{font-size:20px;margin:0 0 12px}.card{background:#fff;border-radius:12px;paddi
 margin-bottom:12px;box-shadow:0 1px 3px #0002}.big{font-size:22px;font-weight:600}
 button{font-size:18px;padding:14px;border-radius:10px;border:0;width:100%;margin:6px 0}
 .go{background:#1f6feb;color:#fff}.stop{background:#d1242f;color:#fff}
+.train{background:#6639ba;color:#fff}
 button:disabled{background:#bbb}.low{color:#d1242f}a.drive{display:block;text-align:center;
 font-size:20px;font-weight:600;background:#1a7f37;color:#fff;padding:16px;border-radius:10px;
 text-decoration:none}pre{white-space:pre-wrap;font-size:12px;color:#555;margin:0}
@@ -262,6 +334,12 @@ color:#fff}.hint{font-size:13px;color:#8a5a00;margin:2px 0 4px}[hidden]{display:
 <div class="card"><div>狀態</div><div id="st" class="big">…</div><div id="drive"></div>
 <pre id="tail"></pre></div>
 <div class="card" id="startcard">
+<div class="mode"><div>駕駛</div><div class="seg">
+<button id="pol_corner" onclick="setMode('pol', 'corner')">規則（轉彎技巧）</button>
+<button id="pol_model" onclick="setMode('pol', 'model')">網路（模仿學習）</button></div>
+<div class="hint" id="pol_hint" hidden>網路駕駛還沒在地上跑過；不對就放開自動、按停止，切回「規則」。網路不會數圈，時間到才停。</div>
+<pre id="model"></pre></div>
+<div id="rule_modes">
 <div class="mode"><div>方向</div><div class="seg">
 <button id="dir_auto" onclick="setMode('dir', 'auto')">自動判斷</button>
 <button id="dir_hand" onclick="setMode('dir', 'hand')">手動選</button></div>
@@ -270,10 +348,12 @@ color:#fff}.hint{font-size:13px;color:#8a5a00;margin:2px 0 4px}[hidden]{display:
 <button id="timing_predict" onclick="setMode('timing', 'predict')">預測式</button>
 <button id="timing_ahead" onclick="setMode('timing', 'ahead')">固定距離</button></div>
 <div class="hint" id="timing_hint" hidden>預測式還沒在地上跑過；不對就按停止，切回「固定距離」</div></div>
+</div>
 <div class="hint">放車：整台車在任一段直道裡、車頭朝要跑的方向（照 WRO 規則）。逆時針時，直道後半段不要貼著島放，也不要車頭朝外牆。</div>
 <button class="go" id="go_auto" onclick="go('auto')">開始（自動判斷方向）</button>
 <button class="go" id="go_ccw" onclick="go('ccw')">逆時針（左轉）開始</button>
 <button class="go" id="go_cw" onclick="go('cw')">順時針（右轉）開始</button>
+<button class="go" id="go_model" onclick="go('auto')">網路駕駛開始</button>
 <details><summary>設定</summary>
 <label>時間（秒，10–600；3 圈約 150 秒）<input id="secs" type="number" value="180"></label>
 <label>圈數（跑完停在起點；0＝不停）<input id="laps" type="number" min="0" max="10" value="3"></label>
@@ -282,10 +362,16 @@ color:#fff}.hint{font-size:13px;color:#8a5a00;margin:2px 0 4px}[hidden]{display:
 <div class="card"><button class="stop" onclick="stopRun()">停止</button>
 <div>停止 = 讓程式正常結束（存地圖、關掉全部）。緊急時直接關 Motor 開關。</div></div>
 <div class="card"><div>上一次</div><pre id="last"></pre></div>
+<div class="card"><div>模仿學習</div>
+<div class="hint">每次按「開始」都會錄資料：在駕駛頁用「按鍵」自己開＝人的示範，按住「自動」＝規則的示範。
+架空的紀錄（輪子在轉、光達看到的不動）和撞牆停車前 1.5 秒會自動排除。</div>
+<button class="train" id="train" onclick="train()">用全部紀錄訓練網路（不會動馬達，約幾分鐘）</button>
+<pre id="train_tail"></pre></div>
 <script>
 const K = new URLSearchParams(location.search).get('k');
 const NAMES = {idle:'待機', starting:'啟動中（約 20 秒，車子不要動）', ready:'可以開了：打開駕駛頁，按住「自動」',
-  stopping:'停止中…', ended:'已結束', other:'Orin 上有別的車子程式在跑（不是從這頁開的）'};
+  stopping:'停止中…', ended:'已結束', other:'Orin 上有別的車子程式在跑（不是從這頁開的）',
+  training:'訓練網路中（馬達不會動）'};
 async function api(path, opts) {
   const r = await fetch(path + (path.includes('?') ? '&' : '?') + 'k=' + K, opts);
   return r.json();
@@ -297,20 +383,26 @@ async function tick() {
     b.textContent = s.battery == null ? '讀不到（程式在跑時不讀）' : s.battery.toFixed(2) + ' V';
     b.className = 'big' + (s.battery != null && s.battery < s.min_battery ? ' low' : '');
     document.getElementById('st').textContent = (NAMES[s.state] || s.state) +
-      (s.args ? '　' + DIR_NAMES[s.args[0]] + ' ' + s.args[1] + ' 秒　' +
+      (s.args && s.args[5] == 'model' ? '　網路駕駛 ' + s.args[1] + ' 秒' :
+       s.args ? '　' + DIR_NAMES[s.args[0]] + ' ' + s.args[1] + ' 秒　' +
        (s.args[3] == 'predict' ? '預測式' : '固定距離 ' + s.args[2] + ' m') + '　' +
        (s.args[4] ? s.args[4] + ' 圈' : '不限圈數') : '');
+    document.getElementById('model').textContent = s.model.length ? s.model.join('\\n') :
+      '還沒有模型：先在下面按「訓練」';
+    document.getElementById('train_tail').textContent = s.train_tail.join('\\n');
     document.getElementById('drive').innerHTML = s.state == 'ready' ?
       '<a class="drive" href="' + s.drive_url + '">打開駕駛頁</a>' : '';
     document.getElementById('tail').textContent = s.tail.join('\\n');
     document.getElementById('last').textContent = s.last.join('\\n');
-    const running = ['starting', 'ready', 'stopping', 'other'].includes(s.state);
+    const running = ['starting', 'ready', 'stopping', 'other', 'training'].includes(s.state);
     document.querySelectorAll('.go').forEach(x => x.disabled = running);
+    document.getElementById('train').disabled = running;
+    if (!s.model.length) document.getElementById('go_model').disabled = true;
   } catch (e) { document.getElementById('st').textContent = '連不到 Orin'; }
 }
 // mode switches: the phone remembers them; first default = the tested pair
 const DIR_NAMES = {auto: '自動判斷方向', ccw: '逆時針', cw: '順時針'};
-const mode = {dir: 'hand', timing: 'ahead'};
+const mode = {dir: 'hand', timing: 'ahead', pol: 'corner'};
 function load(key, ok) {
   try { const v = localStorage.getItem('r550_' + key); if (ok.includes(v)) mode[key] = v; }
   catch (e) {}
@@ -325,22 +417,38 @@ function show() {
     mode.dir == v ? 'on' : '';
   for (const v of ['predict', 'ahead']) document.getElementById('timing_' + v).className =
     mode.timing == v ? 'on' : '';
+  for (const v of ['corner', 'model']) document.getElementById('pol_' + v).className =
+    mode.pol == v ? 'on' : '';
+  const net = mode.pol == 'model';
+  document.getElementById('pol_hint').hidden = !net;
+  document.getElementById('model').hidden = !net;
+  document.getElementById('rule_modes').hidden = net;
   document.getElementById('dir_hint').hidden = mode.dir != 'auto';
   document.getElementById('timing_hint').hidden = mode.timing != 'predict';
-  document.getElementById('go_auto').hidden = mode.dir != 'auto';
-  document.getElementById('go_ccw').hidden = mode.dir == 'auto';
-  document.getElementById('go_cw').hidden = mode.dir == 'auto';
+  document.getElementById('go_auto').hidden = net || mode.dir != 'auto';
+  document.getElementById('go_ccw').hidden = net || mode.dir == 'auto';
+  document.getElementById('go_cw').hidden = net || mode.dir == 'auto';
+  document.getElementById('go_model').hidden = !net;
 }
-load('dir', ['auto', 'hand']); load('timing', ['predict', 'ahead']); show();
+load('dir', ['auto', 'hand']); load('timing', ['predict', 'ahead']);
+load('pol', ['corner', 'model']); show();
 async function go(dir) {
   const secs = document.getElementById('secs').value, ahead = document.getElementById('ahead').value;
-  const timing = mode.timing, laps = document.getElementById('laps').value;
-  if (!confirm(DIR_NAMES[dir] + ' ' + secs + ' 秒，0.10 m/s，' +
-      (timing == 'predict' ? '預測式打滿' : '固定距離打滿 ' + ahead + ' m') + '，' +
-      (laps > 0 ? laps + ' 圈後停在起點' : '不限圈數') + '。\\n' +
+  const timing = mode.timing, laps = document.getElementById('laps').value, pol = mode.pol;
+  const what = pol == 'model' ? '網路駕駛 ' + secs + ' 秒，0.10 m/s，不數圈（時間到才停）' :
+    DIR_NAMES[dir] + ' ' + secs + ' 秒，0.10 m/s，' +
+    (timing == 'predict' ? '預測式打滿' : '固定距離打滿 ' + ahead + ' m') + '，' +
+    (laps > 0 ? laps + ' 圈後停在起點' : '不限圈數');
+  if (!confirm(what + '。\\n' +
       '有人在 Motor 開關旁、周圍淨空？\\n車子只在按住「自動」時會動。')) return;
   const r = await api('/start?dir=' + dir + '&secs=' + secs + '&ahead=' + ahead +
-                      '&timing=' + timing + '&laps=' + laps, {method:'POST'});
+                      '&timing=' + timing + '&laps=' + laps + '&policy=' + pol, {method:'POST'});
+  if (r.error) alert(r.error);
+  tick();
+}
+async function train() {
+  if (!confirm('用 ~/r550_map 裡全部的自動駕駛紀錄訓練網路？\\n只讀檔案，馬達不會動；訓練時不能開車。')) return;
+  const r = await api('/train', {method:'POST'});
   if (r.error) alert(r.error);
   tick();
 }
@@ -408,15 +516,19 @@ def make_handler(app):
                     ahead = float(q.get('ahead', 0.15))
                     timing = q.get('timing', 'ahead')
                     laps = int(q.get('laps', 3))
+                    policy = q.get('policy', 'corner')
                 except (KeyError, ValueError):
                     return self._json({'error': '參數不對'}, 400)
                 if direction not in DIRECTION_NAMES or not 10 <= seconds <= 600 \
                         or not -0.10 <= ahead <= 0.25 or timing not in TIMING_NAMES \
-                        or not 0 <= laps <= 10:
+                        or not 0 <= laps <= 10 or policy not in POLICY_NAMES:
                     return self._json({'error': '方向要 auto/ccw/cw，時間 10–600 秒，'
                                        'corner_ahead -0.10–0.25，打滿時機 ahead/predict，'
-                                       '圈數 0–10'}, 400)
-                self._json({'error': app.start(direction, seconds, ahead, timing, laps)})
+                                       '圈數 0–10，駕駛 corner/model'}, 400)
+                self._json({'error': app.start(direction, seconds, ahead, timing, laps,
+                                               policy)})
+            elif path == '/train':
+                self._json({'error': app.train()})
             elif path == '/stop':
                 self._json({'error': app.stop()})
             else:

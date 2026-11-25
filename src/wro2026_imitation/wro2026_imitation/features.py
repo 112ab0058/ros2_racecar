@@ -17,7 +17,13 @@ N_BINS = int(round(2 * HALF_FOV_DEG / BIN_DEG))
 MAX_RANGE = 3.0     # m; farther returns and beams without a return count as this
 
 LEFT, STRAIGHT, RIGHT = 0, 1, 2
-LABELS = ('left', 'straight', 'right')
+# full lock (2026-11-25): the corner technique needs it, so the network learns it too.
+# Same numbers as corner.py and bc/decision (3 full left, 4 full right).
+FULL_LEFT, FULL_RIGHT = 3, 4
+LABELS = ('left', 'straight', 'right', 'full_left', 'full_right')
+LABELS_3 = LABELS[:3]       # models trained before 2026-11-25 (no full lock)
+# mirror image of each label
+SWAP = np.array([RIGHT, STRAIGHT, LEFT, FULL_RIGHT, FULL_LEFT])
 
 
 @lru_cache(maxsize=4)
@@ -59,5 +65,4 @@ def scan_features(ranges):
 
 def mirror(x, y):
     """Return left-right mirrored copies: reversed inputs, left and right labels swapped."""
-    swap = np.array([RIGHT, STRAIGHT, LEFT])
-    return x[:, ::-1], swap[y]
+    return x[:, ::-1], SWAP[np.asarray(y)]

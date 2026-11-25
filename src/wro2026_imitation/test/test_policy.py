@@ -3,7 +3,8 @@ import math
 
 import numpy as np
 import pytest
-from wro2026_imitation.features import LEFT, mirror, N_BINS, RIGHT, scan_features, STRAIGHT
+from wro2026_imitation.features import (FULL_LEFT, LEFT, mirror, N_BINS, RIGHT,
+                                        scan_features, STRAIGHT)
 from wro2026_imitation.model import MLP
 from wro2026_imitation.policy import (BAD_SCAN, center_rule, check_model, Driver, inside_outline,
                                       model_policy, NO_SCAN, OK, side_word, state_text, STOP,
@@ -188,6 +189,29 @@ def test_check_model_refuses_other_inputs():
         check_model(MLP(N_BINS), dict(good, max_range=5.0))
     with pytest.raises(ValueError, match='layer sizes'):
         check_model(MLP(N_BINS - 2), good)
+
+
+def test_check_model_takes_full_lock_models_and_old_ones():
+    """5 labels (2026-11-25, with full lock) or the first 3 (older models)."""
+    five = {'half_fov_deg': 110.0, 'bin_deg': 5.0, 'max_range': 3.0,
+            'labels': ['left', 'straight', 'right', 'full_left', 'full_right']}
+    check_model(MLP(N_BINS, n_out=5), five)
+    with pytest.raises(ValueError, match='layer sizes'):
+        check_model(MLP(N_BINS, n_out=3), five)
+    with pytest.raises(ValueError, match='labels'):
+        check_model(MLP(N_BINS, n_out=2), dict(five, labels=['left', 'right']))
+
+
+def test_network_full_lock_drives_the_full_lock_radius():
+    class FullLeft:
+        def predict_proba(self, x):
+            return np.array([[0.0, 0.0, 0.0, 1.0, 0.0]])
+
+    d = Driver(model_policy(FullLeft()), 0.1, 0.5, full_turn_radius=0.35)
+    d.on_scan(0.0, corridor(0.3, 0.3), 0.0, INC)
+    vx, wz, decision, reason = d.command(0.05)
+    assert (decision, reason) == (FULL_LEFT, OK)
+    assert (vx, wz) == pytest.approx((0.1, 0.1 / 0.35))
 
 
 def test_reset_unlatches_only_when_the_newest_scan_is_clear():

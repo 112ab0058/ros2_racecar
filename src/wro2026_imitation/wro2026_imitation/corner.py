@@ -73,10 +73,9 @@ import math
 
 import numpy as np
 
-from .features import LEFT, RIGHT, STRAIGHT
+from .features import FULL_LEFT, FULL_RIGHT, LEFT, RIGHT, STRAIGHT
 from .turn_predict import FRONT, LASER_X, TurnPredictor
 
-FULL_LEFT, FULL_RIGHT = 3, 4
 STOP = -1        # = policy.STOP (policy imports this module, so it cannot come from there)
 FOLLOW, DELAY, TURN, SETTLE, DONE = 'follow', 'delay', 'turn', 'settle', 'done'
 
