@@ -186,8 +186,8 @@ def test_recording_stores_labels_who_drove_speed_and_radii(tmp_path, monkeypatch
     monkeypatch.setattr(extract, 'read_bag', lambda uri, topic: bag(
         t, ranges, t - 0.01, np.full(len(t), 0.1), wz, stops=[3.95]))
     (tmp_path / 'web.log').write_text(
-        '[INFO] [0.500000000] [web_teleop_node]: phone: 直走 (vx +0.10, wz +0.00)\n'
-        '[INFO] [1.950000000] [web_teleop_node]: phone: 自動 (vx +0.10, wz -0.29)\n',
+        '[INFO] [0.500000000] [r550_web_teleop]: phone: 直走 (vx +0.10, wz +0.00)\n'
+        '[INFO] [1.950000000] [r550_web_teleop]: phone: 自動 (vx +0.10, wz -0.29)\n',
         encoding='utf-8')
     n = extract.extract(str(tmp_path))
     with np.load(tmp_path / 'dataset.npz') as d:

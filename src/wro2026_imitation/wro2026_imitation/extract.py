@@ -30,8 +30,9 @@ from .features import LABELS, scan_features
 HAND, RULE = 0, 1
 SOURCE_NAMES = ('hand', 'rule')
 DROP_BEFORE_STOP = 1.5      # s
-# ROS log line of web_teleop_node: [INFO] [1795471730.123456789] [web_teleop_node]: phone: 自動 (...)
-PHONE = re.compile(r'\[(\d+\.\d+)\] \[web_teleop_node\]: phone: (\S+)')
+# ROS log line of web_teleop_node (its node name is r550_web_teleop):
+# [INFO] [1795167351.008096676] [r550_web_teleop]: phone: 自動 (vx +0.10, wz -0.20)
+PHONE = re.compile(r'\[(\d+\.\d+)\] \[[^\]]+\]: phone: (\S+)')
 
 
 def read_bag(uri, scan_topic='auto'):
