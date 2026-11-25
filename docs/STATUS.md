@@ -23,7 +23,7 @@
 | 轉彎規則（Ray 的過彎技巧） | 場地：11-13 逆時針 10 個彎、11-20 逆時針 10 個彎；順時針 11-20 第 1 彎切到內側（左右半徑不對稱）。之後加的都**還沒上地面**：預測式打滿（11-23）、直道任意位置起跑（11-24，模擬 160/160）、3 圈停在起點、自動判斷方向（加相機後） | [research/LOGBOOK.md](research/LOGBOOK.md) |
 | 安全 | 只有手機「自動」鍵按住才動（放開 0.35 s 內停）；太靠近牆 2 cm 就鎖住停車，手機「重置」解鎖（11-24 寫、11-25 架空測）；速度上限 0.12 m/s（啟動頁固定 0.10） | [../tools/real/orin_auto.sh](../tools/real/orin_auto.sh) |
 | 手機頁 | 啟動頁（開機自動啟動）：電池、模式切換（方向、打滿時機、**駕駛：規則／網路**）、**訓練**按鈕、上一次結果。駕駛頁：按鍵（含左右滿舵）、搖桿、重力、自動 | [../tools/real/orin_launcher.py](../tools/real/orin_launcher.py) |
-| 模仿學習（`wro2026_imitation`） | 11-25：網路改成 5 種動作（左、直、右、左打滿、右打滿），用 `/scan_filled`，分辨人和規則的示範，排除架空和撞牆前的資料；`orin_train.sh` 和啟動頁「訓練」。**還沒有用真實資料訓練過的模型**；2-D 模擬驗證見 LOGBOOK 11-25 | [../src/wro2026_imitation/README.md](../src/wro2026_imitation/README.md) |
+| 模仿學習（`wro2026_imitation`） | 11-25：網路 5 種動作（左、直、右、左打滿、右打滿），輸入 `/scan_filled`，分辨人和規則的示範，排除架空和撞牆前的資料；`orin_train.sh`、啟動頁「訓練」。2-D 模擬：規則 24/24，網路逆 8/12、順 12/12（不鏡像；鏡像會變差，因為轉向不對稱）。第一個真實模型（11-20 紀錄、驗證 83 %）**只會逆時針**（右打滿只有 14 筆），還沒上車開過 | [../src/wro2026_imitation/README.md](../src/wro2026_imitation/README.md) |
 | Gazebo 模擬（`wro2026_sim_r550`） | 10-20～28 完成（Nav2、循跡實驗）。Orin 上暫時裝的 `ros-jazzy-ros-gz`、`navigation2` 用完要移除 | [real/tasks/2026-10-27_sim_tracking_campaign.md](real/tasks/2026-10-27_sim_tracking_campaign.md) |
 | Orin 上車 | 裝在車上，電池供電（2026-10-18 起：電池一分二，一路給車、一路經 E1151F 給 Orin；不經過車子的電源開關）。`R550_HARDWARE.md` 的電源那列還寫「未解決」，是舊的 | [real/RUNBOOK.md](real/RUNBOOK.md) 第 3 節 |
 

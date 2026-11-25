@@ -5,9 +5,11 @@ Train the imitation network from dataset.npz files. Reads files only, no motors.
 
 Mirroring (--mirror): a left-right mirrored copy of the training data doubles it. The car
 does not steer the same both ways (2026-11-25: full lock drives 0.403 m to the left and
-0.292 m to the right, the firmware gives the left wheel too little angle), so a mirrored
-left full lock would teach the right turn the left turn's timing. Default 'turns' mirrors
-only left / straight / right; 'all' also full lock; 'none' nothing.
+0.292 m to the right, a 0.5 m turn 0.496 / 0.373 m; the firmware gives the left wheel too
+little angle), so mirrored samples teach one side the other side's timing. 2-D sim
+(tools/real/sim_bc.py, 2026-11-25, corner rule as teacher, 24 new start poses, 3 laps):
+none ccw 8/12 cw 12/12, turns (left / straight / right only) 3/12 and 11/12, all 0/12 and
+11/12. Default 'none': record both directions instead.
 """
 import argparse
 import os
@@ -99,8 +101,9 @@ def main(argv=None):
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--source', choices=('all', 'hand', 'rule'), default='all',
                     help='whose driving to learn: Ray (hand), the corner rule, or both')
-    ap.add_argument('--mirror', choices=('none', 'turns', 'all'), default='turns',
-                    help='mirrored copies: turns = left / straight / right only (default)')
+    ap.add_argument('--mirror', choices=('none', 'turns', 'all'), default='none',
+                    help='mirrored copies: none (default; the car steers unlike both ways), '
+                         'turns = left / straight / right only, all')
     args = ap.parse_args(argv)
 
     loaded = load(args.datasets, args.source)
