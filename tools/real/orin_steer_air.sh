@@ -15,9 +15,11 @@
 # Run it yourself in an ssh terminal (it waits for Enter; Claude Code cannot see
 # the wheels). Before running:
 #   - car on a box, ALL FOUR WHEELS OFF THE GROUND, nothing touching them
-#   - a straight stick taped flat on the outer face of each FRONT wheel, sticking
-#     out at most 8 cm in front of the tyre, nothing pointing back (the rear
-#     wheels turn)
+#   - a straight stick on each FRONT wheel: flat on the outer face, or taped on
+#     top of the tyre along the tread (2026-11-26: the cables hide the right
+#     wheel's outer face in turns; the front wheels are not driven, so they do not
+#     spin). At most 8 cm past the tyre, nothing reaching back to the rear wheels
+#     (they turn)
 #   - only the STM32 USB cable needed; no other ROS program running
 #   - your hand next to the red Motor switch (hardware stop)
 # Limits: 0.05 m/s (max_vx 0.1), each step at most 60 s (then it stops by
@@ -59,7 +61,7 @@ trap stop_base EXIT
 echo "R550 轉向架空測試 $(date)" | tee "$OUT/report.txt"
 echo "限制：車速 $V m/s（上限 $MAX_VX）、每步最多 60 s、全程最多 $RUN_LIMIT s；停車：q + Enter、Ctrl+C 或 Motor 開關 OFF" \
     | tee -a "$OUT/report.txt"
-read -r -p "四輪離地、前輪的棍子只往前伸、手在 Motor 開關旁？輸入 YES： " a
+read -r -p "四輪離地、前輪的棍子碰不到後輪、手在 Motor 開關旁？輸入 YES： " a
 [ "$a" = YES ] || exit 0
 
 setsid ros2 launch wro2026_base_r550 base.launch.py enable_commands:=true \

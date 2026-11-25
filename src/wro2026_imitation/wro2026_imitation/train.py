@@ -5,8 +5,9 @@ Train the imitation network from dataset.npz files. Reads files only, no motors.
 
 Mirroring (--mirror): a left-right mirrored copy of the training data doubles it. The car
 does not steer the same both ways (2026-11-25: full lock drives 0.403 m to the left and
-0.292 m to the right, a 0.5 m turn 0.496 / 0.373 m; the firmware gives the left wheel too
-little angle), so mirrored samples teach one side the other side's timing. 2-D sim
+0.292 m to the right, a 0.5 m turn 0.496 / 0.373 m; the firmware steers the right front
+wheel and the linkage turns the left one about 1.2x as far both ways), so mirrored samples
+teach one side the other side's timing. 2-D sim
 (tools/real/sim_bc.py, 2026-11-25, corner rule as teacher, 24 new start poses, 3 laps):
 none ccw 8/12 cw 12/12, turns (left / straight / right only) 3/12 and 11/12, all 0/12 and
 11/12. Default 'none': record both directions instead.
