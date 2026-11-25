@@ -1,48 +1,47 @@
 # 專案目前狀態
 
-更新時間：2026-10-17。這是唯一的「目前狀態」文件。專題範圍與時程見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，每次工作的紀錄見 [research/LOGBOOK.md](research/LOGBOOK.md)。
+更新時間：2026-11-25。這是唯一的「目前狀態」文件。專題範圍與時程見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，每次工作的紀錄見 [research/LOGBOOK.md](research/LOGBOOK.md)（最新的在最上面）。
 
 ## 專題
 
-「多感測器融合感知與智慧決策系統」，**不參加 WRO**，**11 月中完成**。正式的車是 **WHEELTEC R550 mini akm + Jetson Orin Nano**。過渡用的 WAVE ROVER 已收起來，它的程式和文件 2026-10-16 從 repo 刪除（git 歷史裡還找得到）。
+「多感測器融合感知與智慧決策系統」，**不參加 WRO**（場地和起跑方式參考 WRO 2026 Future Engineers）。正式的車是 **WHEELTEC R550 mini akm + Jetson Orin Nano**（Ubuntu 24.04、ROS 2 Jazzy）。AI 方向：**B 模仿學習**（2026-11-10 Ray 決定；`PROJECT_PLAN.md` 還寫 A，待更新）。
+
+目前階段：自動駕駛的程式都已在車上，等**場地測試**（11-24、11-25 做的功能都還沒在地上跑過）。
 
 ## 實車（R550）
 
 | 項目 | 狀態 | 文件 |
 |---|---|---|
-| 硬體盤點 | 大致完成。軸距約 15 cm、輪胎周長約 21.5 cm、光達中心離地約 15 cm；最大轉向角、輪距、外形尺寸 UNKNOWN | [real/R550_HARDWARE.md](real/R550_HARDWARE.md) |
-| 廠商資料研讀 | 協定、運動學、開機流程、接線完成；**STM32 原始碼已找到**（無線燒錄工具資料夾裡的 zip，2026-10-19）；Mini 硬體說明還沒下載到 | [research/R550_STUDY_NOTES.md](research/R550_STUDY_NOTES.md) |
-| STM32 通訊（只讀） | **2026-10-16 實車通過**：CH9102、115200、約 20 Hz、壞幀 0 | [real/RUNBOOK.md](real/RUNBOOK.md) |
-| ROS node（只讀）`/odom`、`/imu/data`、`/battery` | **2026-10-16 實車通過**：20 Hz；里程計比例校正 0.814（架空手轉測的，暫定） | [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) |
-| 指令端（會讓馬達轉） | **2026-10-19 架空測試全部通過（步驟 1–9）**：Motor OFF 不動、前進／倒車、限速 0.1、轉向正負號（左轉 wz 為正）、不原地轉、停 node 立刻停、限時、低電壓拒絕。0.1 m/s 指令 → 後輪 0.100 m/s；停止發布後 0.3 s 逾時 + 0.8 s 減速。`max_run_time` 新版（從第一個指令算）同晚重測 5.00 s 觸發。**STM32 韌體沒有指令逾時**，上地面前要決定怎麼處理 | [real/RUNBOOK.md](real/RUNBOOK.md) 6b 節 |
-| EKF（robot_localization） | **2026-10-20 上車通過（8.2）**：`/odometry/filtered` 30 Hz；`odom → base_link` 只有 EKF 發；剛開機靜止 60 s yaw 只變 0.001°（gyro 零速更新 ZUPT，學到偏差 0.00054 rad/s）。融合 odom vx、vy + IMU vyaw；odom vyaw 等 7.3 | [real/RUNBOOK.md](real/RUNBOOK.md) 6e 節 |
-| 長時間穩定性 | **2026-10-20 通過**：啟停 30 次全部成功（啟動中位 2.5 s、關閉 0.6 s、無殘留）；2 小時無斷線、無記憶體洩漏、EKF 只飄 0.10°；gyro ARW 0.42 °/√h、偏差不穩定性 7.9 °/h；只開感測器時電池 −0.07 V/h | [research/LOGBOOK.md](research/LOGBOOK.md) |
-| Gazebo 模擬（`wro2026_sim_r550`） | 2026-10-20 Orin 暫時裝了 Gazebo + Nav2；寫好阿克曼車模型（實量尺寸、光達、IMU 雜訊）、160 cm 場地（牆 25 cm）、同一套 CommandGate / ZUPT / EKF。**還沒在 Orin 上跑**：下一步 `orin_sim_check.sh` | [real/RUNBOOK.md](real/RUNBOOK.md) 6g 節 |
-| 鍵盤遙控 | **2026-10-19 架空通過**：放開 → 指令變 0 **0.20 s**、→ 輪子停 **0.96–1.16 s**；`q`/`e`/`z`/`c` 的 wz 正負號全對；`/cmd_vel` 最大間隔 0.052 s，沒斷過。地面行駛等 STM32 逾時定案 | [real/RUNBOOK.md](real/RUNBOOK.md) 6c 節 |
-| 光達 N10P | Python driver `wro2026_lidar_n10p`（協定照官方 driver）。**2026-10-17 實車只聽通過**：333 包/秒、每秒 10 圈、壞封包 0。光達 0° 正對車頭、左右方向正確。**`/scan` 10 Hz、480 格實車通過、Foxglove 即時看得到** | [../src/wro2026_lidar_n10p/README.md](../src/wro2026_lidar_n10p/README.md) |
-| URDF / TF | **2026-10-17 實車通過**：`base_link → laser_link` = 0.130, 0, 0.115（光達在後軸前 13 cm、離地 15 cm；左右偏移、IMU 位置 UNKNOWN）。`sensors.launch.py` 一次啟動全部只讀 node | [../src/wro2026_description/README.md](../src/wro2026_description/README.md) |
-| 相機 C70 | 未開始 | |
-| Orin 裝上車、電池供電 | 未解決。廠商作法是電池（10–12.6 V）直接接主控 | [real/R550_HARDWARE.md](real/R550_HARDWARE.md) |
-| 套件 robot-localization、slam-toolbox、foxglove-bridge | **2026-10-17 已安裝**（新增 204、移除 0）。Nav2 還沒裝：會換掉 OpenCV，要另外處理 | [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md) 第 8 節 |
-| Foxglove 看資料 | 唯讀 bridge，Windows 連 `ws://192.168.0.15:8765` | [real/NETWORK.md](real/NETWORK.md) |
+| 車身尺寸 | 後軸中心到車頭 0.24 m、到車尾 0.031 m、寬 0.18 m、後輪輪距 0.170 m、軸距 0.144 m（韌體） | [real/R550_HARDWARE.md](real/R550_HARDWARE.md) |
+| 轉向 | **左右不對稱**：打滿時左 0.403 m、右 0.292 m（地面）；架空量左前輪：左打滿 21.7°、右打滿 28.8°。原因：韌體只算右前輪角度、舵機公式是左輪擬合的（11-25）。機構最大角度 UNKNOWN。**已寫信問 WHEELTEC，等回信**；程式照實測的左右值走 | [research/LOGBOOK.md](research/LOGBOOK.md) 11-25 |
+| STM32 韌體 | 2026.09.21 版＋廠商加回的**指令逾時**（約 0.5 s），2026-10-21 Ray 燒錄，架空 3/3 通過。救援檔和燒錄步驟見 LOGBOOK 10-20～21 | [research/LOGBOOK.md](research/LOGBOOK.md) |
+| 底盤節點（`wro2026_base_r550`） | 只讀回授＋指令端（限速、0.3 s 逾時、限時、低電壓拒絕）。校正：`vx_scale` 1.035、`wz_scale` 1.013（11-10 地面實測）。指令端全流程架空 9/9（11-09） | [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) |
+| EKF | `/odometry/filtered` 30 Hz，方向只用陀螺儀（零速更新 ZUPT）；2 小時靜止只飄 0.10° | [real/RUNBOOK.md](real/RUNBOOK.md) |
+| 光達 N10P | `/scan` 10 Hz、480 格；距離修正 +0.036 m（11-19 捲尺）；遮掉自己的車身角度。**黑色泡棉牆在 0.2–0.4 m 沒有回波**（硬體限制，11-11、11-13 實測） | [../src/wro2026_lidar_n10p/README.md](../src/wro2026_lidar_n10p/README.md) |
+| 掃描記憶 | `scan_memory_node`：用里程計記住看過的牆點，補光達看不到的角度 → `/scan_filled` | 同上 |
+| 相機 C70 | 已校正（內參 RMS 0.47 px、鏡頭高 0.103 m）。`wall_node` 找黑牆的牆腳 → `camera/wall_scan`，只用 0.5 m 內（場地地板不平，遠處誤差大，11-24）。與光達記憶融合 | [../src/wro2026_camera_c70/README.md](../src/wro2026_camera_c70/README.md) |
+| 轉彎規則（Ray 的過彎技巧） | 場地：11-13 逆時針 10 個彎、11-20 逆時針 10 個彎；順時針 11-20 第 1 彎切到內側（左右半徑不對稱）。之後加的都**還沒上地面**：預測式打滿（11-23）、直道任意位置起跑（11-24，模擬 160/160）、3 圈停在起點、自動判斷方向（加相機後） | [research/LOGBOOK.md](research/LOGBOOK.md) |
+| 安全 | 只有手機「自動」鍵按住才動（放開 0.35 s 內停）；太靠近牆 2 cm 就鎖住停車，手機「重置」解鎖（11-24 寫、11-25 架空測）；速度上限 0.12 m/s（啟動頁固定 0.10） | [../tools/real/orin_auto.sh](../tools/real/orin_auto.sh) |
+| 手機頁 | 啟動頁（開機自動啟動）：電池、模式切換（方向、打滿時機、**駕駛：規則／網路**）、**訓練**按鈕、上一次結果。駕駛頁：按鍵（含左右滿舵）、搖桿、重力、自動 | [../tools/real/orin_launcher.py](../tools/real/orin_launcher.py) |
+| 模仿學習（`wro2026_imitation`） | 11-25：網路改成 5 種動作（左、直、右、左打滿、右打滿），用 `/scan_filled`，分辨人和規則的示範，排除架空和撞牆前的資料；`orin_train.sh` 和啟動頁「訓練」。**還沒有用真實資料訓練過的模型**；2-D 模擬驗證見 LOGBOOK 11-25 | [../src/wro2026_imitation/README.md](../src/wro2026_imitation/README.md) |
+| Gazebo 模擬（`wro2026_sim_r550`） | 10-20～28 完成（Nav2、循跡實驗）。Orin 上暫時裝的 `ros-jazzy-ros-gz`、`navigation2` 用完要移除 | [real/tasks/2026-10-27_sim_tracking_campaign.md](real/tasks/2026-10-27_sim_tracking_campaign.md) |
+| Orin 上車 | 裝在車上，電池供電（2026-10-18 起：電池一分二，一路給車、一路經 E1151F 給 Orin；不經過車子的電源開關）。`R550_HARDWARE.md` 的電源那列還寫「未解決」，是舊的 | [real/RUNBOOK.md](real/RUNBOOK.md) 第 3 節 |
 
 ## 下一步
 
-完整規劃（模組總表、順序、要調的參數、實驗）見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，順序在第 4 節；**每一步的小步驟、誰做、完成標準見 [research/DETAILED_PLAN.md](research/DETAILED_PLAN.md)**。
-
-1. 步驟 7 的校正先用「手推」做（只讀）：~~IMU 靜止~~（10-19 完成）→ `vx_scale`（手推直走）→ IMU 軸向 + `wz_scale`（手推左彎）。工具 `orin_calib.sh`（RUNBOOK 6d）
-2. EKF 設定（robot_localization），一樣先用手推驗證
-3. Orin 用機殼的調節支架裝上車、電池供電（線材已買；**缺三用電表**，接上 Orin 前要先量電池接頭極性）
-4. 場地的牆加高到約 25 cm
-5. Orin 上車後：用馬達在地面開，複驗 `vx_scale`、量實際轉彎半徑
+1. 架空測「重置」（11-25 晚上，Ray 跑）。
+2. **場地**：預測式打滿順、逆時針 → 自動判斷方向 → 直道中間起跑 → 3 圈停車 → 起點用捲尺量；同時錄模仿學習資料（駕駛頁按鍵＝人的示範、按住自動＝規則的示範）。
+3. 場地上按「訓練」→ 網路架空 → 網路上地面（啟動頁「駕駛：網路」）。
+4. 等 WHEELTEC 回信，換韌體後重量轉角和左右半徑。
+5. 文件：`PROJECT_PLAN.md` 改成方向 B；原理筆記加「轉向不對稱」；給教授的影片（相機畫面＋光達、記憶、相機點俯視圖）。
 
 ## 已知問題
 
-- `flag_stop` 不代表 Motor 開關：原始碼裡是「軟體失能標誌」，自檢錯誤才會變 1（2026-10-19 讀原始碼）
-- STM32 韌體沒有指令逾時：node 當掉時車子會照最後的指令跑，只能靠 Motor 開關。**2026-10-19 決定先不改韌體**，上地面時靠操作防護（限速 ≤ 0.15 m/s、有牆的場地、手在 Motor 開關旁、USB 線固定）；Orin 上車前不在地面用馬達開車（拖線會扯掉 USB）
-- Jetson 沒有 Python 的 OpenCV（`python3-opencv`）和 cv_bridge；相機程式開始前要決定怎麼裝
-- WSL 在 NAT 模式下看不到 Orin 的 topic，用 Foxglove 看（[real/NETWORK.md](real/NETWORK.md)）
-- Orin 的 `~/racecar_ws/src/` 裡還有舊 package（WAVE ROVER 時期），不影響 `--packages-select` 的 build，要清的話 Ray 自己在 Orin 刪；`~/ros2_ws` 是舊 driver 的備份，不要動
+- **左右轉向不對稱**（見上表）：逆時針左打滿 0.403 m 比 0.40 m 的走道還寬，直道後半段貼著島或車頭朝外牆時，只前進過不了彎；起步倒車（WRO 允許）Ray 決定先不做。
+- **光達看不到近距離黑牆**：靠掃描記憶＋相機補；相機點遠處受地板不平影響，所以只用 0.5 m 內。
+- 預測器只在場地上才會啟動（架空時沒有走道），它的判斷還沒驗證過。
+- WSL 在 NAT 模式下看不到 Orin 的 topic，用 Foxglove 看（[real/NETWORK.md](real/NETWORK.md)）。
+- Orin 的 `~/ros2_ws` 是舊 driver 的備份，不要動。
 
 ## 模擬線（`src/wro2026_sim`）：已結束，只當參考
 
