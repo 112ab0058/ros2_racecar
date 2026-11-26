@@ -275,6 +275,8 @@ bash ~/racecar_ws/tools/orin_sim_check.sh                # 自動檢查，約 3 
 
 啟動頁開機就會啟動（`r550-launcher` 服務），書籤 `https://<orin>:8443/?k=<~/.r550_web/launcher_token>`。
 
+> **必須開 linger**（2026-11-27 查到，FIELD_REVIEW A2）：`loginctl show-user user2 -p Linger` 要是 `yes`；不是的話 Ray 執行 `sudo loginctl enable-linger user2`（只要一次）。沒開時，user2 最後一個 ssh 結束 10 秒後，系統會刪掉 `/dev/shm` 裡 user2 的所有檔案，跑到一半的車子程式（DDS 共享記憶體）會全部收不到資料。
+
 **開一次**
 1. 放車：整台車在一段直道裡、車頭朝要跑的方向。有人在 Motor 開關旁。
 2. 啟動頁選模式：
