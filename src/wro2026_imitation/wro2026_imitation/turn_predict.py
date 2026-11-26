@@ -97,15 +97,17 @@ class TurnPredictor:
         dead_m = self.dead * self.speed
         return [(dead_m - age, k) for age, k in queued]
 
-    def path(self, sign, k0=0.0, k_cmd=None, wait=0.0, queued=None):
+    def path(self, sign, k0=0.0, k_cmd=None, wait=0.0, queued=None, sweep=None):
         """
         Return the rear-axle poses of the predicted turn.
 
         Rear-axle poses (n, 3: x, y, yaw) in today's base_link frame: drive on with the
         current command for wait m, then full lock to the left (sign +1) or right (-1),
-        until the heading has turned sweep_deg from where the lock was commanded.
+        until the heading has turned sweep_deg (or sweep, rad: the rest of a turn in
+        progress) from where the lock was commanded.
         k0: curvature now (1/m); k_cmd / queued: the commands already sent (schedule).
         """
+        sweep = self.sweep if sweep is None else sweep
         sched = self.schedule(k0, k_cmd, queued)
         sched.append((wait + self.dead * self.speed, self.k_full[sign]))   # the lock
         yaw_lock = [None]
@@ -113,7 +115,7 @@ class TurnPredictor:
         def done(s, yaw):
             if yaw_lock[0] is None and s >= wait - 1e-9:
                 yaw_lock[0] = yaw
-            return yaw_lock[0] is not None and sign * (yaw - yaw_lock[0]) >= self.sweep
+            return yaw_lock[0] is not None and sign * (yaw - yaw_lock[0]) >= sweep
 
         return self._integrate(sched, k0, done)
 
@@ -186,10 +188,10 @@ class TurnPredictor:
         out[keep] = g.min(axis=0)
         return out
 
-    def _near(self, px, py, sign, k0, k_cmd, queued):
+    def _near(self, px, py, sign, k0, k_cmd, queued, sweep=None):
         """Points that can be the closest one (box round the longest-wait path, + margin)."""
-        p = np.vstack([self.path(sign, k0, k_cmd, 0.0, queued),
-                       self.path(sign, k0, k_cmd, self.waits[-1], queued)])
+        p = np.vstack([self.path(sign, k0, k_cmd, 0.0, queued, sweep),
+                       self.path(sign, k0, k_cmd, self.waits[-1], queued, sweep)])
         ext = math.hypot(FRONT, HALF_WIDTH) + self.margin
         return (np.isfinite(px) & np.isfinite(py) & (np.hypot(px, py) <= self.reach)
                 & (px >= p[:, 0].min() - ext) & (px <= p[:, 0].max() + ext)
@@ -205,7 +207,7 @@ class TurnPredictor:
         """
         return self._curves(sign, px, py, k0, k_cmd, waits, queued)[0]
 
-    def _curves(self, sign, px, py, k0, k_cmd, waits, queued=None, island=None):
+    def _curves(self, sign, px, py, k0, k_cmd, waits, queued=None, island=None, sweep=None):
         """
         Return the clearance and the side of the first contact, per wait.
 
@@ -220,7 +222,7 @@ class TurnPredictor:
         """
         waits = self.waits if waits is None else np.asarray(waits, float)
         px, py = np.asarray(px, float), np.asarray(py, float)
-        keep = self._near(px, py, sign, k0, k_cmd, queued)
+        keep = self._near(px, py, sign, k0, k_cmd, queued, sweep)
         room = np.full(len(waits), np.inf)
         inner = np.zeros(len(waits), bool)
         if not keep.any():
@@ -228,7 +230,7 @@ class TurnPredictor:
         isl = None if island is None else np.asarray(island, bool)[keep]
         qx, qy = px[keep][None, :], py[keep][None, :]
         for i, d in enumerate(waits):
-            p = self.path(sign, k0, k_cmd, d, queued)
+            p = self.path(sign, k0, k_cmd, d, queued, sweep)
             dx, dy = qx - p[:, :1], qy - p[:, 1:2]
             c, s = np.cos(p[:, 2:3]), np.sin(p[:, 2:3])
             u, w = c * dx + s * dy, -s * dx + c * dy                 # points in the car frame
@@ -242,13 +244,14 @@ class TurnPredictor:
                             else sign * w[h, j] > 0.0 and u[h, j] <= FRONT)
         return room, inner
 
-    def ready(self, sign, px, py, k0=0.0, k_cmd=None, queued=None, island=None):
+    def ready(self, sign, px, py, k0=0.0, k_cmd=None, queued=None, island=None, sweep=None):
         """
         Decide whether to lock now.
 
         (lock now?, clearance now, best clearance of a later lock, its wait in m).
         k0, k_cmd, queued: the steering now, see path. island: which points are the
-        island (see _curves), if known.
+        island (see _curves), if known. sweep: the turn's heading change (rad; default
+        sweep_deg), less for the rest of a turn in progress.
 
         If full lock now would touch something: the inner side first (the island) means
         too early, wait; the outer side or the bumper first (the wall ahead) means too
@@ -259,7 +262,8 @@ class TurnPredictor:
         early in the 2-D field; "distance before the first contact" ties along a long
         inner wall, or prefers driving straight into the wall ahead.)
         """
-        room0, inner0 = self._curves(sign, px, py, k0, k_cmd, self.waits[:1], queued, island)
+        room0, inner0 = self._curves(sign, px, py, k0, k_cmd, self.waits[:1], queued, island,
+                                     sweep)
         if not np.isfinite(room0[0]):
             return False, float(room0[0]), float(room0[0]), 0.0
         if room0[0] < 0.0:
@@ -269,10 +273,12 @@ class TurnPredictor:
         first = sorted({1, n // 5, n // 2, n - 1})
         room = np.full(n, -np.inf)
         room[0] = room0[0]
-        room[first] = self._curves(sign, px, py, k0, k_cmd, self.waits[first], queued)[0]
+        room[first] = self._curves(sign, px, py, k0, k_cmd, self.waits[first], queued,
+                                   sweep=sweep)[0]
         if not room[first].max() > room[0] + 1e-4:
             rest = [i for i in range(2, n) if i not in first]
-            room[rest] = self._curves(sign, px, py, k0, k_cmd, self.waits[rest], queued)[0]
+            room[rest] = self._curves(sign, px, py, k0, k_cmd, self.waits[rest], queued,
+                                      sweep=sweep)[0]
         best = int(np.argmax(room[1:])) + 1
         now_ok = bool(room[0] >= room[best] - 1e-4)
         return now_ok, float(room[0]), float(room[best]), float(self.waits[best])

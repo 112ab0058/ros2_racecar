@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pytest
 from wro2026_imitation.corner import (BLOCKED, CornerPolicy, DONE, FOLLOW, FULL_LEFT,
-                                      FULL_RIGHT, STOP as CORNER_STOP, TURN)
+                                      FULL_RIGHT, HOLD, REWAIT, STOP as CORNER_STOP, TURN)
 from wro2026_imitation.features import LEFT, RIGHT, STRAIGHT
 from wro2026_imitation.field_sim import camera as camera_view, Car, Field, lidar
 from wro2026_imitation.policy import Driver, NO_ODOM, OK, STOP
@@ -495,3 +495,78 @@ def test_predicted_stop_on_the_narrow_field(direction):
                                               cam_max=0.5, predict=True)
     assert ok, (why, laps, policy.events[-3:])
     assert clear > 0.005
+
+
+def turn_scan(end, gap=0.08, corridor=0.38):
+    """
+    Return a lidar scan in a right (cw) corner.
+
+    The island gap m right of the car, ending end m ahead of the rear axle; the outer
+    wall on the left; the wall ahead corridor m past the island's end.
+    """
+    a = 0.09 + gap
+    walls = [(-0.8, -a, end, -a), (end, -a, end, -a - 0.8),
+             (-0.8, corridor - a, end + corridor + 0.3, corridor - a),
+             (end + corridor, corridor - a, end + corridor, -a - 1.2)]
+    return wall_scan([(x0 - 0.13, y0, x1 - 0.13, y1) for x0, y0, x1, y1 in walls])
+
+
+def turning_cw():
+    """Return a cw policy that has just gone to full lock (corner 1)."""
+    policy = CornerPolicy('cw')
+    policy.on_odom(0.0, 0.0, 0.0)
+    policy._enter(TURN)
+    policy.last_label = FULL_RIGHT
+    policy.sent = [(0.0, FULL_RIGHT)]
+    return policy
+
+
+@pytest.mark.parametrize('end, state', [(0.30, REWAIT), (0.25, REWAIT), (0.20, TURN),
+                                        (0.10, TURN)])
+def test_a_turn_that_will_touch_the_island_straightens_first(end, state):
+    """
+    Ray 2026-11-26 (cw): locked a little early, the island's corner came inside the turn.
+
+    The rest of the turn is predicted every scan: if it touches the island first, drive
+    straight on (rewait) instead of turning into it; 20 cm or less ahead it fits (the car
+    8 cm from the island, a 0.38 m corridor).
+    """
+    policy = turning_cw()
+    label, _ = policy(turn_scan(end), 0.0, INC)
+    assert policy.state == state and policy.corners == 1
+    assert label == (STRAIGHT if state == REWAIT else FULL_RIGHT)
+
+
+def test_rewait_locks_again_on_the_same_corner():
+    """After ~0.14 m straight on the turn fits: full lock again, still corner 1."""
+    policy = turning_cw()
+    policy(turn_scan(0.30), 0.0, INC)
+    assert policy.state == REWAIT
+    for d in np.arange(0.01, 0.205, 0.01):           # 1 cm per scan, straight on
+        policy.on_odom(d, 0.0, 0.0)
+        label, _ = policy(turn_scan(0.30 - d), 0.0, INC)
+        if policy.state == TURN:
+            break
+    assert policy.state == TURN and label == FULL_RIGHT and policy.corners == 1
+    assert 'resumed' in policy.events[-1][1]
+
+
+def test_rewait_holds_when_nothing_fits():
+    """Driving on never fits (rewait_max reached): STOP and wait (hold)."""
+    policy = turning_cw()
+    policy.rewait_max = 0.0
+    policy(turn_scan(0.30), 0.0, INC)
+    policy.on_odom(0.01, 0.0, 0.0)
+    label, _ = policy(turn_scan(0.29), 0.0, INC)
+    assert policy.state == HOLD and label == CORNER_STOP
+
+
+def test_the_driver_lets_the_rule_straighten_before_it_checks():
+    """Predicted stop: the rule's own correction is checked, so no too_close latch."""
+    policy = turning_cw()
+    driver = Driver(policy, 0.1, 0.5, stop_margin=0.0, full_turn_radius=0.35, predict=True)
+    driver.odom_time = 0.0
+    driver.sent = [(0.0, FULL_RIGHT)]
+    driver.on_scan(0.0, turn_scan(0.30), 0.0, INC)
+    vx, wz, decision, reason = driver.command(0.05)
+    assert (reason, decision, policy.state) == (OK, STRAIGHT, REWAIT)

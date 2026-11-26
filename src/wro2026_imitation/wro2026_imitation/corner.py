@@ -20,6 +20,15 @@ States:
             finish_ahead m ahead along the start heading: STOP for good (2026-11-24, Ray:
             three laps, then stop where it started). finish_ahead 0.05 m: the wheels
             still turn ~5 cm after the stop (11-24 air test)
+  rewait    (timing 'predict') during a turn, every scan predicts the rest of it; if it
+            would touch and the inner side (the island) first, the lock came too early:
+            drive straight on and lock again (the same corner) when the prediction says
+            the rest of the turn fits, as Ray did by hand on 2026-11-26 (cw: the island's
+            end is blind at the lock, nine of eleven turns latched at the island; after
+            the car rolled on a little, his right full lock made each of them)
+  hold      the rest of the turn fits neither now nor after driving on (or rewait drove
+            rewait_max m): STOP until it fits (the car moved by hand); touching the
+            outer side first while turning stays a too_close stop (reversing: not done)
   blocked   (timing 'predict') the best full lock from here would pass a wall closer
             than min_room: STOP instead of turning into it. Each scan predicts
             again; once the turn fits (the car was driven back or put in the middle by
@@ -87,6 +96,7 @@ from .turn_predict import FRONT, LASER_X, TurnPredictor
 STOP = -1        # = policy.STOP (policy imports this module, so it cannot come from there)
 FOLLOW, DELAY, TURN, SETTLE, DONE = 'follow', 'delay', 'turn', 'settle', 'done'
 BLOCKED = 'blocked'
+REWAIT, HOLD = 'rewait', 'hold'
 
 # Curvature (1/m, + = left) the R550 really drives for each decision, with bc_node's
 # turn_radius 0.5 m and full_turn_radius 0.35 m at 0.1 m/s: steady gyro z / speed while
@@ -149,7 +159,7 @@ class CornerPolicy:
                  fit_min_span=0.10, fit_max_slope_deg=40.0, wall_dist=(0.12, 0.40),
                  timing='predict', driven=None, speed=0.1, steer_dead=0.27, steer_rate=13.0,
                  stop_after_laps=0, finish_ahead=0.05, crossing=True, cross_back=0.9,
-                 min_room=0.01):
+                 min_room=0.01, rewait_max=0.25):
         """
         Set the rule's distances (m) and angles (deg); see the module docstring.
 
@@ -161,6 +171,8 @@ class CornerPolicy:
 
         stop_after_laps: stop at the start after this many laps (0 = never); finish_ahead:
         stop when the start point is this close ahead (m), see state done.
+
+        rewait_max: the longest drive straight on in state rewait before hold (m).
 
         min_room: timing 'predict', the least room (m) the predicted full lock must leave,
         else the corner cannot be made from here: state blocked (STOP). 0.01: on the
@@ -216,6 +228,8 @@ class CornerPolicy:
                           if timing == 'predict' else None)
         self.armed_odo = None        # predict: driven distance when the wall end was last seen
         self.min_room = min_room
+        self.rewait_max = rewait_max
+        self.rewait_odo = None       # driven distance when the turn was paused (rewait)
         self.prediction = None       # predict: (room now, best room later, its wait) (m)
         self.trail = []              # (driven distance, heading) of the last odometry
         self.k_now = None            # curvature from the odometry's twist (1/m), if given
@@ -312,10 +326,10 @@ class CornerPolicy:
         self.seen = {1.0: 0, -1.0: 0}
         self.events.append((round(self.odo, 3), 'reset'))
 
-    def _enter(self, state, note=''):
+    def _enter(self, state, note='', resume=False):
         self.state = state
         self.mark_odo = self.odo
-        if state == TURN:
+        if state == TURN and not resume:
             self.mark_yaw = self.pose[2] if self.pose else 0.0
             self.corners += 1
             self.armed_odo = None
@@ -662,6 +676,40 @@ class CornerPolicy:
         turned = abs(_wrap(self.pose[2] - self.mark_yaw))
         return self.sign, max(self.turn_rad - turned, 0.0)
 
+    def _turn_inputs(self, r, angles):
+        """Points (base_link), steering now and the rest of the turn, for the predictor."""
+        ok = np.isfinite(r)
+        rr = np.where(ok, r, 0.0)
+        px = np.where(ok, rr * np.cos(angles) + LASER_X, np.nan)
+        py = np.where(ok, rr * np.sin(angles), np.nan)
+        queued = [(self.odo - o, self.driven[lab]) for o, lab in self.sent] or None
+        turned = abs(_wrap(self.pose[2] - self.mark_yaw)) if self.pose else 0.0
+        sweep = max(self.predictor.sweep - turned, math.radians(5.0))
+        return px, py, self.curvature(), self.driven[self.last_label], queued, sweep
+
+    def _too_early(self, r, angles):
+        """Return the room if the rest of the turn touches the inner side first (turning)."""
+        px, py, k0, k_cmd, queued, sweep = self._turn_inputs(r, angles)
+        room, inner = self.predictor._curves(self.sign, px, py, k0, k_cmd, [0.0], queued,
+                                             None, sweep)
+        return float(room[0]) if room[0] < 0.0 and inner[0] else None
+
+    def _rewait(self, r, angles):
+        """State rewait / hold: STRAIGHT, STOP, or None when the turn goes on (state turn)."""
+        px, py, k0, k_cmd, queued, sweep = self._turn_inputs(r, angles)
+        lock, now, later, _ = self.predictor.ready(self.sign, px, py, k0, k_cmd, queued,
+                                                   None, sweep)
+        if lock and now >= self.min_room:
+            self._enter(TURN, ' (resumed: room %.3f m)' % now, resume=True)
+            return None
+        if lock or self.odo - self.rewait_odo > self.rewait_max:
+            if self.state != HOLD:
+                self._enter(HOLD, ' (room %.3f m: the rest of the turn does not fit)' % now)
+            return STOP
+        if self.state == HOLD:
+            self._enter(REWAIT, ' (driving on fits again)')
+        return STRAIGHT
+
     def _unblock(self, note):
         """Leave state blocked (back to follow), if in it."""
         if self.state == BLOCKED:
@@ -733,10 +781,20 @@ class CornerPolicy:
                 self._predict(r, angles)
         if self.state == DELAY and self.odo - self.mark_odo >= self.turn_delay:
             self._enter(TURN)
+        if self.state in (REWAIT, HOLD):
+            label = self._rewait(r, angles)
+            if label is not None:
+                return label
         if self.state == TURN:
             turned = abs(_wrap(self.pose[2] - self.mark_yaw)) if self.pose else 0.0
             if turned < self.turn_rad:
-                return full
+                early = self._too_early(r, angles) if self.predictor is not None else None
+                if early is None:
+                    return full
+                self.rewait_odo = self.odo
+                self._enter(REWAIT, ' (room %.3f m, the island first: locked too early, '
+                                    'straight on)' % early)
+                return STRAIGHT
             self._enter(SETTLE)
         if self.state == SETTLE and self.odo - self.mark_odo >= self.settle_dist:
             self._enter(FOLLOW)

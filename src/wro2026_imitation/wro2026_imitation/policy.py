@@ -101,7 +101,9 @@ REASON_TEXT = {'no_scan': '沒有光達資料，停', 'bad_scan': '光達資料�
                'no_odom': '沒有里程計（EKF），停'}
 CORNER_TEXT = {'follow': '保持中線', 'delay': '等著打滿', 'turn': '打滿轉彎',
                'settle': '轉完回正', 'done': '跑完了，停在起點',
-               'blocked': '這個位置過不了彎，停：用按鍵倒車或把車放回走道中間'}
+               'blocked': '這個位置過不了彎，停：用按鍵倒車或把車放回走道中間',
+               'rewait': '打滿太早會擦到島：先回正往前，空間夠再打滿',
+               'hold': '這個彎剩下的部分過不去，停：用按鍵開過去或倒車'}
 
 
 DIRECTION_TEXT = {'ccw': '彎道往左（逆時針）', 'cw': '彎道往右（順時針）',
@@ -119,7 +121,7 @@ def state_text(reason, driver, policy_state=None, corners=0, direction=None):
         if getattr(driver, 'predicted', False):
             where = path_text(driver.close_point) if driver.close_point else ''
             now = ('現在往前開還會碰到：%s，先用按鍵開離' % path_text(driver.close_now)
-                   if driver.close_now else '現在往前開不會碰到，可以按「重置」')
+                   if driver.close_now else '現在沒有碰到，可以按「重置」（之後會再算一次）')
             return '照現在的轉法開下去會碰到，鎖住停車：%s｜%s' % (where, now)
         where = point_text(driver.close_point) if driver.close_point else ''
         now = ('現在還有：%s，先用按鍵開離' % point_text(driver.close_now) if driver.close_now
@@ -305,6 +307,13 @@ class Driver:
         self.nearest = (None if not np.isfinite(gap[k]) else
                         (math.degrees(angle_min + angle_increment * k), float(gap[k]),
                          bool(mem[k])))
+        if self.predictor is not None and not self.latched:
+            if self.needs_odom and (self.odom_time is None
+                                    or t - self.odom_time > self.scan_timeout):
+                self.reason = NO_ODOM
+                return
+            # the policy first: its own correction (corner: rewait) is part of the path
+            self._decide(r, angle_min, angle_increment)
         if self.predictor is not None:
             gap = self.path_gap(r, angle_min, angle_increment)
         hit = np.nonzero(gap < np.where(mem, self.memory_margin, self.stop_margin))[0]
@@ -318,18 +327,27 @@ class Driver:
             self.predicted = self.predictor is not None
             self.latched = True
         if self.latched:
+            self.label, self.probs = STOP, None
+            self._sent(STOP)            # stopped: the steering goes straight (wz 0)
             self.reason = TOO_CLOSE
+            return
+        if self.predictor is not None:
+            self.reason = OK            # decided above
             return
         if self.needs_odom and (self.odom_time is None
                                 or t - self.odom_time > self.scan_timeout):
             self.reason = NO_ODOM
             return
+        self._decide(r, angle_min, angle_increment)
+        self.reason = OK
+
+    def _decide(self, r, angle_min, angle_increment):
+        """Ask the policy; remember the command for path_gap."""
         if getattr(self.decide, 'takes_ranges', False):
             self.label, self.probs = self.decide(r, angle_min, angle_increment)
         else:
             self.label, self.probs = self.decide(scan_features(r))
         self._sent(self.label)
-        self.reason = OK
 
     def reset(self, t):
         """

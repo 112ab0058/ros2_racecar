@@ -218,7 +218,7 @@ def last_run_summary():
             return ''
     bc, web = read('bc.log'), read('web.log')
     # 'turn at' (timing ahead) or 'turn (room ...) at' (timing predict)
-    turns = len(re.findall(r'corner policy: turn\b', bc))
+    turns = len(re.findall(r'corner policy: turn\b(?! \(resumed)', bc))
     lines = ['%s' % dirs[-1],
              '按住「自動」%d 次，轉彎 %d 次' % (web.count('phone: 自動'), turns)]
     if re.search(r'policy model \(', bc):
@@ -235,6 +235,13 @@ def last_run_summary():
         lines.append('自動判斷方向：還沒決定')
     if 'corner policy: done' in bc:
         lines.append('跑完設定的圈數，停在起點')
+    rewaits = len(re.findall(r'corner policy: rewait \(room', bc))
+    if rewaits:
+        lines.append('打滿太早、自動回正再打滿 %d 次（重新打滿 %d 次）'
+                     % (rewaits, len(re.findall(r'corner policy: turn \(resumed', bc))))
+    holds = len(re.findall(r'corner policy: hold\b', bc))
+    if holds:
+        lines.append('彎道剩下的部分過不去、停下 %d 次' % holds)
     blocked = len(re.findall(r'corner policy: blocked\b', bc))
     if blocked:
         lines.append('過不了彎、停下來 %d 次（車太靠島或太靠近彎道）：倒車或把車放回走道中間'

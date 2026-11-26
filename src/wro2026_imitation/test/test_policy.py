@@ -280,7 +280,7 @@ def test_predicted_stop_looks_5_cm_ahead(front, latched):
     assert (d.command(0.15)[3] == TOO_CLOSE) == latched
     if latched:
         text = state_text(TOO_CLOSE, d)
-        assert text.startswith('照現在的轉法開下去會碰到') and '先用按鍵開離' in text
+        assert text.startswith('照現在的轉法開下去會碰到，鎖住停車：')
 
 
 @pytest.mark.parametrize('front, latched', [(0.37, True), (0.47, False)])
