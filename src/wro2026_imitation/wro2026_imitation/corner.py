@@ -98,6 +98,15 @@ FOLLOW, DELAY, TURN, SETTLE, DONE = 'follow', 'delay', 'turn', 'settle', 'done'
 BLOCKED = 'blocked'
 REWAIT, HOLD = 'rewait', 'hold'
 
+# island_mask: how far a point may lie on the corridor side of the inner wall's line and
+# still be the island (m). 0.03 until 2026-11-27: the island's corner returns read up to
+# 3-5 cm short (edge points, FIELD_REVIEW A1), so on 17 scans of the 11-26 field runs the
+# first point the lock-now turn touched lay 3.0-4.2 cm off the line, counted as "the wall
+# ahead: too late, lock" and, not fitting, as blocked for one scan (the 0.1 s pauses, A8).
+# The outer wall and the wall ahead are >= 0.38 m from that line. Replay with 0.06: those
+# 17 gone (27 -> 10 blocked), every turn at the same place.
+ISLAND_ACROSS = 0.06
+
 # Curvature (1/m, + = left) the R550 really drives for each decision, with bc_node's
 # turn_radius 0.5 m and full_turn_radius 0.35 m at 0.1 m/s: steady gyro z / speed while
 # the command was held >= 0.6 s, median over the 11-13 / 11-20 field bags
@@ -608,14 +617,14 @@ class CornerPolicy:
         d = np.arange(0.0, length + 1e-9, step)
         return ex - d * math.cos(wyaw), ey - d * math.sin(wyaw)
 
-    def island_mask(self, px, py, tol=0.03):
+    def island_mask(self, px, py, tol=0.03, across_tol=ISLAND_ACROSS):
         """
         Return which points (base_link, m) are the island, or None if no island is kept.
 
-        The island: on the inner wall's line or beyond it (towards the inner side, tol m
-        slack) and not past its end along the wall. The turn prediction uses it to tell
-        "touches the island first: too early" from "touches the wall ahead or the outer
-        wall first: too late" (TurnPredictor._curves).
+        The island: on the inner wall's line or beyond it (towards the inner side,
+        across_tol m slack) and not past its end along the wall (tol m slack). The turn
+        prediction uses it to tell "touches the island first: too early" from "touches the
+        wall ahead or the outer wall first: too late" (TurnPredictor._curves).
         """
         now = self._island_now()
         if now is None:
@@ -625,7 +634,7 @@ class CornerPolicy:
         along = (px - ex) * c + (py - ey) * s
         across = -(px - ex) * s + (py - ey) * c                # + = left of the wall's line
         with np.errstate(invalid='ignore'):
-            return (self.sign * across > -tol) & (along < tol)
+            return (self.sign * across > -across_tol) & (along < tol)
 
     def _predict(self, r, angles):
         """Arm on a wall end in follow (timing 'predict'); lock when the prediction says so."""

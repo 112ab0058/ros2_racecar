@@ -537,6 +537,26 @@ def test_a_turn_that_will_touch_the_island_straightens_first(end, state):
     assert label == (STRAIGHT if state == REWAIT else FULL_RIGHT)
 
 
+@pytest.mark.parametrize('direction', ['ccw', 'cw'])
+def test_island_corner_points_a_few_cm_short_are_still_the_island(direction):
+    """
+    11-26 field (FIELD_REVIEW A8): the island's corner returns read 3-5 cm short.
+
+    The first point a lock-now turn touched lay 3.0-4.2 cm on the corridor side of the
+    island's wall line; with 3 cm slack it was "the wall ahead: too late", the turn did not
+    fit, and the car paused 0.1 s (blocked) 17 times. Up to 6 cm it is the island (too
+    early: wait); farther off, or past the island's end, it is not.
+    """
+    side = 1.0 if direction == 'ccw' else -1.0
+    policy = CornerPolicy(direction)
+    policy.on_odom(0.0, 0.0, 0.0)
+    policy.island = (0.40, side * 0.20, 0.0, 0.0, False)     # end 0.40 m ahead, wall along x
+    px = np.array([0.35, 0.35, 0.35, 0.35, 0.44, 0.30])
+    off = np.array([0.0, 0.032, 0.045, 0.07, 0.0, -0.10])     # towards the corridor (m)
+    py = side * (0.20 - off)
+    assert list(policy.island_mask(px, py)) == [True, True, True, False, False, True]
+
+
 def test_rewait_locks_again_on_the_same_corner():
     """After ~0.14 m straight on the turn fits: full lock again, still corner 1."""
     policy = turning_cw()
