@@ -136,6 +136,13 @@ echo "Autonomous ($DIRECTION, timing $TIMING, corner_ahead $CORNER_AHEAD m, laps
      "with the phone 自動 button:" \
      "speed $SPEED m/s, $RUN_TIME s"
 echo "RESULT_DIR=$OUT"
+# FIELD_REVIEW A2 (2026-11-27): without lingering, 10 s after this user's last ssh session
+# ends, logind (RemoveIPC=yes) deletes the user's /dev/shm files, Fast DDS shared memory
+# included, and every topic stops mid-run. Warn only; the run still starts.
+if [ "$(loginctl show-user "$(id -u)" -p Linger --value 2>/dev/null)" != yes ]; then
+    echo "WARNING: logind lingering is off for $(id -un): topics stop 10 s after the last" \
+         "ssh logout. Fix once: sudo loginctl enable-linger $(id -un)" | tee "$OUT/linger_warning.txt"
+fi
 
 LAUNCH_PID=""
 WEB_PID=""

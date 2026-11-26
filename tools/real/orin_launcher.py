@@ -114,6 +114,27 @@ def busy():
     return subprocess.run(['pgrep', '-f', BUSY], stdout=subprocess.DEVNULL).returncode == 0
 
 
+LINGER_WARNING = ('Orin 沒開 linger：ssh 斷線 10 秒後，跑到一半的車子程式會收不到資料'
+                  '（FIELD_REVIEW A2）。Ray 執行一次：sudo loginctl enable-linger user2')
+
+
+def linger_on(uid=None):
+    """
+    True when logind lingering is on for this user (default: the one running this page).
+
+    This service runs the car programs in no login session. Without lingering, logind
+    (RemoveIPC=yes) deletes the user's /dev/shm files, the Fast DDS shared memory of a
+    running car program included, 10 s after the user's last ssh session ends (2026-11-27).
+    """
+    uid = os.getuid() if uid is None else uid
+    try:
+        out = subprocess.run(['loginctl', 'show-user', str(uid), '-p', 'Linger', '--value'],
+                             capture_output=True, text=True, timeout=3).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return out == 'yes'
+
+
 def read_battery(seconds=0.6):
     """Median battery voltage from the STM32 feedback, None if nothing was read."""
     volts = []
@@ -298,6 +319,7 @@ class Launcher:
         self.training = None
         self.lock = threading.Lock()
         self.battery = (None, 0.0)          # (volts, monotonic time read)
+        self.linger = (False, -1e9)         # (lingering on, monotonic time checked)
 
     def status(self, host):
         with self.lock:
@@ -306,6 +328,9 @@ class Launcher:
             if (run is None or not run.alive()) and not other \
                     and time.monotonic() - self.battery[1] > 10:
                 self.battery = (read_battery(), time.monotonic())
+            if time.monotonic() - self.linger[1] > 30:
+                self.linger = (linger_on(), time.monotonic())
+            warn = [] if self.linger[0] else [LINGER_WARNING]
         st = 'other' if other else (run.state() if run else 'idle')
         tail = [line for line in (run.text() if run else '').splitlines()
                 if not line.startswith('PHONE_URL')][-6:]
@@ -317,6 +342,7 @@ class Launcher:
                 'args': run.args if run else None,
                 'drive_url': 'https://%s:%d/?k=%s' % (host, DRIVE_PORT, self.drive_token),
                 'tail': tail, 'last': last_run_summary(), 'min_battery': MIN_BATTERY,
+                'warn': warn,
                 'model': model_info(),
                 'train_tail': training.text().splitlines()[-8:] if training else []}
 
@@ -372,7 +398,9 @@ label{display:block;margin:6px 0}input{font-size:16px;width:90px}
 .mode{margin:4px 0 8px}.seg{display:flex;gap:6px}.seg button{flex:1;font-size:16px;
 padding:11px 6px;margin:4px 0;background:#e6e4df;color:#111}.seg button.on{background:#111;
 color:#fff}.hint{font-size:13px;color:#8a5a00;margin:2px 0 4px}[hidden]{display:none}
+.warn{background:#fff1e0;color:#8a3b00;font-size:15px;font-weight:600}
 </style></head><body><h1>R550 啟動頁</h1>
+<div class="card warn" id="warn" hidden></div>
 <div class="card"><div>電池</div><div id="bat" class="big">讀取中…</div></div>
 <div class="card"><div>狀態</div><div id="st" class="big">…</div><div id="drive"></div>
 <pre id="tail"></pre></div>
@@ -436,6 +464,9 @@ async function tick() {
     document.getElementById('drive').innerHTML = s.state == 'ready' ?
       '<a class="drive" href="' + s.drive_url + '">打開駕駛頁</a>' : '';
     document.getElementById('tail').textContent = s.tail.join('\\n');
+    const w = document.getElementById('warn');
+    w.textContent = (s.warn || []).join('\\n');
+    w.hidden = !(s.warn || []).length;
     document.getElementById('last').textContent = s.last.join('\\n');
     const running = ['starting', 'ready', 'stopping', 'other', 'training'].includes(s.state);
     document.querySelectorAll('.go').forEach(x => x.disabled = running);
