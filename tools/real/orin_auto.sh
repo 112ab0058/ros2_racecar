@@ -51,7 +51,11 @@
 # half of a straight do not put it against the island, nor pointing at the outer wall.
 # Until 11-24 only the first ~0.3 m worked.
 # Limits: speed <= 0.12 m/s, 10-600 s, cmd_timeout 0.3 s, firmware timeout ~1.3 s;
-#         bc_node stops (latched) when anything comes within 2 cm of the car outline;
+#         bc_node stops (latched) when a lidar point comes within 1 cm of the car
+#         outline, a remembered (memory / camera) point inside it (1 cm since 11-26:
+#         on the field's 0.38 m corridor the island passed the turning car at a real,
+#         lidar-measured 1.6-1.9 cm and the 2 cm margin latched three left turns that
+#         the 左滿舵 key then drove through);
 #         drive away with the page's keys, then 重置 in the 自動 tab unlatches it.
 # Stop:   let go of 自動 / Motor switch OFF / touch ~/r550_map/latest/stop or
 #         kill -TERM <script pid> (stops driving, saves the map, stops everything).
@@ -201,7 +205,7 @@ setsid ros2 run wro2026_imitation bc_node --ros-args "${POLICY_ARGS[@]}" \
     -p direction:="$DIRECTION" -p corner_ahead:="$CORNER_AHEAD" -p timing:="$TIMING" \
     -p laps:="$LAPS" \
     -p speed:="$SPEED" -p publish_cmd:=true \
-    -p cmd_topic:=bc/cmd_vel -p stop_margin:=0.02 -p memory_marks:=true \
+    -p cmd_topic:=bc/cmd_vel -p stop_margin:=0.01 -p memory_marks:=true \
     -r scan:=scan_filled \
     > "$OUT/bc.log" 2>&1 < /dev/null &
 BC_PID=$!
