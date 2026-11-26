@@ -242,13 +242,29 @@ def last_run_summary():
     stopped = [w for name, w in states if name == 'too_close']
     if stopped:
         lines.append('太靠近停車：%s' % stopped[-1])
-    names = [name for name, _ in states]
-    if 'ok' in names and {'no_scan', 'no_odom'} & set(names[names.index('ok') + 1:]):
-        # 2026-11-20: every topic of the launch stopped at once on the hotspot (DDS)
+    if lost_mid_run(bc):
         lines.append('中途沒有光達／里程計資料（通訊停住？）：按停止再開一次')
     if not run_alive(d) and not os.path.exists(os.path.join(d, 'map.yaml')):
         lines.append('地圖沒有存到')
     return lines
+
+
+def lost_mid_run(bc):
+    """
+    True if scans or odometry stopped after the run had started (2026-11-20 on the hotspot:
+    every topic of the launch stopped at once). Every 重置 also passes through no_scan for
+    about 0.1 s (bc_node waits for a new scan; 2026-11-26 air test), so only a gap longer
+    than 2 s, or one that never ended, counts.
+    """
+    timed = re.findall(r'\[(\d+\.\d+)\] \[bc_node\]: state: (\w+)', bc)
+    started = False
+    for i, (t, name) in enumerate(timed):
+        if name == 'ok':
+            started = True
+        elif started and name in ('no_scan', 'no_odom'):
+            if i + 1 == len(timed) or float(timed[i + 1][0]) - float(t) > 2.0:
+                return True
+    return False
 
 
 def run_alive(d):
