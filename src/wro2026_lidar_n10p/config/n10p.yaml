@@ -13,4 +13,4 @@ n10p_scan:
     range_offset_m: 0.036        # subtracted from every distance: tape vs lidar centre 2026-11-19 read +3.2 cm at 0.575 m, +4.0 cm at 0.975 m (README)
     scan_timeout: 1.0            # s
     echo2_topic: 'scan_echo2'    # the second echo as a LaserScan ('' = off); /scan carries the first echo's intensities (2026-11-27)
-    mask_sectors_deg: '168:178,195:213,228:247'  # hide our own car (ROS deg, 0 = front, CCW); measured 2026-11-08, see README; 243 -> 247 on 11-20 (a part at 243-245 deg, raw 0.136 m, falls on the car outline after range_offset_m). Re-measure after moving cables
+    mask_sectors_deg: '168:178,195:213,228:256'  # 247 -> 256 on 11-27: beams 254.3-255.8 graze our own car's right-rear edge and, with a wall behind, return mixed 0.10-0.16 m (all 35 wrong memory points of the 11-26 22:02 cw run, the cw rewaits; FIELD_REVIEW A1/A4); hide our own car (ROS deg, 0 = front, CCW); measured 2026-11-08, see README; 243 -> 247 on 11-20 (a part at 243-245 deg, raw 0.136 m, falls on the car outline after range_offset_m). Re-measure after moving cables

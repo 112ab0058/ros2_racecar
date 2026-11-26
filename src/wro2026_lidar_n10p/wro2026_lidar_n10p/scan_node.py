@@ -35,7 +35,7 @@ PARAMETERS = [
                               'far (tape vs lidar centre at 0.575 and 0.975 m, 2026-11-19)'),
     ('scan_timeout', 1.0, '/diagnostics ERROR when no scan for this long (s)'),
     ('echo2_topic', 'scan_echo2', "the second echo as a LaserScan; '' = do not publish"),
-    ('mask_sectors_deg', '168:178,195:213,228:247',
+    ('mask_sectors_deg', '168:178,195:213,228:256',
      'hide our own car: "start:end,..." in ROS degrees (0 = front, CCW); beams inside '
      'become inf. Measured 2026-11-08 (Orin, posts, cables); 243 -> 247 on 2026-11-20: '
      'a part at 243-245 deg, raw 0.136 m, falls on the outline after range_offset_m'),
