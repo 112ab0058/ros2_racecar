@@ -283,6 +283,7 @@ bash ~/racecar_ws/tools/orin_sim_check.sh                # 自動檢查，約 3 
 3. 按開始 → 等約 20 s「可以開了」→ 打開駕駛頁 → **按住「自動」才會動**，放開 0.35 s 內停。
 4. 太靠近牆會鎖住：用「按鍵」把車開離 → 按「重置」→ 再按住自動。
 5. 結束按「停止」（會存地圖、關掉全部）。緊急時關 Motor 開關。
+6. 看「上一次」：出現「地圖沒有存到」或「中途沒有光達／里程計資料（通訊停住？）」→ 這一趟的錄影在那裡就斷了，再開一次。（11-20 在手機熱點下發生過 3 次，所有 ROS 程式同一秒停住；之後加了 `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`，還沒在熱點下驗證。每一趟的 `net.log` 會記下網路位址什麼時候變。）
 
 **限制**：0.10 m/s（啟動頁固定；`orin_auto.sh` 上限 0.12）、10–600 s、指令 0.3 s 逾時、韌體約 0.5 s 逾時。結果在 `~/r550_map/<時間>_auto/`（bag、bc.log、web.log、用網路時還有 model.npz）。
 
@@ -298,6 +299,17 @@ FRESH=1 bash ~/racecar_ws/tools/orin_train.sh     # bc_extract 改過之後，�
 ```
 
 每次訓練的模型都留在 `~/r550_map/models/model_<時間>.npz`（加上 `.txt` 訓練紀錄），最新的一份複製到 `~/r550_map/model.npz`。換模型：把舊的那份複製回 `model.npz`。
+
+**場地之後的分析**（只讀，馬達不會轉；今晚的步驟見 [tasks/2026-11-26_field_night.md](tasks/2026-11-26_field_night.md)）：
+
+```bash
+bash ~/racecar_ws/tools/orin_field_report.sh                 # 今天每一趟：圈數、鎖住、離車身最近、E1
+bash ~/racecar_ws/tools/orin_field_report.sh ~/r550_map/<時間>_auto   # 指定某幾趟
+python3 ~/racecar_ws/tools/map_measure.py ~/r550_map/<時間>_auto/map.yaml   # E2：場地、島、走道
+```
+
+- E1 的捲尺：在那一趟的資料夾放 `tape.txt`，四個數字（cm）：左後輪「往前、往外」、左前輪「往前、往外」。沒有捲尺也會用第一張和最後一張掃描的牆算出角度變化（以 90° 為週期，誤差約 1°）。
+- 結果存在 `~/r550_map/report_<時間>.txt`。
 
 **部署後要重開啟動頁**（它不會自己換成新版）：沒有車子程式在跑時，`pkill -KILL -f orin_launcher.py`，systemd 5 s 後重新啟動它。
 

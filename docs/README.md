@@ -26,7 +26,7 @@
 | [../src/wro2026_camera_c70/README.md](../src/wro2026_camera_c70/README.md) | C70 相機：校正檔、找黑牆牆腳的 `wall_node`（補光達的盲區） |
 | [../src/wro2026_imitation/README.md](../src/wro2026_imitation/README.md) | 模仿學習（取資料、訓練、`bc_node`）、轉彎規則、預測式打滿、2-D 場地模擬 |
 | [../src/wro2026_sim_r550/README.md](../src/wro2026_sim_r550/README.md) | R550 的 Gazebo 模擬（暫時裝在 Orin） |
-| [real/tasks/](real/tasks/) | 交給另一個工作階段做的任務和報告（10-20 長時間測試、10-27 模擬循跡實驗） |
+| [real/tasks/](real/tasks/) | 任務計畫和報告（10-20 長時間測試、10-27 模擬循跡實驗、11-26 晚上場地） |
 
 ## 模擬（`sim/`，已結束，只當參考）
 

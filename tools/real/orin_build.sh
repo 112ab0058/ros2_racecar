@@ -27,6 +27,7 @@ cp "$STAGE"/tools/real/orin_*.sh "$STAGE"/tools/real/analyze_*.py \
    "$STAGE"/tools/real/cam_*.py "$STAGE"/tools/real/calibrate_*.py \
    "$STAGE"/tools/real/lidar_*.py "$STAGE"/tools/real/replay_*.py \
    "$STAGE"/tools/real/start_*.py "$STAGE"/tools/real/orin_*.py \
+   "$STAGE"/tools/real/field_report.py "$STAGE"/tools/real/map_measure.py \
    "$STAGE"/tools/real/r550-*.service "$WS/tools/"
 rm -rf "$STAGE"
 

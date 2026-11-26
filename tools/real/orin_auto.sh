@@ -55,7 +55,8 @@
 #         drive away with the page's keys, then 重置 in the 自動 tab unlatches it.
 # Stop:   let go of 自動 / Motor switch OFF / touch ~/r550_map/latest/stop or
 #         kill -TERM <script pid> (stops driving, saves the map, stops everything).
-# Result: ~/r550_map/<time>/ (bag/, map.*, launch.log, camera.log, memory.log, bc.log, web.log)
+# Result: ~/r550_map/<time>/ (bag/, map.*, launch.log, camera.log, memory.log, bc.log, web.log,
+#         net.log: the network addresses at the start and at every change)
 # DRIVE_TOKEN=<hex> (env) keeps the phone page's ?k= the same every run (orin_launcher.py);
 # unset = a new random one.
 set -o pipefail
@@ -228,7 +229,15 @@ done
 echo "READY: open the 自動 tab and HOLD the button to drive. Time limit $RUN_TIME s."
 
 END=$((SECONDS + RUN_TIME + 5))
+# Evidence for the hotspot stall (11-20; LOCALHOST above is the fix, not yet tried on the
+# hotspot): net.log gets a line with the time whenever the network addresses change.
+NET_LAST=""
 while [ "$SECONDS" -lt "$END" ]; do
+    NET_NOW=$(ip -br addr 2>/dev/null | grep -v '^lo ')
+    if [ "$NET_NOW" != "$NET_LAST" ]; then
+        { date '+%F %T.%N'; echo "$NET_NOW"; } >> "$OUT/net.log"
+        NET_LAST="$NET_NOW"
+    fi
     if [ -e "$OUT/stop" ]; then echo "stop requested"; break; fi
     if ! kill -0 "$WEB_PID" 2>/dev/null; then echo "phone page ended"; break; fi
     if ! kill -0 "$BC_PID" 2>/dev/null; then echo "bc_node ended"; break; fi
