@@ -75,6 +75,10 @@ PARAMETERS = [
                             'remembered points, which use memory_margin instead'),
     ('memory_margin', 0.0, 'stop margin for remembered points (m); they are up to ~1.7 cm '
                            'off, 0 = only inside the car outline itself'),
+    ('predict_stop', False, 'true = the margins apply along the path ahead (the rest of a '
+                            'corner turn, else predict_horizon m), not where the car is now: '
+                            'stop only when the car will touch (Driver, 2026-11-26)'),
+    ('predict_horizon', 0.05, 'predict_stop: path ahead outside corner turns (m)'),
     ('scan_timeout', 0.3, 'stop when the newest scan is older than this (s)'),
     ('rate', 20.0, 'bc/decision and cmd_vel messages per second'),
     ('front_dist', 0.5, 'center: turn to the open side when the front is closer (m)'),
@@ -141,7 +145,9 @@ class BcNode(Node):
             raise ValueError('turn radius %.2f / %.2f m is below min_turn_radius %.2f'
                              % (radius, full_radius, p['min_turn_radius']))
         self.driver = Driver(decide, speed, radius, p['stop_margin'], p['scan_timeout'],
-                             max(full_radius, p['min_turn_radius']), p['memory_margin'])
+                             max(full_radius, p['min_turn_radius']), p['memory_margin'],
+                             predict=bool(p['predict_stop']),
+                             horizon=p['predict_horizon'])
         self.memory_marks = bool(p['memory_marks'])
         self.policy = decide
         self.events_seen = 0
@@ -167,8 +173,12 @@ class BcNode(Node):
                 p['direction'], p['timing'],
                 ', corner_ahead %.3f m' % p['corner_ahead'] if p['timing'] == 'ahead' else '',
                 'stop after %d laps' % p['laps'] if p['laps'] else 'no lap limit')
+        stop = ('when the path ahead (corner turn or %.2f m) touches' % p['predict_horizon']
+                if p['predict_stop'] else 'by the outline where the car is')
         self.get_logger().warn('%s; policy %s, speed %.3f m/s, turn radius %.2f m, full lock '
-                               '%.2f m' % (mode, policy, speed, radius, full_radius))
+                               '%.2f m; too_close %s, margins %.3f m measured / %.3f m '
+                               'remembered' % (mode, policy, speed, radius, full_radius, stop,
+                                               p['stop_margin'], p['memory_margin']))
 
     def _on_odom(self, msg):
         q = msg.pose.pose.orientation

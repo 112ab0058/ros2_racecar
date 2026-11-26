@@ -108,6 +108,32 @@ class TurnPredictor:
         """
         sched = self.schedule(k0, k_cmd, queued)
         sched.append((wait + self.dead * self.speed, self.k_full[sign]))   # the lock
+        yaw_lock = [None]
+
+        def done(s, yaw):
+            if yaw_lock[0] is None and s >= wait - 1e-9:
+                yaw_lock[0] = yaw
+            return yaw_lock[0] is not None and sign * (yaw - yaw_lock[0]) >= self.sweep
+
+        return self._integrate(sched, k0, done)
+
+    def drive_on(self, k0=0.0, k_cmd=None, queued=None, length=0.05, sign=0.0, sweep=None):
+        """
+        Return the rear-axle poses of driving on with the commands already sent.
+
+        No new command: the path the car takes if nothing changes before it can stop.
+        At least length m; with sweep (rad), also until the heading has turned that much
+        towards sign (+1 left, -1 right; a turn in progress). Same physics as path.
+        """
+        sched = self.schedule(k0, k_cmd, queued)
+
+        def done(s, yaw):
+            return s >= length - 1e-9 and (sweep is None or sign * yaw >= sweep)
+
+        return self._integrate(sched, k0, done)
+
+    def _integrate(self, sched, k0, done):
+        """Poses (n, 3) of the path with the schedule's commands until done(s, yaw)."""
         starts = [st for st, _ in sched]
         targets = [k0] + [k for _, k in sched]
         h = self.substep                 # the steering is integrated finely: with the 2 cm
@@ -115,13 +141,10 @@ class TurnPredictor:
         every = max(1, int(round(self.step / h)))
         x = y = yaw = s = 0.0
         k = k0
-        yaw_lock = None
         poses = [(0.0, 0.0, 0.0)]
         n = 0
         while s < 6.0:
-            if yaw_lock is None and s >= wait - 1e-9:
-                yaw_lock = yaw
-            if yaw_lock is not None and sign * (yaw - yaw_lock) >= self.sweep:
+            if done(s, yaw):
                 break
             i = 0
             while i < len(starts) and starts[i] <= s + 1e-9:
@@ -139,6 +162,29 @@ class TurnPredictor:
                 poses.append((x, y, yaw))
         poses.append((x, y, yaw))
         return np.array(poses)
+
+    def gaps(self, px, py, poses):
+        """
+        Return each point's smallest gap to the car outline over the poses (m).
+
+        px, py: points in the base_link frame (nan = none: inf); poses from path /
+        drive_on. Measured like the too_close stop (rectangle grown on every side).
+        """
+        px, py = np.asarray(px, float), np.asarray(py, float)
+        out = np.full(len(px), np.inf)
+        p = np.asarray(poses, float)
+        ext = math.hypot(FRONT, HALF_WIDTH) + self.margin
+        keep = (np.isfinite(px) & np.isfinite(py)
+                & (px >= p[:, 0].min() - ext) & (px <= p[:, 0].max() + ext)
+                & (py >= p[:, 1].min() - ext) & (py <= p[:, 1].max() + ext))
+        if not keep.any():
+            return out
+        dx, dy = px[keep][None, :] - p[:, :1], py[keep][None, :] - p[:, 1:2]
+        c, s = np.cos(p[:, 2:3]), np.sin(p[:, 2:3])
+        u, w = c * dx + s * dy, -s * dx + c * dy
+        g = np.maximum(np.maximum(u - FRONT, -REAR - u), np.abs(w) - HALF_WIDTH)
+        out[keep] = g.min(axis=0)
+        return out
 
     def _near(self, px, py, sign, k0, k_cmd, queued):
         """Points that can be the closest one (box round the longest-wait path, + margin)."""

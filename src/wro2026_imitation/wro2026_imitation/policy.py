@@ -17,6 +17,15 @@ Driver puts safety rules before every policy (first one that fires wins):
              (default 0: only inside the outline itself): on 2026-11-12 a remembered
              point 2.5 cm from the side was drawn 2.0 cm away and latched the car on the
              stand.
+             With predict (2026-11-26, Ray: "lock only when the computed car positions
+             of the turn are sure to touch, not at some distance"), the margins apply to
+             the closest the outline comes along the path the commands already sent will
+             drive: horizon m (the car stops within ~2-3 cm), or the rest of the corner
+             rule's turn (planned_turn), instead of to the outline where it is now. A wall
+             0.5 cm beside a car driving along it does not stop it; a turn whose outer
+             corner will reach the wall ahead stops it at once. On the field's 0.38 m
+             corridor the island passed the turning car at a measured 1.6-1.9 cm and the
+             2 cm stop latched three left turns that the 左滿舵 key then drove through.
   no_scan    no scan yet, or the newest is older than scan_timeout -> stop
   bad_scan   the scan does not start at 0 deg and cover 360 deg   -> stop
   no_odom    a policy that needs odometry has none newer than scan_timeout -> stop
@@ -26,9 +35,10 @@ import math
 
 import numpy as np
 
-from .corner import FULL_LEFT, FULL_RIGHT
+from .corner import DRIVEN, FULL_LEFT, FULL_RIGHT
 from .features import (BIN_DEG, HALF_FOV_DEG, LABELS, LABELS_3, LEFT, MAX_RANGE, N_BINS,
                        RIGHT, scan_features, STRAIGHT)
+from .turn_predict import LASER_X, TurnPredictor
 
 # Car outline seen from the lidar (m). R550_HARDWARE.md: rear axle to the front 0.24 m,
 # to the back 0.031 m, width 0.18 m; urdf: lidar 0.13 m in front of the rear axle.
@@ -81,6 +91,12 @@ def point_text(point):
     return '%s %s%s' % (side_word(deg), where, '（記憶的點）' if remembered else '')
 
 
+def path_text(point):
+    """'左前的牆（記憶的點）' for a point the predicted path touches (deg, gap m, remembered)."""
+    deg, _, remembered = point
+    return '%s的牆%s' % (side_word(deg), '（記憶的點）' if remembered else '')
+
+
 REASON_TEXT = {'no_scan': '沒有光達資料，停', 'bad_scan': '光達資料格式不對，停',
                'no_odom': '沒有里程計（EKF），停'}
 CORNER_TEXT = {'follow': '保持中線', 'delay': '等著打滿', 'turn': '打滿轉彎',
@@ -100,6 +116,11 @@ def state_text(reason, driver, policy_state=None, corners=0, direction=None):
     """
     if reason == TOO_CLOSE:
         # the phone page shows its 重置 button while this text contains 鎖住
+        if getattr(driver, 'predicted', False):
+            where = path_text(driver.close_point) if driver.close_point else ''
+            now = ('現在往前開還會碰到：%s，先用按鍵開離' % path_text(driver.close_now)
+                   if driver.close_now else '現在往前開不會碰到，可以按「重置」')
+            return '照現在的轉法開下去會碰到，鎖住停車：%s｜%s' % (where, now)
         where = point_text(driver.close_point) if driver.close_point else ''
         now = ('現在還有：%s，先用按鍵開離' % point_text(driver.close_now) if driver.close_now
                else '現在周圍淨空，可以按「重置」')
@@ -178,11 +199,17 @@ class Driver:
     """Safety rules + policy -> (vx, wz). Times are seconds from one monotonic clock."""
 
     def __init__(self, decide, speed, turn_radius, stop_margin=0.04, scan_timeout=0.3,
-                 full_turn_radius=None, memory_margin=0.0):
+                 full_turn_radius=None, memory_margin=0.0, predict=False, horizon=0.05,
+                 driven=None):
         """
         full_turn_radius: radius of FULL_LEFT / FULL_RIGHT (default: turn_radius).
 
         memory_margin: stop margin for remembered points (on_scan's remembered mask).
+
+        predict: apply the margins along the path ahead (see the module docstring), with
+        the measured steering (turn_predict.TurnPredictor at this speed) and driven, the
+        curvature (1/m) the car drives for each label (default corner.DRIVEN, measured);
+        horizon: how far that path goes when no turn is in progress (m).
         """
         full_turn_radius = full_turn_radius or turn_radius
         if (speed <= 0 or turn_radius <= 0 or full_turn_radius <= 0 or stop_margin < 0
@@ -204,6 +231,14 @@ class Driver:
         self.label, self.probs = STOP, None
         self.reason = NO_SCAN
         self.latched = False
+        self.predictor = TurnPredictor(speed=speed) if predict else None
+        self.horizon = horizon
+        self.driven = dict(DRIVEN if driven is None else driven)
+        self.odo = 0.0              # driven distance (m, odometry)
+        self.xy = None
+        self.k_now = 0.0            # curvature the car drives (1/m, odometry twist)
+        self.sent = []              # (driven distance, label) of the recent commands
+        self.predicted = False      # close_point came from the path ahead
 
     def on_odom(self, t, x, y, yaw, vx=None, wz=None):
         """
@@ -212,8 +247,43 @@ class Driver:
         vx, wz: the odometry's twist (m/s, rad/s), if known.
         """
         self.odom_time = t
+        if self.xy is not None:
+            self.odo += math.hypot(x - self.xy[0], y - self.xy[1])
+        self.xy = (x, y)
+        if vx is not None and wz is not None and abs(vx) > 0.02:
+            self.k_now = wz / vx    # stopped: the steering stays where it was
         if self.needs_odom:
             self.decide.on_odom(x, y, yaw, vx, wz)
+
+    def path_gap(self, r, angle_min, angle_increment):
+        """
+        Return each beam's smallest gap to the outline along the path ahead (m; inf: none).
+
+        The path the commands already sent drive (TurnPredictor.drive_on): at least
+        horizon m, and while the policy turns a corner (planned_turn() -> (sign, heading
+        still to turn, rad)) the rest of that turn. Latched: horizon only (after 重置 the
+        corner rule follows again). Last command STOP (not driving): where it is now.
+        """
+        a = angle_min + angle_increment * np.arange(len(r))
+        ok = np.isfinite(r)
+        rr = np.where(ok, r, 0.0)
+        px = np.where(ok, rr * np.cos(a) + LASER_X, np.nan)
+        py = np.where(ok, rr * np.sin(a), np.nan)
+        if not self.sent or self.sent[-1][1] == STOP:
+            return self.predictor.gaps(px, py, np.zeros((1, 3)))
+        queued = [(self.odo - o, self.driven[lab]) for o, lab in self.sent if lab != STOP]
+        plan = None if self.latched else getattr(self.decide, 'planned_turn', lambda: None)()
+        sign, sweep = plan if plan else (0.0, None)
+        poses = self.predictor.drive_on(self.k_now, queued=queued, length=self.horizon,
+                                        sign=sign, sweep=sweep)
+        return self.predictor.gaps(px, py, poses)
+
+    def _sent(self, label):
+        """Remember the command for path_gap: those still on their way and the one before."""
+        if not self.sent or self.sent[-1][1] != label:
+            self.sent.append((self.odo, label))
+        while len(self.sent) > 1 and self.odo - self.sent[1][0] > 0.1:
+            self.sent.pop(0)
 
     def on_scan(self, t, ranges, angle_min, angle_increment, remembered=None):
         """
@@ -235,6 +305,8 @@ class Driver:
         self.nearest = (None if not np.isfinite(gap[k]) else
                         (math.degrees(angle_min + angle_increment * k), float(gap[k]),
                          bool(mem[k])))
+        if self.predictor is not None:
+            gap = self.path_gap(r, angle_min, angle_increment)
         hit = np.nonzero(gap < np.where(mem, self.memory_margin, self.stop_margin))[0]
         self.close_now = None
         if len(hit):
@@ -243,6 +315,7 @@ class Driver:
                               bool(mem[k]))
         if not self.latched and self.close_now:
             self.close_point = self.close_now
+            self.predicted = self.predictor is not None
             self.latched = True
         if self.latched:
             self.reason = TOO_CLOSE
@@ -255,6 +328,7 @@ class Driver:
             self.label, self.probs = self.decide(r, angle_min, angle_increment)
         else:
             self.label, self.probs = self.decide(scan_features(r))
+        self._sent(self.label)
         self.reason = OK
 
     def reset(self, t):
@@ -274,6 +348,7 @@ class Driver:
             return False, '還太靠近：%s' % point_text(self.close_now)
         self.latched = False
         self.close_point = None
+        self._sent(STOP)                # stopped: the next scan's check starts from here
         self.scan_time = None           # drive again only after the next scan
         self.reason = NO_SCAN
         self.label, self.probs = STOP, None

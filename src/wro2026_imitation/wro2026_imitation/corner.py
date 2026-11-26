@@ -650,6 +650,18 @@ class CornerPolicy:
                 now, later,
                 '; island end from the beams past it' if self.island and self.island[4] else ''))
 
+    def planned_turn(self):
+        """
+        Return (sign, heading still to turn, rad) while turning a corner, else None.
+
+        Driver's predicted stop follows the rest of the full-lock turn (state turn, until
+        the heading changed by turn_deg) with it.
+        """
+        if self.state != TURN or self.pose is None:
+            return None
+        turned = abs(_wrap(self.pose[2] - self.mark_yaw))
+        return self.sign, max(self.turn_rad - turned, 0.0)
+
     def _unblock(self, note):
         """Leave state blocked (back to follow), if in it."""
         if self.state == BLOCKED:

@@ -27,18 +27,20 @@ def start_pose(direction, island=0.80, start=0.05, lat=0.0, head=0.0):
 
 def drive_laps(direction, laps=1, island=0.80, memory=True, seed=0, policy_direction=None,
                partial=False, camera=False, car=None, start=0.05, lat=0.0, head=0.0,
-               cam_max=1.0, **policy_kw):
+               cam_max=1.0, predict=False, **policy_kw):
     """
     Drive the corner policy around the field; return (ok, why, laps, min clearance, policy).
 
     car: Car keyword arguments (default: the measured car, 0.403 m left / 0.292 m right);
     start, lat, head: start pose (start_pose); cam_max: the camera's max_range (m);
-    policy_kw: CornerPolicy keyword arguments.
+    policy_kw: CornerPolicy keyword arguments. predict: orin_auto.sh since 2026-11-26
+    (stop when the path ahead touches, margins 0); else the outline + 2 cm rule.
     """
     field = Field(1.6, island)
     car = Car(*start_pose(direction, island, start, lat, head), **(car or {}))
     policy = CornerPolicy(policy_direction or direction, **policy_kw)
-    driver = Driver(policy, 0.1, 0.5, stop_margin=0.02, full_turn_radius=0.35)
+    driver = Driver(policy, 0.1, 0.5, stop_margin=0.0 if predict else 0.02,
+                    full_turn_radius=0.35, predict=predict)
     mem = ScanMemory()
     rng = np.random.default_rng(seed)
     dt, t, vx, wz, turned, last, clear = 0.02, 0.0, 0.0, 0.0, 0.0, car.yaw, 9.0
@@ -479,3 +481,17 @@ def test_blocked_follows_again_when_no_corner_is_ahead():
     label, _ = policy(r, 0.0, INC)
     assert policy.state == FOLLOW and label != CORNER_STOP
     assert policy.corners == 0 and policy.events[-1][1].startswith('follow')
+
+
+@pytest.mark.parametrize('direction', ['ccw', 'cw'])
+def test_predicted_stop_on_the_narrow_field(direction):
+    """
+    The 2026-11-26 field: 0.38 m corridor, start 6 cm towards the outer wall (orin_auto.sh).
+
+    Two laps with no stop; the car passes the walls closer than the old 2 cm margin.
+    """
+    ok, why, laps, clear, policy = drive_laps(direction, laps=2, island=0.84, start=0.40,
+                                              lat=-0.06, partial=True, camera=True,
+                                              cam_max=0.5, predict=True)
+    assert ok, (why, laps, policy.events[-3:])
+    assert clear > 0.005

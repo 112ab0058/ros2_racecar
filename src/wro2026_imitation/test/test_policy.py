@@ -241,3 +241,70 @@ def test_a_policy_stop_stops_the_car_with_reason_ok():
     d.on_scan(0.0, corridor(0.3, 0.3), 0.0, INC)
     assert d.command(0.05) == (0.0, 0.0, STOP, OK)
     assert state_text(OK, d, 'done', 12).startswith('跑完了，停在起點，過了 12 個彎')
+
+
+class Turning:
+    """A policy in the middle of a corner turn: full lock, heading still to turn."""
+
+    def __init__(self, label, plan):
+        self.label, self.plan = label, plan
+
+    def __call__(self, x):
+        return self.label, None
+
+    def planned_turn(self):
+        return self.plan
+
+
+@pytest.mark.parametrize('gap, predict, latched', [
+    (0.005, False, True),      # the outline + 2 cm rule (until 2026-11-26)
+    (0.005, True, False),      # predicted: driving along a wall 0.5 cm away touches nothing
+    (-0.002, True, True)])     # inside the outline: touching now
+def test_predicted_stop_drives_along_a_wall_close_beside(gap, predict, latched):
+    """Ray 2026-11-26: stop when the car will touch, not at some distance."""
+    r = corridor(0.09 + gap, 0.3)
+    d = Driver(always(STRAIGHT), 0.1, 0.5, stop_margin=0.0 if predict else 0.02,
+               predict=predict)
+    d.on_scan(0.0, r, 0.0, INC)
+    d.on_scan(0.1, r, 0.0, INC)                     # now with a command on its way
+    assert (d.command(0.15)[3] == TOO_CLOSE) == latched
+
+
+@pytest.mark.parametrize('front, latched', [(0.15, True), (0.20, False)])
+def test_predicted_stop_looks_5_cm_ahead(front, latched):
+    """Straight on: a wall 4 cm ahead of the bumper is within the 5 cm horizon, 9 cm is not."""
+    r = corridor(0.3, 0.3, front)
+    d = Driver(always(STRAIGHT), 0.1, 0.5, stop_margin=0.0, predict=True)
+    d.on_scan(0.0, r, 0.0, INC)
+    d.on_scan(0.1, r, 0.0, INC)
+    assert (d.command(0.15)[3] == TOO_CLOSE) == latched
+    if latched:
+        text = state_text(TOO_CLOSE, d)
+        assert text.startswith('照現在的轉法開下去會碰到') and '先用按鍵開離' in text
+
+
+@pytest.mark.parametrize('front, latched', [(0.37, True), (0.47, False)])
+def test_predicted_stop_follows_the_rest_of_the_turn(front, latched):
+    """
+    Full left lock, 80 deg still to turn: the outer front corner swings 0.548 m ahead.
+
+    A wall 0.50 m ahead of the rear axle (0.26 m from the bumper) stops the car now; 0.60
+    m does not. The outline rule saw neither.
+    """
+    r = corridor(np.inf, np.inf, front)
+    d = Driver(Turning(FULL_LEFT, (1.0, math.radians(80.0))), 0.1, 0.5, stop_margin=0.0,
+               predict=True)
+    d.k_now = 2.48                                  # at full lock already
+    d.on_scan(0.0, r, 0.0, INC)
+    d.on_scan(0.1, r, 0.0, INC)
+    assert (d.command(0.15)[3] == TOO_CLOSE) == latched
+    assert d.nearest[1] > 0.2
+
+
+def test_predicted_stop_while_the_policy_holds_the_car():
+    """The policy says STOP (corner: blocked / done): only where the car is counts."""
+    r = corridor(0.3, 0.3, 0.15)
+    d = Driver(always(STOP), 0.1, 0.5, stop_margin=0.0, predict=True)
+    d.on_scan(0.0, r, 0.0, INC)
+    d.on_scan(0.1, r, 0.0, INC)
+    assert d.command(0.15) == (0.0, 0.0, STOP, OK)
