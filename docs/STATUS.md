@@ -1,6 +1,6 @@
 # 專案目前狀態
 
-更新時間：2026-11-26（晚上）。這是唯一的「目前狀態」文件。專題範圍與時程見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，每次工作的紀錄見 [research/LOGBOOK.md](research/LOGBOOK.md)（最新的在最上面）。
+更新時間：2026-11-27。這是唯一的「目前狀態」文件。**全部未解問題的清單在 [real/FIELD_REVIEW.md](real/FIELD_REVIEW.md)**（11-27 整理）。專題範圍與時程見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，每次工作的紀錄見 [research/LOGBOOK.md](research/LOGBOOK.md)（最新的在最上面）。
 
 ## 專題
 

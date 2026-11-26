@@ -16,6 +16,7 @@
 
 | 文件 | 用途 |
 |---|---|
+| [real/FIELD_REVIEW.md](real/FIELD_REVIEW.md) | **場地測試總整理與問題清單**（11-11～11-27）：量過的數字、每次場地重點、全部未解問題、不要重做的實驗 |
 | [real/R550_HARDWARE.md](real/R550_HARDWARE.md) | R550 mini akm 實物盤點：C30D、N10P 光達、C70 相機、尺寸、電源 |
 | [real/RUNBOOK.md](real/RUNBOOK.md) | 操作手冊：部署、build、開機順序、只聽 STM32、啟動 node、充電、疑難排解 |
 | [real/NETWORK.md](real/NETWORK.md) | 網路：IP / MAC、路由器綁定、NetBird、Foxglove、WSL 看不到 Orin 的原因、`ROS_DOMAIN_ID` |
