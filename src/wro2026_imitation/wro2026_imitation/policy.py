@@ -110,6 +110,22 @@ DIRECTION_TEXT = {'ccw': '彎道往左（逆時針）', 'cw': '彎道往右（�
                   'auto': '方向還沒判斷（到第一個彎才知道）'}
 
 
+# corner policy states in which the car stands still (corner.py BLOCKED / HOLD, laps done)
+STANDING_STATES = ('blocked', 'hold', 'done')
+
+
+def stop_kind(reason, policy_state=None):
+    """
+    Why the program keeps the car standing, as one short code ('' while it drives).
+
+    For the phone page (bc/stop, 2026-11-27, FIELD_REVIEW A7): too_close / no_scan /
+    bad_scan / no_odom (the driver), blocked / hold / done (the corner policy).
+    """
+    if reason != OK:
+        return reason
+    return policy_state if policy_state in STANDING_STATES else ''
+
+
 def state_text(reason, driver, policy_state=None, corners=0, direction=None):
     """
     One Traditional Chinese line for the phone page: what the car does and why.

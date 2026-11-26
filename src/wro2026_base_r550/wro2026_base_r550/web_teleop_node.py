@@ -79,7 +79,7 @@ class WebTeleopNode(Node):
                                 auto=bool(p['auto_topic']), auto_timeout=p['auto_timeout'])
         self.token = p['token'] or secrets.token_hex(3)
         self.state = {'battery': None, 'odom_vx': None, 'gyro_z': None, 'base': None,
-                      'bc': None, 'bc_state': None}
+                      'bc': None, 'bc_state': None, 'bc_stop': ''}
         self.last_action = 'none'
         self.reset_asked = threading.Event()     # set by the web thread, sent by _tick
         self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
@@ -93,6 +93,7 @@ class WebTeleopNode(Node):
             self.create_subscription(Twist, p['auto_topic'], self._on_auto, 10)
             self.create_subscription(Int8, 'bc/decision', self._on_decision, 10)
             self.create_subscription(String, 'bc/state', self._on_bc_state, 10)
+            self.create_subscription(String, 'bc/stop', self._on_bc_stop, 10)
         context, ca_cert, scheme = None, None, 'http'
         if p['https']:
             cert_dir = os.path.expanduser(p['cert_dir'])
@@ -136,6 +137,9 @@ class WebTeleopNode(Node):
 
     def _on_bc_state(self, msg):
         self.state['bc_state'] = msg.data
+
+    def _on_bc_stop(self, msg):
+        self.state['bc_stop'] = msg.data     # policy.stop_kind: '' while it drives
 
     def _status(self):
         return dict(self.state)

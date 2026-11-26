@@ -53,6 +53,13 @@ header{grid-area:head;display:grid;gap:6px}
 .chip{padding:3px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--dim)}
 .chip b{font-weight:600;color:var(--fg)}
 .chip.good b{color:var(--good)}.chip.warn b{color:var(--warn)}.chip.bad b{color:var(--bad)}
+/* why the program keeps the car standing (bc/stop): big, on every tab (FIELD_REVIEW A7) */
+#stop-banner{padding:10px 14px;border-radius:var(--radius);background:var(--bad);color:var(--warn-fg)}
+#stop-banner.done{background:var(--good)}
+#stop-title{display:block;font-size:20px;font-weight:800}
+#stop-detail{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  font-size:13px;line-height:1.3}
+#auto-btn.stopped{border:3px solid var(--bad)}
 [hidden]{display:none!important}
 nav{grid-area:tabs;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;padding:4px;
   background:var(--panel);border:1px solid var(--line);border-radius:12px}
@@ -93,7 +100,7 @@ section.on{display:grid}
 #auto{grid-template-rows:auto 1fr auto;gap:var(--gap)}
 .autostate{display:flex;align-items:baseline;justify-content:center;gap:10px;padding:8px;
   background:var(--panel);border:1px solid var(--line);border-radius:12px}
-.autostate span{font-size:13px;color:var(--dim)}
+.autostate span{font-size:13px;color:var(--dim);flex:none}
 .autostate b{font-size:24px}
 .autostate small{font-size:13px;color:var(--dim)}
 #auto-btn{font-size:20px;font-weight:700;line-height:1.4}
@@ -148,6 +155,7 @@ dialog .row a{background:var(--accent);color:var(--accent-fg);text-decoration:no
   <div class="chips"><span class="chip" id="chip-base">底盤 <b>?</b></span>
     <span class="chip" id="chip-net">延遲 <b>?</b></span>
     <span class="chip" id="chip-sec">連線 <b>?</b></span></div>
+  <div id="stop-banner" role="alert" hidden><b id="stop-title"></b><span id="stop-detail"></span></div>
 </header>
 <nav><button data-tab="keys" class="on">按鍵</button><button data-tab="stick">搖桿</button>
 <button data-tab="tilt">重力</button><button data-tab="auto" id="tab-auto" hidden>自動</button>
@@ -210,8 +218,14 @@ const BASE = {ok: ['正常', 'good'], no_cmd: ['等待指令', 'good'], cmd_time
 // 8 sectors from +x (right), counter-clockwise; vendor app Ackermann table 3-1
 const SECTORS = ['full_right', 'right', 'straight', 'left', 'full_left', 'back_left', 'back',
   'back_right'];
+// bc/stop codes (wro2026_imitation policy.stop_kind) -> banner title; '' = driving, no banner
+const STOPS = {too_close: '鎖住：照現在的轉法會碰到', blocked: '停住：這個位置過不了彎',
+  hold: '停住：這個彎剩下的部分過不去', no_scan: '停住：沒有光達資料',
+  bad_scan: '停住：光達資料格式不對', no_odom: '停住：沒有里程計（EKF）',
+  done: '跑完了：停在起點'};
 const hist = [];
 let timer = null, action = null, pointer = null, heldBtn = null, mode = 'keys', rtt = null;
+let stopSeen = '', stopCount = 0, audio = null;
 const fmt = (v, d) => (v === null || v === undefined) ? '-' : v.toFixed(d);
 
 // ---------- server ----------
@@ -231,12 +245,55 @@ function show(s) {
   if (s.auto) { $('bc-dec').textContent = s.bc || '-'; $('bc-state').textContent = s.bc_state || ''; }
   // bc_node's too-close text (policy.state_text) contains 鎖住 while it is latched
   $('reset-btn').hidden = !(s.auto && (s.bc_state || '').includes('鎖住'));
+  showStop(s.auto ? (s.bc_stop || '') : '', s.bc_state || '');
   $('g-vx').textContent = fmt(s.odom_vx, 3) + ' m/s';
   $('g-gz').textContent = fmt(s.gyro_z, 2) + ' rad/s';
   $('debug').textContent = 'vx ' + s.vx.toFixed(2) + ' wz ' + s.wz.toFixed(2) + ' · #' + s.requests;
   hist.push([performance.now() / 1000, s.gyro_z, s.odom_vx]);
   while (hist.length && hist[0][0] < hist[hist.length - 1][0] - 10) hist.shift();
   if (mode === 'wave') plot();
+}
+// The program keeps the car standing: banner on every tab, red frame on the 自動 button, and
+// while 自動 is held (eyes on the car, not the phone) one sound when the same code came twice
+// in a row (a 0.1 s blip at start-up does not beep). iPhone Safari cannot vibrate: sound.
+function showStop(kind, detail) {
+  const banner = $('stop-banner');
+  banner.hidden = !kind;
+  if (kind) {
+    $('stop-title').textContent = STOPS[kind] || ('停住：' + kind);
+    $('stop-detail').textContent = detail;
+    banner.className = kind === 'done' ? 'done' : '';
+  }
+  $('auto-btn').classList.toggle('stopped', !!kind && kind !== 'done');
+  stopCount = kind === stopSeen ? stopCount + 1 : 1;
+  stopSeen = kind;
+  if (kind && stopCount === 2 && action === 'auto') alarm(kind === 'done');
+}
+function unlockAudio() {   // iOS starts Web Audio only from a touch
+  try {
+    if (!audio) {
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';  // play in silent mode
+      audio = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audio.state === 'suspended') audio.resume();
+  } catch (e) { audio = null; }
+}
+for (const ev of ['pointerdown', 'touchend', 'click']) {
+  document.addEventListener(ev, unlockAudio, {capture: true, passive: true});
+}
+function alarm(good) {
+  try { if (navigator.vibrate) navigator.vibrate(good ? 200 : [300, 100, 300]); } catch (e) { /* none */ }
+  if (!audio) return;
+  const t = audio.currentTime;
+  (good ? [880] : [660, 440]).forEach((f, i) => {
+    const o = audio.createOscillator(), g = audio.createGain(), t0 = t + 0.3 * i;
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.5, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.25);
+    o.connect(g); g.connect(audio.destination);
+    o.start(t0); o.stop(t0 + 0.27);
+  });
 }
 function chip(id, label, text, cls) {
   $(id).className = 'chip ' + (cls || '');

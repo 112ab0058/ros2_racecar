@@ -56,7 +56,8 @@ from std_msgs.msg import Empty, Float32MultiArray, Int8, String
 from .corner import CornerPolicy, FULL_LEFT, FULL_RIGHT
 from .features import LABELS
 from .model import MLP
-from .policy import center_policy, check_model, Driver, model_policy, OK, state_text, STOP
+from .policy import (center_policy, check_model, Driver, model_policy, OK, state_text, STOP,
+                     stop_kind)
 
 # name, default, description
 PARAMETERS = [
@@ -158,6 +159,8 @@ class BcNode(Node):
         self.decision_pub = self.create_publisher(Int8, 'bc/decision', 10)
         self.probs_pub = self.create_publisher(Float32MultiArray, 'bc/probs', 10)
         self.state_pub = self.create_publisher(String, 'bc/state', 10)
+        # why the car stands, one code ('' while driving) for the phone page (policy.stop_kind)
+        self.stop_pub = self.create_publisher(String, 'bc/stop', 10)
         self.cmd_pub = (self.create_publisher(Twist, p['cmd_topic'], 10)
                         if self.publish_cmd else None)
         self.create_subscription(LaserScan, 'scan', self._on_scan, qos_profile_sensor_data)
@@ -212,9 +215,11 @@ class BcNode(Node):
         self.events_seen = len(events)
         direction = ((self.policy.direction or 'auto')
                      if isinstance(self.policy, CornerPolicy) else None)
-        text = state_text(reason, self.driver, getattr(self.policy, 'state', None),
+        policy_state = getattr(self.policy, 'state', None)
+        text = state_text(reason, self.driver, policy_state,
                           getattr(self.policy, 'corners', 0), direction)
         self.state_pub.publish(String(data=text))
+        self.stop_pub.publish(String(data=stop_kind(reason, policy_state)))
         if self.publish_cmd:
             self.publish(vx, wz)
         self.counts[decision] += 1

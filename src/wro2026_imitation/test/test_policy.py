@@ -1,5 +1,7 @@
 """Safety rules in front of the policies, and the keep-centred baseline (no ROS, no motors)."""
 import math
+import os
+import re
 
 import numpy as np
 import pytest
@@ -7,8 +9,8 @@ from wro2026_imitation.features import (FULL_LEFT, LEFT, mirror, N_BINS, RIGHT,
                                         scan_features, STRAIGHT)
 from wro2026_imitation.model import MLP
 from wro2026_imitation.policy import (BAD_SCAN, center_rule, check_model, Driver, inside_outline,
-                                      model_policy, NO_SCAN, OK, side_word, state_text, STOP,
-                                      TOO_CLOSE)
+                                      model_policy, NO_ODOM, NO_SCAN, OK, side_word,
+                                      STANDING_STATES, state_text, STOP, stop_kind, TOO_CLOSE)
 
 BEAMS = 480
 INC = 2.0 * math.pi / BEAMS
@@ -308,3 +310,22 @@ def test_predicted_stop_while_the_policy_holds_the_car():
     d.on_scan(0.0, r, 0.0, INC)
     d.on_scan(0.1, r, 0.0, INC)
     assert d.command(0.15) == (0.0, 0.0, STOP, OK)
+
+
+@pytest.mark.parametrize('reason, state, kind', [
+    (OK, 'follow', ''), (OK, 'turn', ''), (OK, 'rewait', ''), (OK, None, ''),
+    (OK, 'blocked', 'blocked'), (OK, 'hold', 'hold'), (OK, 'done', 'done'),
+    (TOO_CLOSE, 'turn', TOO_CLOSE), (NO_SCAN, None, NO_SCAN), (NO_ODOM, 'follow', NO_ODOM)])
+def test_stop_kind(reason, state, kind):
+    assert stop_kind(reason, state) == kind
+
+
+def test_phone_page_names_every_stop_kind():
+    """The drive page (wro2026_base_r550) has a banner title for every code bc/stop sends."""
+    page = os.path.join(os.path.dirname(__file__), '..', '..', 'wro2026_base_r550',
+                        'wro2026_base_r550', 'web_teleop_page.html')
+    if not os.path.exists(page):
+        pytest.skip('wro2026_base_r550 source not next to this package')
+    stops = re.search(r'const STOPS = \{(.*?)\};', open(page, encoding='utf-8').read(), re.S)
+    names = set(re.findall(r'(\w+): ', stops.group(1)))
+    assert names == {TOO_CLOSE, NO_SCAN, BAD_SCAN, NO_ODOM} | set(STANDING_STATES)
