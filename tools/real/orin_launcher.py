@@ -235,6 +235,10 @@ def last_run_summary():
         lines.append('自動判斷方向：還沒決定')
     if 'corner policy: done' in bc:
         lines.append('跑完設定的圈數，停在起點')
+    blocked = len(re.findall(r'corner policy: blocked\b', bc))
+    if blocked:
+        lines.append('過不了彎、停下來 %d 次（車太靠島或太靠近彎道）：倒車或把車放回走道中間'
+                     % blocked)
     states = re.findall(r'state: (\w+)(?: \(([^)]*)\))?', bc)
     if states:
         name, why = states[-1]

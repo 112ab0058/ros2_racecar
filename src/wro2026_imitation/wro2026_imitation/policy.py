@@ -84,7 +84,8 @@ def point_text(point):
 REASON_TEXT = {'no_scan': '沒有光達資料，停', 'bad_scan': '光達資料格式不對，停',
                'no_odom': '沒有里程計（EKF），停'}
 CORNER_TEXT = {'follow': '保持中線', 'delay': '等著打滿', 'turn': '打滿轉彎',
-               'settle': '轉完回正', 'done': '跑完了，停在起點'}
+               'settle': '轉完回正', 'done': '跑完了，停在起點',
+               'blocked': '這個位置過不了彎，停：用按鍵倒車或把車放回走道中間'}
 
 
 DIRECTION_TEXT = {'ccw': '彎道往左（逆時針）', 'cw': '彎道往右（順時針）',

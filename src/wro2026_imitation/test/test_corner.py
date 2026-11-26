@@ -3,8 +3,8 @@ import math
 
 import numpy as np
 import pytest
-from wro2026_imitation.corner import (CornerPolicy, DONE, FOLLOW, FULL_LEFT, FULL_RIGHT,
-                                      STOP as CORNER_STOP, TURN)
+from wro2026_imitation.corner import (BLOCKED, CornerPolicy, DONE, FOLLOW, FULL_LEFT,
+                                      FULL_RIGHT, STOP as CORNER_STOP, TURN)
 from wro2026_imitation.features import LEFT, RIGHT, STRAIGHT
 from wro2026_imitation.field_sim import camera as camera_view, Car, Field, lidar
 from wro2026_imitation.policy import Driver, NO_ODOM, OK, STOP
@@ -450,3 +450,32 @@ def test_laps_done_needs_the_corners_the_start_heading_and_the_start_point():
     p.on_odom(-0.20, 0.0, 0.0)
     assert not p.laps_done()                         # start still 20 cm ahead
     assert not CornerPolicy('ccw').laps_done()       # 0 = never
+
+
+@pytest.mark.parametrize('start', [0.39, 0.45])
+def test_a_turn_that_cannot_fit_stops_instead_of_hitting(start):
+    """
+    2026-11-26 field run 1: 4 cm from the island late in a 0.39 m straight (ccw).
+
+    No full lock fits (room 0.006-0.007 m): the rule stops (blocked) before the turn,
+    counts no corner, and touches nothing; turning anyway (min_room < 0, the rule before)
+    latches too_close.
+    """
+    kw = {'island': 0.82, 'start': start, 'lat': 0.065, 'partial': True, 'camera': True,
+          'cam_max': 0.5}
+    ok, why, laps, clear, policy = drive_laps('ccw', **kw)
+    assert (ok, why, policy.state, policy.corners) == (False, OK, BLOCKED, 0), policy.events
+    assert clear > 0.03 and 'does not fit' in policy.events[-1][1]
+    ok, why, *_ = drive_laps('ccw', min_room=-1.0, **kw)
+    assert (ok, why) == (False, 'too_close')
+
+
+def test_blocked_follows_again_when_no_corner_is_ahead():
+    """Moved by hand to where no wall end is ahead: follow again and drive."""
+    policy = CornerPolicy('ccw')
+    policy.on_odom(0.0, 0.0, 0.0)
+    policy._enter(BLOCKED)
+    r = wall_scan([(-1.0, 0.2, 2.0, 0.2), (-1.0, -0.2, 2.0, -0.2)])
+    label, _ = policy(r, 0.0, INC)
+    assert policy.state == FOLLOW and label != CORNER_STOP
+    assert policy.corners == 0 and policy.events[-1][1].startswith('follow')

@@ -20,6 +20,14 @@ States:
             finish_ahead m ahead along the start heading: STOP for good (2026-11-24, Ray:
             three laps, then stop where it started). finish_ahead 0.05 m: the wheels
             still turn ~5 cm after the stop (11-24 air test)
+  blocked   (timing 'predict') the best full lock from here would pass a wall closer
+            than min_room: STOP instead of turning into it. Each scan predicts
+            again; once the turn fits (the car was driven back or put in the middle by
+            hand) or no corner is ahead any more, follow again. 2026-11-26 field run 1: a
+            start 4 cm from the island in the second half of a 0.39 m straight left
+            room 0.002 m and touched the wall ahead (the prediction was 3 mm off); after
+            each 重置 the prediction said room -0.09 m and the car locked into the wall
+            anyway, three more times, counting each as a new corner.
 
 When to go full lock (timing):
   'predict' (default, 2026-11-23) once the inner wall's end has been seen within
@@ -78,6 +86,7 @@ from .turn_predict import FRONT, LASER_X, TurnPredictor
 
 STOP = -1        # = policy.STOP (policy imports this module, so it cannot come from there)
 FOLLOW, DELAY, TURN, SETTLE, DONE = 'follow', 'delay', 'turn', 'settle', 'done'
+BLOCKED = 'blocked'
 
 # Curvature (1/m, + = left) the R550 really drives for each decision, with bc_node's
 # turn_radius 0.5 m and full_turn_radius 0.35 m at 0.1 m/s: steady gyro z / speed while
@@ -139,7 +148,8 @@ class CornerPolicy:
                  entry_offset=0.05, entry_dist=0.6, confirm_scans=3, off_line=0.10,
                  fit_min_span=0.10, fit_max_slope_deg=40.0, wall_dist=(0.12, 0.40),
                  timing='predict', driven=None, speed=0.1, steer_dead=0.27, steer_rate=13.0,
-                 stop_after_laps=0, finish_ahead=0.05, crossing=True, cross_back=0.9):
+                 stop_after_laps=0, finish_ahead=0.05, crossing=True, cross_back=0.9,
+                 min_room=0.01):
         """
         Set the rule's distances (m) and angles (deg); see the module docstring.
 
@@ -151,6 +161,13 @@ class CornerPolicy:
 
         stop_after_laps: stop at the start after this many laps (0 = never); finish_ahead:
         stop when the start point is this close ahead (m), see state done.
+
+        min_room: timing 'predict', the least room (m) the predicted full lock must leave,
+        else the corner cannot be made from here: state blocked (STOP). 0.01: on the
+        2-D field with a 0.39 m corridor every lock that made its corner left >= 0.020 m
+        (12 laps from 0.20-0.45 m past the island's corner, 0-6.5 cm off the middle);
+        the two that touched (6.5 cm towards the island, 0.39 / 0.45 m) left 0.006-0.007
+        m, the field's run 1 0.002 m.
 
         timing 'predict' / 'ahead': see the module docstring. driven: curvature (1/m) the
         car really drives for each label (default DRIVEN, measured), speed (m/s),
@@ -198,6 +215,7 @@ class CornerPolicy:
                                         steer_dead, steer_rate, speed)
                           if timing == 'predict' else None)
         self.armed_odo = None        # predict: driven distance when the wall end was last seen
+        self.min_room = min_room
         self.prediction = None       # predict: (room now, best room later, its wait) (m)
         self.trail = []              # (driven distance, heading) of the last odometry
         self.k_now = None            # curvature from the odometry's twist (1/m), if given
@@ -603,6 +621,7 @@ class CornerPolicy:
             self.armed_odo = None                 # the end was not seen again: no corner
         if self.armed_odo is None:
             self.prediction = None
+            self._unblock(' (no corner ahead)')
             return
         self.approach = True                      # keep the wide entry until the lock
         ok = np.isfinite(r)
@@ -620,10 +639,21 @@ class CornerPolicy:
         if lock and self.end_seen is not None:
             # never lock while the end is still far ahead (see max_lock_end)
             lock = self.end_seen[1] - (self.odo - self.end_seen[0]) <= self.max_lock_end
+        if lock and now < self.min_room:
+            # no later lock does better and this one touches: do not turn into the wall
+            if self.state != BLOCKED:
+                self._enter(BLOCKED, ' (room %.3f m: the turn does not fit from here)' % now)
+            return
+        self._unblock(' (the turn fits again)')
         if lock:
             self._enter(TURN, ' (room %.3f m; best later %.3f m%s)' % (
                 now, later,
                 '; island end from the beams past it' if self.island and self.island[4] else ''))
+
+    def _unblock(self, note):
+        """Leave state blocked (back to follow), if in it."""
+        if self.state == BLOCKED:
+            self._enter(FOLLOW, note)
 
     def __call__(self, ranges, angle_min, angle_increment):
         """Decide from one (filled) scan; see the module docstring."""
@@ -674,7 +704,7 @@ class CornerPolicy:
             if self.sign == 0.0:
                 return self.center_label(r, angles)
         full = FULL_LEFT if self.sign > 0 else FULL_RIGHT
-        if self.state == FOLLOW:
+        if self.state in (FOLLOW, BLOCKED):
             end = self.inner_wall_end(r, angles, min_span=self.fit_min_span,
                                       max_slope=self.fit_max_slope, wall_dist=self.wall_dist)
             if self.laps_done(end):
@@ -698,6 +728,8 @@ class CornerPolicy:
             self._enter(SETTLE)
         if self.state == SETTLE and self.odo - self.mark_odo >= self.settle_dist:
             self._enter(FOLLOW)
+        if self.state == BLOCKED:
+            return STOP
         if self.state == DELAY:
             return STRAIGHT
         return self.center_label(r, angles)
