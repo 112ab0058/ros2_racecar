@@ -3,7 +3,10 @@ N10P scan node: serial -> sensor_msgs/LaserScan on /scan. READ ONLY.
 
 Never writes to the serial port (the N10P streams by itself). One message
 per revolution, fixed number of beams (parameter `bins`). Protocol and
-caveats: see protocol.py.
+caveats: see protocol.py. /scan = first echo, with its intensities (raw 0-255,
+0 = no return or masked); `echo2_topic` (default scan_echo2) = the second echo,
+same beams, mask and range offset (2026-11-27: to tell weak or mixed returns at
+wall edges from good ones; until then the intensities were dropped).
 """
 import math
 import sys
@@ -31,6 +34,7 @@ PARAMETERS = [
     ('range_offset_m', 0.036, 'm subtracted from every distance: this N10P reads 3.2-4.0 cm too '
                               'far (tape vs lidar centre at 0.575 and 0.975 m, 2026-11-19)'),
     ('scan_timeout', 1.0, '/diagnostics ERROR when no scan for this long (s)'),
+    ('echo2_topic', 'scan_echo2', "the second echo as a LaserScan; '' = do not publish"),
     ('mask_sectors_deg', '168:178,195:213,228:247',
      'hide our own car: "start:end,..." in ROS degrees (0 = front, CCW); beams inside '
      'become inf. Measured 2026-11-08 (Orin, posts, cables); 243 -> 247 on 2026-11-20: '
@@ -54,6 +58,8 @@ class N10PScan(Node):
                                    self.p['angle_offset_deg'], self.p['range_offset_m'])
         self.mask = parse_sectors(self.p['mask_sectors_deg'])
         self.pub = self.create_publisher(LaserScan, 'scan', 10)
+        self.pub2 = (self.create_publisher(LaserScan, self.p['echo2_topic'], 10)
+                     if self.p['echo2_topic'] else None)
         self.diag_pub = self.create_publisher(DiagnosticArray, 'diagnostics', 10)
         self.lock = threading.Lock()
         self.last_scan_time = None
@@ -85,8 +91,19 @@ class N10PScan(Node):
                 self.scan_period = now - self.last_scan_time
             self.last_scan_time = now
             period = self.scan_period or 0.0
+        stamp = self.get_clock().now().to_msg()
+        try:
+            self.pub.publish(self._scan_msg(stamp, period, ranges, self.scans.intensities))
+            if self.pub2 is not None:
+                self.pub2.publish(self._scan_msg(stamp, period, self.scans.ranges2,
+                                                 self.scans.intensities2))
+        except Exception:
+            pass
+
+    def _scan_msg(self, stamp, period, ranges, intensities):
+        """One LaserScan of binned ranges and their intensities, our car masked."""
         msg = LaserScan()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = stamp
         msg.header.frame_id = self.p['frame_id']
         msg.angle_min = 0.0
         msg.angle_increment = 2.0 * math.pi / self.p['bins']
@@ -96,10 +113,9 @@ class N10PScan(Node):
         msg.range_min = float(self.p['range_min'])
         msg.range_max = float(self.p['range_max'])
         msg.ranges = [float(r) for r in mask_ranges(ranges, self.mask)]
-        try:
-            self.pub.publish(msg)
-        except Exception:
-            pass
+        msg.intensities = [float(i) if math.isfinite(r) else 0.0
+                           for i, r in zip(intensities, msg.ranges)]
+        return msg
 
     def _publish_diagnostics(self):
         now = time.monotonic()

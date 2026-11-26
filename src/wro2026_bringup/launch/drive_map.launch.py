@@ -26,8 +26,8 @@ from launch_ros.actions import Node
 
 STM32_PORT = '/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0002-if00'
 LIDAR_PORT = '/dev/serial/by-id/usb-WCH.CN_USB_Single_Serial_0001-if00'
-BAG_TOPICS = ['/scan', '/cmd_vel', '/cmd_vel_out', '/odom', '/imu/data', '/odometry/filtered',
-              '/tf', '/tf_static', '/battery',
+BAG_TOPICS = ['/scan', '/scan_echo2', '/cmd_vel', '/cmd_vel_out', '/odom', '/imu/data',
+              '/odometry/filtered', '/tf', '/tf_static', '/battery',
               # orin_auto.sh: filled scan and what the autonomous policy wanted
               '/scan_filled', '/bc/cmd_vel', '/bc/decision', '/bc/state',
               # camera wall bottoms and the frames used (wro2026_camera_c70, image_rate)

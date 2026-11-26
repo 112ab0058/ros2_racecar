@@ -22,7 +22,13 @@ Packet, 108 bytes:
   [7:103]   16 points x 6 bytes: distance (uint16 BE, mm), intensity (uint8),
             then a second echo in the same layout. 0xFFFF = no return,
             and our lidar also sends distance 0 for no return (18 % of
-            points in the 2026-10-17 recording). First echo only.
+            points in the 2026-10-17 recording). The vendor's ROS 2 driver
+            (lslidar_x10_driver.cpp, model "N10Plus": 108-byte packets,
+            460800 baud, angles at bytes 5 / 105, data from 7) reads every
+            point as two echoes of 3 bytes, offset group*6 + echo*3, and
+            publishes them as a MultiEchoLaserScan (checked 2026-11-27). /scan
+            uses the first echo; the second echo and both intensities are kept
+            (Packet.echo2, ScanAssembler.intensities / ranges2 / intensities2).
   [103:105] small counter (0-4 on our lidar), meaning UNKNOWN (not used)
   [105:107] end angle, uint16 big-endian, degrees x 100
   [107]     checksum = sum of bytes 0..106, low 8 bits
@@ -49,7 +55,8 @@ END_ANGLE_AT = 105
 NO_RETURN = 0xFFFF  # distance 0 is also treated as no return
 BAUD_RATE = 460800
 
-Packet = namedtuple('Packet', 'start_deg end_deg points')  # points: [(deg, range_m, intensity)]
+# points: first echo [(deg, range_m, intensity)]; echo2: the second echo, same layout
+Packet = namedtuple('Packet', 'start_deg end_deg points echo2', defaults=((),))
 
 
 class PacketError(ValueError):
@@ -80,31 +87,43 @@ def decode_packet(packet):
         raise PacketError(f'angle out of range: start {start}, end {end}')
     span = end - start if end >= start else end + 360.0 - start
     step = span / (POINTS_PER_PACKET - 1)
-    points = []
+    points, echo2 = [], []
     for n in range(POINTS_PER_PACKET):
         i = DATA_START + n * POINT_STRIDE
-        dist = _u16(packet, i)
-        if dist in (NO_RETURN, 0):
-            continue
         deg = (start + step * n) % 360.0
-        points.append((deg, dist / 1000.0, packet[i + 2]))
-    return Packet(start, end, points)
+        dist = _u16(packet, i)
+        if dist not in (NO_RETURN, 0):
+            points.append((deg, dist / 1000.0, packet[i + 2]))
+        dist2 = _u16(packet, i + 3)
+        if dist2 not in (NO_RETURN, 0):
+            echo2.append((deg, dist2 / 1000.0, packet[i + 5]))
+    return Packet(start, end, points, echo2)
 
 
-def encode_packet(start_deg, end_deg, distances_mm, intensity=100):
-    """Build a packet (for tests and simulators). distances_mm: 16 values, None = no return."""
+def encode_packet(start_deg, end_deg, distances_mm, intensity=100, echo2_mm=None,
+                  intensity2=0):
+    """
+    Build a packet (for tests and simulators). distances_mm: 16 values, None = no return.
+
+    echo2_mm: the second echo's 16 distances (default: the same as the first echo);
+    intensity2: its intensity.
+    """
     if len(distances_mm) != POINTS_PER_PACKET:
         raise ValueError('need 16 distances')
     body = bytearray(PACKET_SIZE - 1)
     body[0:2] = HEADER
     body[START_ANGLE_AT:START_ANGLE_AT + 2] = int(round(start_deg * 100)).to_bytes(2, 'big')
     body[END_ANGLE_AT:END_ANGLE_AT + 2] = int(round(end_deg * 100)).to_bytes(2, 'big')
+    second = distances_mm if echo2_mm is None else echo2_mm
     for n, d in enumerate(distances_mm):
         i = DATA_START + n * POINT_STRIDE
         raw = NO_RETURN if d is None else int(d)
         body[i:i + 2] = raw.to_bytes(2, 'big')
         body[i + 2] = 0 if d is None else intensity
-        body[i + 3:i + 5] = raw.to_bytes(2, 'big')  # second echo: same value
+        d2 = second[n]
+        raw2 = NO_RETURN if d2 is None else int(d2)
+        body[i + 3:i + 5] = raw2.to_bytes(2, 'big')
+        body[i + 5] = 0 if d2 is None else intensity2
     return bytes(body) + bytes([checksum(body)])
 
 
@@ -155,7 +174,9 @@ class ScanAssembler:
     smaller than the previous one). Fixed bins (default 720 = 0.5 deg) keep
     the number of beams constant, which slam_toolbox requires.
     add(packet) returns a list of ranges (inf = no return) when a revolution
-    is complete, else None.
+    is complete, else None. Then also: intensities (of the point each bin
+    kept, 0 = none), ranges2 / intensities2 (the second echo, binned the same
+    way). Two points in one bin: the nearer one is kept, with its intensity.
     range_offset (m) is subtracted from every distance before the range limits:
     the lidar reads a constant amount too far (see config/n10p.yaml).
     """
@@ -168,8 +189,10 @@ class ScanAssembler:
         self.offset_deg = offset_deg
         self.range_offset = range_offset
         self.points = []
+        self.points2 = []
         self.last_start = None
         self.revolutions = 0
+        self.intensities = self.ranges2 = self.intensities2 = None
 
     def add(self, packet):
         """Add one packet; return finished ranges or None."""
@@ -179,20 +202,29 @@ class ScanAssembler:
                 done = self._bin()
             self.revolutions += 1
             self.points = []
+            self.points2 = []
         self.last_start = packet.start_deg
         self.points.extend(packet.points)
+        self.points2.extend(packet.echo2)
         return done
 
     def _bin(self):
+        ranges, self.intensities = self._bin_points(self.points)
+        self.ranges2, self.intensities2 = self._bin_points(self.points2)
+        return ranges
+
+    def _bin_points(self, points):
         ranges = [math.inf] * self.bins
+        intensities = [0.0] * self.bins
         width = 2.0 * math.pi / self.bins
-        for deg, rng, _ in self.points:
+        for deg, rng, inten in points:
             rng -= self.range_offset
             if not self.range_min <= rng <= self.range_max:
                 continue
             k = int(round(lidar_deg_to_ros_rad(deg, self.offset_deg) / width)) % self.bins
-            ranges[k] = min(ranges[k], rng)
-        return ranges
+            if rng < ranges[k]:
+                ranges[k], intensities[k] = rng, float(inten)
+        return ranges, intensities
 
 
 def parse_sectors(text):

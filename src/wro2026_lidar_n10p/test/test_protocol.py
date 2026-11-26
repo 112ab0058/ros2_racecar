@@ -42,6 +42,16 @@ def test_real_packet_from_our_lidar():
     assert pkt.points[0][1:] == (2.625, 0x4D)          # 2625 mm, intensity 77
     assert pkt.points[-1][1] == pytest.approx(2.772)
     assert pkt.points[-1][0] == pytest.approx(109.95)  # slot 15 at the end angle
+    assert pkt.echo2 == []                              # our lidar sent no second echo here
+
+
+def test_second_echo_and_intensities():
+    second = [None] * 16
+    second[3] = 1500
+    pkt = decode_packet(encode_packet(0.0, 15.0, FULL, intensity=80, echo2_mm=second,
+                                      intensity2=12))
+    assert [p[2] for p in pkt.points] == [80] * 16
+    assert pkt.echo2 == [(3.0, 1.5, 12)]                # slot 3, same angle as echo 1
 
 
 def test_no_return_points_keep_their_slot_angle():
@@ -128,6 +138,27 @@ def test_scan_assembler_offset_applies_before_range_min():
     outs = [asm.add(decode_packet(p)) for p in revolution(120) * 3]
     ranges = [o for o in outs if o is not None][0]
     assert not any(math.isfinite(r) for r in ranges)   # 0.120 - 0.036 < range_min
+
+
+def test_scan_assembler_keeps_intensities_and_second_echo():
+    asm = ScanAssembler(bins=360, range_offset=0.036)
+    pkts = [encode_packet(15.0 * k, 15.0 * k + 14.0, [1036] * 16, intensity=90,
+                          echo2_mm=[2036] * 16, intensity2=7) for k in range(24)]
+    ranges = [o for o in (asm.add(decode_packet(p)) for p in pkts * 3) if o is not None][0]
+    hit = [k for k, r in enumerate(ranges) if math.isfinite(r)]
+    assert len(hit) > 300
+    assert all(asm.intensities[k] == 90.0 for k in hit)
+    assert all(asm.intensities[k] == 0.0 for k, r in enumerate(ranges) if not math.isfinite(r))
+    assert all(asm.ranges2[k] == pytest.approx(2.0) for k in hit)   # offset applied too
+    assert all(asm.intensities2[k] == 7.0 for k in hit)
+
+
+def test_scan_assembler_nearer_point_keeps_its_intensity():
+    asm = ScanAssembler(bins=360)
+    asm.points = [(0.0, 1.2, 50), (0.1, 1.0, 9), (0.2, 1.1, 70)]   # all in bin 0
+    ranges = asm._bin()
+    assert ranges[0] == 1.0 and asm.intensities[0] == 9.0
+    assert asm.ranges2[0] == math.inf and asm.intensities2[0] == 0.0
 
 
 class FakeClock:
