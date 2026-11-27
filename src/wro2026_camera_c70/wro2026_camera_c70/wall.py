@@ -144,15 +144,20 @@ def lidar_pitch_fix(cam, pixels, lidar_ranges, laser_x, bins, far=(0.5, 1.0), to
     n = int(pair.sum())
     if n < min_pairs:
         return 0.0, n
-    best, best_cost = 0.0, abs(float(np.median(r0[pair] - rl[pair])))
-    pair_rays, pair_rl = rays[pair], rl[pair]
-    for change in np.arange(-search_deg, search_deg + step_deg / 2.0, step_deg):
-        r, _ = ranges(change, pair_rays)
-        if not np.isfinite(r).any():
-            continue
-        cost = abs(float(np.nanmedian(r - pair_rl)))
-        if cost < best_cost - 1e-9:
-            best, best_cost = float(change), cost
+    cost0 = abs(float(np.median(r0[pair] - rl[pair])))
+    # all changes at once (a loop over them took ~24 ms a frame on the Orin, 2026-11-27)
+    changes = np.arange(-search_deg, search_deg + step_deg / 2.0, step_deg)
+    p, roll, yaw = cam.angles
+    rots = np.stack([rotation(p + c, roll, yaw) for c in changes])     # changes x 3 x 3
+    ray = np.einsum('kij,nj->kni', rots, rays[pair])                    # changes x pairs x 3
+    with np.errstate(divide='ignore', invalid='ignore'):
+        t = np.where(ray[..., 2] < -1e-3, cam.height / -ray[..., 2], np.nan)
+        r = np.hypot(cam.x + t * ray[..., 0] - laser_x, cam.y + t * ray[..., 1])
+    rows = np.isfinite(r).any(axis=1)
+    cost = np.full(len(changes), np.inf)
+    cost[rows] = np.abs(np.nanmedian(r[rows] - rl[pair], axis=1))
+    i = int(np.argmin(cost))
+    best = float(changes[i]) if cost[i] < cost0 - 1e-9 else 0.0
     return round(best, 3), n
 
 
