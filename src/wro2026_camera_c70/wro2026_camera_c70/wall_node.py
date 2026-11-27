@@ -7,6 +7,11 @@ used is always the newest one (OpenCV would otherwise hand out old buffered fram
 `rate` times a second the newest frame goes through wall.py: wall bottoms -> floor points
 -> one range per beam from the lidar.
 
+lidar_fix (2026-11-27): the only subscription is /scan, read only. Per frame the pitch is
+corrected so that the wall points 0.5-1.0 m away agree with the lidar's ranges in the same
+beams (wall.lidar_pitch_fix); the camera sits ~10 cm above the floor, so a tilted car or
+a wall standing a few mm higher than the floor under the car moves its points by cm.
+
 camera/wall_scan has the same beams as /scan (frame laser_link, angle_min 0, bins beams),
 stamped with the time the frame was read. It is not a lidar: each range is where the
 camera saw a wall bottom in that direction, inf where it saw none. scan_memory_node puts
@@ -26,9 +31,12 @@ import cv2
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CompressedImage, LaserScan
 
-from .wall import FloorCamera, to_ranges, wall_bottom
+from .wall import FloorCamera, lidar_pitch_fix, to_ranges, wall_bottom
+
+SCAN_MAX_AGE = 0.15     # s; lidar_fix uses the newest /scan only if it is this fresh
 
 # name, default, description. Defaults must match config/c70_wall.yaml.
 PARAMETERS = [
@@ -47,6 +55,10 @@ PARAMETERS = [
     ('step', 4, 'use every step-th image column'),
     ('max_range', 0.5, 'm from the lidar; farther wall points are dropped (the lidar sees '
                        'there; the camera error grows with the distance squared)'),
+    ('lidar_fix', True, 'per frame, correct the pitch from the wall points 0.5-1.0 m away '
+                        'against /scan (wall.lidar_pitch_fix); false = calibration only'),
+    ('fix_min_pairs', 8, 'lidar_fix: at least this many far points the lidar also sees'),
+    ('fix_search_deg', 3.0, 'lidar_fix: largest pitch correction tried (deg)'),
     ('frame_timeout', 1.0, '/diagnostics ERROR when no camera frame for this long (s)'),
     ('image_rate', 0.0, 'frames per second also published as JPEG on camera/image/compressed '
                         '(for bags); 0 = none'),
@@ -80,6 +92,12 @@ class WallNode(Node):
         self.image_pub = (self.create_publisher(CompressedImage, 'camera/image/compressed', 5)
                           if self.p['image_rate'] > 0 else None)
         self.last_image = None       # monotonic time of the last image published
+        self.scan = None             # (monotonic time received, ranges) of the newest /scan
+        self.fix_deg = 0.0           # newest pitch correction (deg)
+        self.fixed = self.processed = 0
+        if self.p['lidar_fix']:
+            # read only: the lidar's ranges, to correct the camera's pitch (wall.lidar_pitch_fix)
+            self.create_subscription(LaserScan, 'scan', self._on_scan, qos_profile_sensor_data)
         self.lock = threading.Lock()
         self.frame = None            # (image, ROS stamp, monotonic time)
         self.used = None             # monotonic time of the last frame processed
@@ -117,7 +135,17 @@ class WallNode(Node):
         t0 = time.monotonic()
         px = wall_bottom(img, self.p['threshold'], self.p['run'], self.p['step'],
                          self.p['max_saturation'])
-        pts = self.cam.floor_points(px)
+        change = 0.0
+        scan = self.scan
+        if scan is not None and abs(t_read - scan[0]) <= SCAN_MAX_AGE:
+            change, _ = lidar_pitch_fix(self.cam, px, scan[1], self.p['laser_x'],
+                                        self.p['bins'], min_pairs=self.p['fix_min_pairs'],
+                                        search_deg=self.p['fix_search_deg'])
+        self.processed += 1
+        if change:
+            self.fixed += 1
+            self.fix_deg = change
+        pts = self.cam.floor_points(px, change)
         ranges = to_ranges(pts, self.p['laser_x'], self.p['bins'], self.p['max_range'])
         msg = LaserScan()
         msg.header.stamp = stamp
@@ -142,7 +170,13 @@ class WallNode(Node):
                 im.header.frame_id = 'c70'
                 self.image_pub.publish(im)
 
+    def _on_scan(self, msg):
+        if len(msg.ranges) == self.p['bins']:
+            self.scan = (time.monotonic(), msg.ranges)
+
     def _publish_diagnostics(self):
+        fixed, processed = self.fixed, self.processed
+        self.fixed = self.processed = 0
         with self.lock:
             last = self.frame[2] if self.frame else None
             frames, self.frames = self.frames, 0
@@ -157,6 +191,8 @@ class WallNode(Node):
         st.values = [KeyValue(key='frames_per_s', value=str(frames)),
                      KeyValue(key='wall_points', value=str(self.points)),
                      KeyValue(key='process_ms', value='%.1f' % self.proc_ms),
+                     KeyValue(key='pitch_fix_deg', value='%+.2f' % self.fix_deg),
+                     KeyValue(key='pitch_fixed_frames', value='%d/%d' % (fixed, processed)),
                      KeyValue(key='frame_age_s', value='-' if age is None else '%.2f' % age)]
         msg = DiagnosticArray()
         msg.header.stamp = self.get_clock().now().to_msg()

@@ -14,6 +14,9 @@ c70_wall:
     max_saturation: 60           # floor below a wall bottom must be whiter (beige wall tape 93-103, floor 9-27)
     step: 4                      # every 4th image column
     max_range: 0.5               # m from the lidar; lidar sees black foam from ~0.47 m (2026-11-24: farther camera points up to 14 cm off -> ghost walls; README)
+    lidar_fix: true              # per frame pitch correction from the wall points 0.5-1.0 m away against /scan (2026-11-27, FIELD_REVIEW B2)
+    fix_min_pairs: 8             # far points the lidar also sees, at least
+    fix_search_deg: 3.0          # largest pitch correction tried (deg)
     frame_timeout: 1.0           # s
     image_rate: 0.0              # JPEG frames per second on camera/image/compressed (bags); 0 = none
     jpeg_quality: 80

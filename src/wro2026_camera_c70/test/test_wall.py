@@ -7,7 +7,8 @@ import re
 import cv2
 import numpy as np
 import pytest
-from wro2026_camera_c70.wall import FloorCamera, rotation, to_ranges, wall_bottom
+from wro2026_camera_c70.wall import (FloorCamera, lidar_pitch_fix, rotation, to_ranges,
+                                     wall_bottom)
 
 PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG = os.path.join(PKG, 'config')
@@ -113,16 +114,19 @@ def test_a_wall_ahead_comes_back_at_its_distance():
 def test_read_only():
     tree = ast.parse(open(os.path.join(PKG, 'wro2026_camera_c70', 'wall_node.py'),
                           encoding='utf-8').read())
-    topics = []
+    topics, subs = [], []
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             names = [a.name for a in node.names] + [getattr(node, 'module', None) or '']
             assert not any('serial' in n for n in names)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            assert node.func.attr not in ('write', 'send', 'create_subscription')
+            assert node.func.attr not in ('write', 'send')
             if node.func.attr == 'create_publisher':
                 topics.append(node.args[1].value)
+            if node.func.attr == 'create_subscription':     # lidar_fix: /scan only
+                subs.append((node.args[0].id, node.args[1].value))
     assert sorted(topics) == ['camera/image/compressed', 'camera/wall_scan', 'diagnostics']
+    assert subs == [('LaserScan', 'scan')]
 
 
 def test_parameters_match_yaml():
@@ -139,7 +143,9 @@ def test_parameters_match_yaml():
     assert set(yaml_vals) == set(names)
     for key, default in names.items():
         raw = yaml_vals[key]
-        if isinstance(default, str):
+        if isinstance(default, bool):
+            assert raw == str(default).lower(), key
+        elif isinstance(default, str):
             assert raw.strip("'") == default, key
         else:
             assert float(raw) == pytest.approx(float(default)), key
@@ -154,3 +160,40 @@ def test_beige_tape_on_the_wall_is_not_floor():
     px = wall_bottom(img)
     assert len(px) and px[:, 0].min() > 640 and np.all(px[:, 1] == 399)
     assert len(wall_bottom(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))) == 320   # grey: no check
+
+
+def lidar_of(points, bins=480, laser_x=0.13):
+    """/scan-like ranges of floor points (base_link): the nearest point per beam."""
+    ranges = np.full(bins, np.inf)
+    for x, y in points:
+        x -= laser_x
+        k = int(round((math.atan2(y, x) % (2 * math.pi)) / (2 * math.pi / bins))) % bins
+        ranges[k] = min(ranges[k], math.hypot(x, y))
+    return ranges
+
+
+def test_lidar_pitch_fix_finds_the_tilt():
+    """
+    The car leans 1 deg forward (the camera looks 1 deg further down than calibrated).
+
+    The lidar sees the far wall where it is; the fix finds the 1 deg from those points and
+    the near points then land where they really are.
+    """
+    truth, model = plain_camera(pitch=1.0), plain_camera(pitch=0.0)
+    u = np.arange(200.0, 1081.0, 8.0)
+    far = np.c_[u, np.full(len(u), 470.0)]           # 0.6-0.9 m from the lidar
+    near = np.c_[u, np.full(len(u), 560.0)]          # ~0.4 m
+    change, pairs = lidar_pitch_fix(model, far, lidar_of(truth.floor_points(far)), 0.13, 480)
+    assert pairs >= 8 and change == pytest.approx(1.0, abs=0.1)
+    assert np.abs(model.floor_points(near) - truth.floor_points(near)).max() > 0.01
+    assert np.abs(model.floor_points(near, change) - truth.floor_points(near)).max() < 0.005
+
+
+def test_lidar_pitch_fix_needs_the_same_wall():
+    """No lidar, or the lidar sees another surface 30 cm further: no correction."""
+    truth, model = plain_camera(pitch=1.0), plain_camera(pitch=0.0)
+    u = np.arange(200.0, 1081.0, 8.0)
+    far = np.c_[u, np.full(len(u), 470.0)]
+    assert lidar_pitch_fix(model, far, np.full(480, np.inf), 0.13, 480) == (0.0, 0)
+    other = lidar_of(truth.floor_points(far)) + 0.30
+    assert lidar_pitch_fix(model, far, other, 0.13, 480) == (0.0, 0)

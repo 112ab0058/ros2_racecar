@@ -56,6 +56,7 @@ class FloorCamera:
         self.d = np.asarray(d, dtype=float)
         self.height = float(height)
         self.x, self.y = float(x), float(y)
+        self.angles = (float(pitch_down_deg), float(roll_deg), float(yaw_deg))
         self.rot = rotation(pitch_down_deg, roll_deg, yaw_deg)
         self.size = tuple(size)
 
@@ -72,16 +73,87 @@ class FloorCamera:
                    e['x_from_base_link_m'], y if isinstance(y, (int, float)) else 0.0,
                    (c['image_width'], c['image_height']))
 
-    def floor_points(self, pixels):
-        """Pixels (u, v) -> floor points (x, y) in base_link; pixels above the horizon dropped."""
+    def floor_points(self, pixels, pitch_change_deg=0.0):
+        """
+        Pixels (u, v) -> floor points (x, y) in base_link; pixels above the horizon dropped.
+
+        pitch_change_deg: project as if the camera looked that much further down than its
+        calibration (lidar_pitch_fix).
+        """
         px = np.asarray(pixels, dtype=float).reshape(-1, 2)
         if len(px) == 0:
             return np.zeros((0, 2))
+        return self._floor(self._rays(px), pitch_change_deg)[0]
+
+    def _rays(self, px):
+        """Pixels -> rays in the camera frame (undistorted, z = 1)."""
         n = cv2.undistortPoints(px.reshape(-1, 1, 2), self.k, self.d).reshape(-1, 2)
-        ray = np.c_[n, np.ones(len(n))] @ self.rot.T
+        return np.c_[n, np.ones(len(n))]
+
+    def _floor(self, rays, pitch_change_deg=0.0):
+        """Camera rays -> (floor points of the rays that go down, which rays those are)."""
+        rot = self.rot
+        if pitch_change_deg:
+            p, r, y = self.angles
+            rot = rotation(p + pitch_change_deg, r, y)
+        ray = rays @ rot.T
         down = ray[:, 2] < -1e-3
         t = self.height / -ray[down, 2]
-        return np.c_[self.x + t * ray[down, 0], self.y + t * ray[down, 1]]
+        return np.c_[self.x + t * ray[down, 0], self.y + t * ray[down, 1]], down
+
+
+def lidar_pitch_fix(cam, pixels, lidar_ranges, laser_x, bins, far=(0.5, 1.0), tolerance=0.15,
+                    min_pairs=8, search_deg=3.0, step_deg=0.05):
+    """
+    Pitch change (deg) that makes the camera's far wall points agree with the lidar.
+
+    The camera is only ~10 cm above the floor, so a car tilted by the floor, or a wall
+    standing a few mm higher or lower than the floor under the car, moves its near points
+    by centimetres (1 deg of pitch: about 2 cm at 0.4 m; 2026-11-27, FIELD_REVIEW B2). The
+    lidar sees the black walls well from about 0.47 m. Pairs: wall points the camera puts
+    `far` (m, from the lidar) away whose beam of the same lidar scan (bins beams, like
+    /scan) has a range within `tolerance` of theirs (the same wall). The change, searched
+    within +-search_deg, makes the median of (camera - lidar) over the pairs closest to 0.
+    Returns (change, pairs); change 0.0 when there are fewer than min_pairs pairs.
+    Replayed on four 2026-11-26 runs: near points (0.3-0.5 m) more than 2 cm off the
+    lidar's wall: 43 / 57 / 37 / 33 % -> 38 / 55 / 15 / 18 %.
+    """
+    px = np.asarray(pixels, dtype=float).reshape(-1, 2)
+    lidar = np.asarray(lidar_ranges, dtype=float)
+    if len(px) == 0 or len(lidar) != bins:
+        return 0.0, 0
+    rays = cam._rays(px)
+
+    def ranges(change, rays):
+        pts, down = cam._floor(rays, change)
+        r = np.full(len(rays), np.nan)
+        x, y = pts[:, 0] - laser_x, pts[:, 1]
+        r[down] = np.hypot(x, y)
+        a = np.full(len(rays), np.nan)
+        a[down] = np.arctan2(y, x)
+        return r, a
+
+    r0, a0 = ranges(0.0, rays)
+    ok = np.isfinite(r0)
+    beam = np.zeros(len(px), dtype=int)
+    beam[ok] = np.round((a0[ok] % (2.0 * math.pi)) / (2.0 * math.pi / bins)).astype(int) % bins
+    rl = lidar[beam]
+    with np.errstate(invalid='ignore'):
+        pair = (ok & (r0 >= far[0]) & (r0 <= far[1]) & np.isfinite(rl)
+                & (np.abs(r0 - rl) < tolerance))
+    n = int(pair.sum())
+    if n < min_pairs:
+        return 0.0, n
+    best, best_cost = 0.0, abs(float(np.median(r0[pair] - rl[pair])))
+    pair_rays, pair_rl = rays[pair], rl[pair]
+    for change in np.arange(-search_deg, search_deg + step_deg / 2.0, step_deg):
+        r, _ = ranges(change, pair_rays)
+        if not np.isfinite(r).any():
+            continue
+        cost = abs(float(np.nanmedian(r - pair_rl)))
+        if cost < best_cost - 1e-9:
+            best, best_cost = float(change), cost
+    return round(best, 3), n
 
 
 def saturation(bgr):
