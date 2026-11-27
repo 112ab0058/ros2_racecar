@@ -94,6 +94,7 @@ class WallNode(Node):
         self.last_image = None       # monotonic time of the last image published
         self.scan = None             # (monotonic time received, ranges) of the newest /scan
         self.fix_deg = 0.0           # newest pitch correction (deg)
+        self.fix_pairs = None        # pairs of the newest frame; None = no fresh /scan
         self.fixed = self.processed = 0
         if self.p['lidar_fix']:
             # read only: the lidar's ranges, to correct the camera's pitch (wall.lidar_pitch_fix)
@@ -135,12 +136,12 @@ class WallNode(Node):
         t0 = time.monotonic()
         px = wall_bottom(img, self.p['threshold'], self.p['run'], self.p['step'],
                          self.p['max_saturation'])
-        change = 0.0
+        change, self.fix_pairs = 0.0, None
         scan = self.scan
         if scan is not None and abs(t_read - scan[0]) <= SCAN_MAX_AGE:
-            change, _ = lidar_pitch_fix(self.cam, px, scan[1], self.p['laser_x'],
-                                        self.p['bins'], min_pairs=self.p['fix_min_pairs'],
-                                        search_deg=self.p['fix_search_deg'])
+            change, self.fix_pairs = lidar_pitch_fix(
+                self.cam, px, scan[1], self.p['laser_x'], self.p['bins'],
+                min_pairs=self.p['fix_min_pairs'], search_deg=self.p['fix_search_deg'])
         self.processed += 1
         if change:
             self.fixed += 1
@@ -193,6 +194,8 @@ class WallNode(Node):
                      KeyValue(key='process_ms', value='%.1f' % self.proc_ms),
                      KeyValue(key='pitch_fix_deg', value='%+.2f' % self.fix_deg),
                      KeyValue(key='pitch_fixed_frames', value='%d/%d' % (fixed, processed)),
+                     KeyValue(key='pitch_fix_pairs', value='-' if self.fix_pairs is None
+                              else str(self.fix_pairs)),
                      KeyValue(key='frame_age_s', value='-' if age is None else '%.2f' % age)]
         msg = DiagnosticArray()
         msg.header.stamp = self.get_clock().now().to_msg()

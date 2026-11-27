@@ -31,7 +31,9 @@ BAG_TOPICS = ['/scan', '/scan_echo2', '/cmd_vel', '/cmd_vel_out', '/odom', '/imu
               # orin_auto.sh: filled scan and what the autonomous policy wanted
               '/scan_filled', '/bc/cmd_vel', '/bc/decision', '/bc/state', '/bc/stop',
               # camera wall bottoms and the frames used (wro2026_camera_c70, image_rate)
-              '/camera/wall_scan', '/camera/image/compressed']
+              '/camera/wall_scan', '/camera/image/compressed',
+              # node health, e.g. c70_wall pitch_fix_deg / pitch_fix_pairs (2026-11-27)
+              '/diagnostics']
 
 
 def _include(package, launch_file, arguments=None, condition=None):
