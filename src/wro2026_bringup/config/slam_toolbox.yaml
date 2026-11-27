@@ -33,7 +33,13 @@ slam_toolbox:
     # match harder (variance / minimum penalties below). Sim 2026-10-21, 1 lap: every 5 cm /
     # 3 deg with the default penalties drifted -4.5 deg (the square field is very
     # self-similar); this setting: 0.008 m / -0.8 deg, all map cells within 4 cm of a wall.
-    use_scan_matching: true
+    # 2026-11-27 (FIELD_REVIEW A9): on the real car the matching turns 2.2-2.4 % less than the
+    # car does, in both directions (11-26 21:43 ccw, 3 laps: -33.5 deg; 22:02 cw: +31 deg;
+    # walls as the truth). Offline re-runs: /scan_filled, penalties, a 0.05 s stamp shift,
+    # deskewing, no loop closing, the laser as base frame did not help; without matching
+    # the map heading is the EKF's (-5.2 deg in 3 laps). The car drives on the EKF, not on
+    # this map. Cause of the matching bias: open (sim vs real lidar being checked).
+    use_scan_matching: false
     use_scan_barycenter: true
     minimum_travel_distance: 0.10
     minimum_travel_heading: 0.10
