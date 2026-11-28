@@ -29,7 +29,7 @@ cp "$STAGE"/tools/real/orin_*.sh "$STAGE"/tools/real/analyze_*.py \
    "$STAGE"/tools/real/start_*.py "$STAGE"/tools/real/orin_*.py \
    "$STAGE"/tools/real/field_report.py "$STAGE"/tools/real/map_measure.py \
    "$STAGE"/tools/real/scan_align.py "$STAGE"/tools/real/make_run_video.py \
-   "$STAGE"/tools/real/rebuild_map.py \
+   "$STAGE"/tools/real/rebuild_map.py "$STAGE"/tools/real/steer_lag.py \
    "$STAGE"/tools/real/r550-*.service "$WS/tools/"
 rm -rf "$STAGE"
 
