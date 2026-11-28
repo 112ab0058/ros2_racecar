@@ -1,0 +1,8 @@
+# WHEELTEC C70 on the R550, from tools/real/calibrate_camera.py floor (2026-11-12, 2 photos).
+# Board flat on the floor in front of the car; 25 mm squares checked with a ruler.
+height_m: 0.1029          # lens optical centre above the floor; Ray measured "about 10 cm or a bit more"
+pitch_down_deg: -0.51     # + = looking down; the camera looks level (0.5 deg up)
+roll_deg: -0.55
+yaw_deg: 1.43             # + = turned left
+x_from_base_link_m: 0.20      # Ray 2026-11-12: lens is 4 cm behind the front bumper tip; front = 0.24 m from base_link
+y_from_base_link_m: UNKNOWN   # looks centred in photos; not measured

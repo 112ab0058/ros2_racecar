@@ -3,7 +3,7 @@
 新對話先讀 `docs/STATUS.md`（唯一的目前狀態），再依工作內容選規則：
 
 - 模擬線（`src/wro2026_sim`）：照 `docs/sim/SPEC.md`。
-- 實車線（`src/wro2026_base_waverover`、`src/wro2026_real` 等非模擬 package）：照 `CLAUDE.md`。
+- 實車線（`src/wro2026_base_r550` 等非模擬 package）：照 `CLAUDE.md`。
 
 模擬線的規則（原規則保留，路徑已更新）：
 

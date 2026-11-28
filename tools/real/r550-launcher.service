@@ -1,0 +1,33 @@
+# systemd unit: start the R550 launcher page (tools/real/orin_launcher.py) at boot.
+#
+# Install once on the Orin (Ray types the sudo password):
+#   sudo cp ~/racecar_ws/tools/r550-launcher.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now r550-launcher
+#   sudo loginctl enable-linger user2
+# The last line matters (2026-11-27, FIELD_REVIEW A2): this service runs as user2 but in no
+# login session. Without lingering, 10 s after the last ssh session of user2 ends, logind
+# (RemoveIPC=yes, Ubuntu default) deletes every /dev/shm file of user2, including the Fast
+# DDS shared-memory files of the running car programs, and every topic stops one program
+# after another within a few seconds. Check: loginctl show-user user2 -p Linger (= yes).
+# Check:    systemctl status r550-launcher     (log: journalctl -u r550-launcher -n 30)
+# Remove:   sudo systemctl disable --now r550-launcher
+#           sudo rm /etc/systemd/system/r550-launcher.service
+#
+# The page only STARTS orin_auto.sh when its button is pressed; the motors turn only
+# while the drive page's 自動 button is held. Stopping this service also stops a run
+# started from the page (same control group).
+[Unit]
+Description=R550 launcher page (starts orin_auto.sh from the phone)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=user2
+WorkingDirectory=/home/user2
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source /home/user2/racecar_ws/install/setup.bash && exec python3 /home/user2/racecar_ws/tools/orin_launcher.py'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

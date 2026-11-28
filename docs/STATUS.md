@@ -1,75 +1,55 @@
 # 專案目前狀態
 
-更新時間：2026-10-13。這是唯一的「目前狀態」文件；舊的狀態文件已封存在 [archive/sim_phases/](archive/sim_phases/)。
-本頁只整理現有文件的內容，查不到的寫 `UNKNOWN`。
+更新時間：2026-11-28。這是唯一的「目前狀態」文件。**全部未解問題的清單在 [real/FIELD_REVIEW.md](real/FIELD_REVIEW.md)**（11-27 整理，11-28 更新）；**下次場地的清單在 [real/tasks/2026-11-28_next_field.md](real/tasks/2026-11-28_next_field.md)**。專題範圍與時程見 [research/PROJECT_PLAN.md](research/PROJECT_PLAN.md)，每次工作的紀錄見 [research/LOGBOOK.md](research/LOGBOOK.md)（最新的在最上面）。
 
-## 模擬線（`src/wro2026_sim`）：已結束，只當參考
+## 專題
 
-| 項目 | 狀態 | 來源 |
+「多感測器融合感知與智慧決策系統」，**不參加 WRO**（場地和起跑方式參考 WRO 2026 Future Engineers）。正式的車是 **WHEELTEC R550 mini akm + Jetson Orin Nano**（Ubuntu 24.04、ROS 2 Jazzy）。AI 方向：**B 模仿學習**（2026-11-10 Ray 決定；`PROJECT_PLAN.md` 11-26 已改成 B）。
+
+目前階段：11-26 晚上第一次在地上跑預測式：逆時針跑完 3 圈、自己停在起點，但中途常誤鎖。**卡在「記憶的點」有少數放錯 1–3 cm**（轉彎中才出現），見 [research/LOGBOOK.md](research/LOGBOOK.md) 11-26（晚上）。11-27～28 在家用錄影找到並修了多個原因（線的邊緣光束、通訊停住、島角判斷、相機俯仰、陀螺儀比例、建圖角度），**全部等下次場地確認**。
+
+## 實車（R550）
+
+| 項目 | 狀態 | 文件 |
 |---|---|---|
-| Phase 6J 最終驗收 | **J1 FINAL_ACCEPTANCE_PASS；FINAL ACCEPTED**（2026-07-22） | [CURRENT_STATE](archive/sim_phases/CURRENT_STATE.md) |
-| 已驗收 controller | `src/wro2026_sim/scripts/line_follower.py`，SHA-256 `de79e41c18748b2a20b897ec320c13848533a25a3adf6be5d690822609408cc2` | 同上 |
-| Phase 7B/7C/7D | 場地基線、TF/sensor/odom 基線、SLAM mapping 通過（7C 曾發現 IMU 0 messages、depth 缺失、odom covariance 全零） | [PROJECT_HANDOFF](archive/handoff_2026-10-09/PROJECT_HANDOFF.md) |
-| Phase 7E-AE | 輪子幾何校正：`7EAE2 WHEEL_GEOMETRY_CALIBRATION_NOT_IDENTIFIABLE_OR_NOT_GENERALIZABLE`；campaign 結論 `PROVEN_IRREDUCIBLE_ARCHITECTURE_BLOCKER` | 同上、[KNOWN_PATHS](archive/handoff_2026-10-09/KNOWN_PATHS_AND_EVIDENCE.md) |
-| Phase 7G | residual odom：`PROVEN_RESIDUAL_ODOM_ARCHITECTURE_BLOCKER`（`STOP_RUNTIME_BUDGET_EXHAUSTED`）；runtime slots 已用完，不得重跑；7F 未進入 | 同上 |
-
-**Phase 7 的意義**：只證明在凍結的模擬模型、特定 excitation、固定 gate 與有限 runtime 預算下，這兩條 odom 校正路線沒有產生可接受的候選；**不代表**實車、Nav2 或所有 odometry 方法不可行。實車要從真實硬體重新量測開始。
-
-`line_follower.py`（4315 行、279 個模組層級常數，依模擬場地的絕對座標做決策）只能當參考，不移植到實車、不修改。
-模擬線的工作流程（三份 SHA 比對、唯讀 archive、Level 0/1/2）見 [sim/SPEC.md](sim/SPEC.md)，**只適用模擬線**。
-
-## 實車線：Jetson Orin Nano + Waveshare WAVE ROVER（過渡測試車）
-
-硬體細節見 [real/REAL_CAR_HARDWARE.md](real/REAL_CAR_HARDWARE.md)，操作步驟見 [real/RUNBOOK.md](real/RUNBOOK.md)。里程碑定義來自 [START_HERE_NEXT_AI](archive/handoff_2026-10-09/START_HERE_NEXT_AI.md)。
-程式：`src/wro2026_base_waverover`（底盤 driver，由 Jetson 的 `wave_rover_driver` 搬進來）、`src/wro2026_real`（bringup、URDF、參數化 line detector）。兩個 package 都有不需硬體的 pytest（Jetson `colcon test`：0 失敗，數字見 [2026-10-13 報告](reports/2026-10-13_cleanup_and_wave_rover_base.md)）。
-
-| 里程碑 | 狀態 | 說明 |
-|---|---|---|
-| H0 硬體盤點 | DONE（過渡車） | WAVE ROVER + Orin 已盤點；UNKNOWN 7 項（輪距/輪徑/速度比例、車上供電、相機、LiDAR、比賽車、急停、IMU 軸向）。比賽車另有草稿 [real/FINAL_CAR_DRAFT.md](real/FINAL_CAR_DRAFT.md)（Ackermann、STM32、Orbbec 深度相機、LiDAR、encoder；型號大多 UNKNOWN） |
-| H1 Jetson / OS / ROS 2 | DONE | Ubuntu 24.04.4、L4T R39.2.1、ROS 2 Jazzy `ros-base` + `ros-dev-tools`；沒有 Gazebo / GUI |
-| H2 架空低速與停止 | PARTIAL | 舊 driver 2026-10-13 HTTP、max_speed 0.05、架空：啟動只送停止、前後左右、`/cmd_vel` 中斷 0.306 s 停車、關閉送停止全部 PASS。新 driver 加了回授遺失停車與低電壓拒絕（pytest 驗證），HTTP 只讀實機驗證通過。2026-10-13 11:14 新 driver HTTP、0.05、架空跑 `test_motion`：B1–B4 全部 PASS，**使用者目視確認四個動作方向正確、停得住**。剩下：UART 版本（預計 2026-10-14） |
-| H3 encoder odometry | BLOCKED（這台車） | WAVE ROVER 沒有 encoder。過渡用的 dead reckoning（送出的輪指令 × `pwm_to_mps` + IMU gz）已實作；`pwm_to_mps` UNKNOWN（預設 0，只轉向不位移）；低品質，不可作為 Nav2 主要 odom |
-| H4 感測器 driver / TF | PARTIAL | `/imu/data`、`/battery`、`/diagnostics`、TF `odom → base_link → imu_link / camera_link` 實機確認；IMU gz 靜止雜訊大（標準差 5.1 deg/s）；相機型號 UNKNOWN、沒有相機 driver；LiDAR 未安裝 |
-| H5 URDF 與實際尺寸 | PARTIAL | 最小 URDF（`base_link`、`imu_link`、`camera_link`）已建立，尺寸全是暫定值；輪距、輪徑、感測器位置 UNKNOWN |
-| H6 localization | 未開始 | |
-| H7 mapping / Nav2 | 未開始 | |
-| H8 WRO 行為 | 未開始 | |
-| H9 冷啟動 / 故障測試 / 驗收 | 未開始 | |
+| 車身尺寸 | 後軸中心到車頭 0.24 m、到車尾 0.031 m、寬 0.18 m、後輪輪距 0.170 m、軸距 0.144 m（韌體） | [real/R550_HARDWARE.md](real/R550_HARDWARE.md) |
+| 轉向 | **左右不對稱**：打滿時左 0.403 m、右 0.292 m（地面）；架空量左前輪：左打滿 21.7°、右打滿 28.8°。原因：韌體只控制右前輪（**廠商 11-25 回信：三次式是右前輪擬合的**），左前輪靠連桿，架空量到約是公式角度的 1.2 倍、左右轉都一樣 → 左轉內輪不夠、右轉外輪太多（連桿不是理想阿克曼）。右前輪角度還沒量。機構最大角度：廠商說約 20°（韌體限幅），和實測 28.8° 對不上，UNKNOWN。廠商可以照我們給的修改編譯韌體；11-28 已寄出要改的 3 處（放寬左轉到 0.35 rad、保留逾時保護），**等廠商回覆**；程式照實測的左右值走 | [research/LOGBOOK.md](research/LOGBOOK.md) 11-25、11-26 |
+| STM32 韌體 | 2026.09.21 版＋廠商加回的**指令逾時**（約 0.5 s），2026-10-21 Ray 燒錄，架空 3/3 通過。救援檔和燒錄步驟見 LOGBOOK 10-20～21 | [research/LOGBOOK.md](research/LOGBOOK.md) |
+| 底盤節點（`wro2026_base_r550`） | 只讀回授＋指令端（限速、0.3 s 逾時、限時、低電壓拒絕）。校正：`vx_scale` 1.035、`wz_scale` 1.013（11-10 地面實測）、`gyro_scale` 1.0032（11-28，陀螺儀少算 0.32 % 的轉動，用光達掃描比對量出）。指令端全流程架空 9/9（11-09） | [../src/wro2026_base_r550/README.md](../src/wro2026_base_r550/README.md) |
+| EKF | `/odometry/filtered` 30 Hz，方向只用陀螺儀（零速更新 ZUPT）；2 小時靜止只飄 0.10°。**E1 標準答案改用光達掃描比對**（`tools/real/scan_align.py`，車沒動時 0.2–0.3 cm）：11-26 逆時針 3 圈回到起點差 3.4–3.8 cm、−2.5～−3.2°；原因是陀螺儀比例，加 `gyro_scale` 後重算平均 2.2 → 1.3 cm、2.05 → 0.82°（11-28）。建圖（slam_toolbox）11-27 起不做掃描比對，地圖方向跟著 EKF（掃描比對在實車資料上每轉一度少算 2.3 %） | [research/LOGBOOK.md](research/LOGBOOK.md) 11-27、11-28 |
+| 光達 N10P | `/scan` 10 Hz、480 格；距離修正 +0.036 m（11-19 捲尺）；遮掉自己的車身角度。**黑色泡棉牆在 0.2–0.4 m 沒有回波**（硬體限制，11-11、11-13 實測） | [../src/wro2026_lidar_n10p/README.md](../src/wro2026_lidar_n10p/README.md) |
+| 掃描記憶 | `scan_memory_node`：用里程計記住看過的牆點，補光達看不到的角度 → `/scan_filled` | 同上 |
+| 相機 C70 | 已校正（內參 RMS 0.47 px、鏡頭高 0.103 m）。`wall_node` 找黑牆的牆腳 → `camera/wall_scan`，只用 0.5 m 內（場地地板不平，遠處誤差大，11-24）。11-27 起每張照片用 0.5–1.0 m 的牆點對光達修正俯仰角（`lidar_fix`；重播近處錯 > 2 cm 的比例 43／57／37／33 % → 38／55／15／18 %）。與光達記憶融合 | [../src/wro2026_camera_c70/README.md](../src/wro2026_camera_c70/README.md) |
+| 轉彎規則（Ray 的過彎技巧） | 場地：11-13 逆時針 10 個彎、11-20 逆時針 10 個彎；順時針 11-20 第 1 彎切到內側（左右半徑不對稱）。之後加的都**還沒上地面**：預測式打滿（11-23）、直道任意位置起跑（11-24，模擬 160/160）、3 圈停在起點、自動判斷方向（加相機後）。11-26 地上：逆時針 3 圈 12 個彎自己停在起點（鎖住 5 次）；預測準到 mm 級；加了「過不了彎就停」（blocked）、「打太早會擦到島就回正再打滿」（rewait/hold）。走道 38 cm 時起點要放在離外牆約 4 cm | [research/LOGBOOK.md](research/LOGBOOK.md) 11-26（晚上） |
+| 安全 | 只有手機「自動」鍵按住才動（放開 0.35 s 內停）；**預測式停車**（11-26）：照已送出的指令把車身沿路線移動（轉彎中到彎結束、其他 5 cm），確定會碰到才鎖住，門檻 0；手機「重置」解鎖；速度上限 0.12 m/s（啟動頁固定 0.10） | [../tools/real/orin_auto.sh](../tools/real/orin_auto.sh) |
+| 手機頁 | 啟動頁（開機自動啟動）：電池、模式切換（方向、打滿時機、**駕駛：規則／網路**）、**訓練**按鈕、上一次結果。駕駛頁：按鍵（含左右滿舵）、搖桿、重力、自動 | [../tools/real/orin_launcher.py](../tools/real/orin_launcher.py) |
+| 模仿學習（`wro2026_imitation`） | 11-25：網路 5 種動作（左、直、右、左打滿、右打滿），輸入 `/scan_filled`，分辨人和規則的示範，排除架空和撞牆前的資料；`orin_train.sh`、啟動頁「訓練」。2-D 模擬：規則 24/24，網路逆 8/12、順 12/12（不鏡像；鏡像會變差，因為轉向不對稱）。第一個真實模型（11-20 紀錄、驗證 83 %）**只會逆時針**（右打滿只有 14 筆），放進 2-D 模擬逆時針只過 1/12：資料太少，場地要多錄，還不能上地面開 | [../src/wro2026_imitation/README.md](../src/wro2026_imitation/README.md) |
+| Gazebo 模擬（`wro2026_sim_r550`） | 10-20～28 完成（Nav2、循跡實驗）。Orin 上暫時裝的 `ros-jazzy-ros-gz`、`navigation2` 用完要移除 | [real/tasks/2026-10-27_sim_tracking_campaign.md](real/tasks/2026-10-27_sim_tracking_campaign.md) |
+| Orin 上車 | 裝在車上，電池供電（2026-10-18 起：電池一分二，一路給車、一路經 E1151F 給 Orin；不經過車子的電源開關） | [real/RUNBOOK.md](real/RUNBOOK.md) 第 3 節 |
 
 ## 下一步
 
-比賽車確定是 **WHEELTEC R550 阿克曼版**（內建光達，應為 M10P；主機改用我們的 Orin；快到貨）。到貨前繼續用 WAVE ROVER，但不在它身上做 R550 會取代的工作（速度校正、里程計）。
+期限：**2026 年 12 月**（Ray 11-26）。近期會把島縮小、走道加寬（Ray 11-26）：改完要重量場地（E2）、模仿學習要在新場地再錄，左打滿比走道寬的問題可能就沒了（韌體先不改）。
 
-### A. 現在：WAVE ROVER
-1. ~~人工目視確認（H2，HTTP）~~：2026-10-13 完成，方向正確。
-2. 2026-10-14 接 UART（Orin pin 8/10/6 ↔ 車頂 RX/TX/GND，`/dev/ttyTHS1`），照 [RUNBOOK 第 4 節](real/RUNBOOK.md)跑 serial 版的 H2。
-3. 決定相機：WRO 的線和柱子都要靠顏色辨識，光達做不到。先用任何 USB 攝影機接 Orin，在 WAVE ROVER 上測 line detector。
-4. 暫停：`pwm_to_mps` 地面校正、IMU 濾波（R550 有 encoder，到時候直接做真正的里程計）。
-
-### B. 到貨前在 Orin 上準備（不需要 R550）
-1. 列出要裝的 apt 套件給 Ray 確認後再裝（候選：`robot_localization`、`slam_toolbox`、`nav2_bringup`、`rosbag2-storage-mcap`、`foxglove_bridge`、`tf2_tools`）。
-2. 裝大量套件前，先備份 Orin 的 microSD 映像檔。
-3. 查 M10P 光達和 WHEELTEC 底盤的 ROS 2 程式能不能在 Jazzy / Ubuntu 24.04 上 build（WHEELTEC 的程式可能是為其他版本寫的，這是主要風險）。
-4. 網路：路由器綁固定 IP；NetBird 讓 Ray 的電腦加入；確認 WSL 的 RViz / Foxglove 能看到 Orin 的 topic。
-5. 控制器整合準備：`wro2026_control` 的 `/imu` 改成可設定的參數，並以 m/s 的 `/cmd_vel` 為準（R550 原生就是 m/s）。
-
-### C. R550 到貨後
-1. H0：拍照、記錄版本、電池與給 Orin 的供電方式、STM32 韌體與通訊協定。
-2. 底盤 package `wro2026_base_r550`：沿用 WAVE ROVER driver 的安全機制（`/cmd_vel` 逾時、限速、回授遺失、低電壓），架空測試 stop / timeout。
-3. 阿克曼：確認 STM32 收的是 (v, ω) 還是 (v, 轉向角)，量軸距、最大轉向角，寫進 URDF。
-4. 光達 driver + TF；encoder odom + IMU 用 `robot_localization` 融合。
-5. 接上 `wro2026_control`（pose-free 控制器），先低速、再地面。
-6. 之後才是 SLAM / Nav2（H6–H7）。
+1. **下次場地**：照 [real/tasks/2026-11-28_next_field.md](real/tasks/2026-11-28_next_field.md) 確認 11-27～28 的修改（A2、A4、A5、A6、A7、A8、A9、B2），並錄 A1（強度、第二回波）、A10（人開的雙向示範）、E2（捲尺貼地和 15 cm 高）、E4（網路對規則）。
+2. **A1 記憶點**：順時針的主因（線的邊緣光束）已修遮罩；逆時針和整體 ±2 cm 的誤差，等場地的強度／第二回波資料。
+3. **C4 韌體**：11-28 已寄信給廠商（微信沒回），等回覆；新韌體要先在家架空測逾時，再量轉向。
+4. E2：`tools/real/rebuild_map.py` 已寫好（11-28）。slam_toolbox 存的地圖牆疊了 2–3 層，不可靠；EKF＋陀螺儀校正的重建地圖是單層的，等場地捲尺決定哪個大小對。11-20 沒存到的 3 張救不回來（車子幾乎沒動）。
+5. 待 Ray 決定：E3 實車要不要做 Nav2 到點（`PROJECT_PLAN.md` 第 6、10 節）；C2 加寬走道的時間；C3 倒車。
+6. 12 月：報告、簡報、PBL 學習單。給教授的影片工具已做好（`tools/real/make_run_video.py`，11-27）。
 
 ## 已知問題
 
-- `src/wro2026_sim/config/phase7/` 裡有 Python 腳本（`localization_probe.py`、`mapping_motion_supervisor.py`、`mapping_traversal.py`），放在 config 資料夾不合理，但搬移有風險，暫不動。
-- `src/wro2026_sim/config/phase7/localization_validation_route.yaml` 的 `source_evidence` 只是紀錄欄位，不影響執行；它指向的證據檔案（`~/ros2_evidence/...`）只存在 Ray 的 WSL 電腦上，不在 repo 裡。歷史 Phase 的 evidence 也都在那台電腦。
-- 模擬 package 沒有任何自動測試（實車的兩個 package 有）。
-- `/line_detection` 的 Float32MultiArray 格式只靠位置表示意義，很脆弱，之後應改成自訂 message。
-- 底盤 driver 把 `/cmd_vel` 的 `linear.x`、`angular.z` 直接當 PWM 比例（沿用舊 driver），但 `/odom` 的速度是 m/s；上層目前必須知道這個底盤的單位，違反「上層只靠 `/cmd_vel` 溝通、不依賴底盤」的原則。`pwm_to_mps` 量好後應改成 m/s → PWM 換算。
-- 新舊 driver 的互斥檢查只在新 driver 和 `test_motion` 裡；先開新 driver、再開舊 driver 時，舊的不會擋（舊 driver 不能改），要靠人確認。
-- Jetson 沒有 OpenCV / cv_bridge：line detector 只支援 rgb8 / bgr8 / rgba8 / bgra8 影像。
-- Ray 的 WSL `~/ros2_racecar`（2026-10-13 檢查）：未追蹤的 HARDWARE_INVENTORY.md 已搬進 repo 成為 [real/FINAL_CAR_DRAFT.md](real/FINAL_CAR_DRAFT.md)；`backup/local-main-20261009` 的 2 個 commit 經 `git cherry` 確認在 main 上都有相同修改；stash 是 2026-07 的舊版控制器修改（main 已經更新過）。三者都已在 Ray 的 Windows 下載資料夾留有 patch 備份。
-- 封存文件的內文沒有改，裡面提到的 `docs/` 路徑（例如舊的 CURRENT_STATE 位置）指的是 2026-10-13 搬移前的位置。
-- `archive/handoff_2026-10-09/SHA256SUMS.txt` 是封存前內容的雜湊；每個 .md 去掉第一行封存標記與後面的空行（`tail -n +3`）後仍然相符。
+- **左右轉向不對稱**（見上表）：逆時針左打滿 0.403 m 比 0.40 m 的走道還寬，直道後半段貼著島或車頭朝外牆時，只前進過不了彎；起步倒車（WRO 允許）Ray 決定先不做。
+- **光達看不到近距離黑牆**：靠掃描記憶＋相機補；相機點遠處受地板不平影響，所以只用 0.5 m 內。
+- **記憶的點有少數放錯 1–3 cm**（11-26）：只在轉彎中出現，造成誤鎖和亂回正。順時針的主因是線的邊緣光束（11-27 已重量遮罩）；其他見 FIELD_REVIEW A1。
+- **走道 38–39 cm，左打滿半徑 0.403 m**：逆時針每個彎只差幾 mm 到 2 cm；起點貼島又在直道後段時物理上過不了（要倒車，未決定）。
+- 預測器只在場地上才會啟動（架空時沒有走道），它的判斷還沒驗證過。
+- **ROS 通訊整個停住**（11-20、11-26，共 6 次；錄影、建圖、光達同一秒停）：**已解決**（11-27）。原因是 ssh 登出 10 秒後系統刪掉 DDS 的共享記憶體檔（logind `RemoveIPC`），開了 `loginctl enable-linger user2`；沒開時啟動頁會出現橘色警告。
+- **建圖的位置在窄走道裡角度會跑掉**（一圈約 9–13°）：11-27 改成不做掃描比對，地圖方向跟著 EKF。模擬裡 slam_toolbox 正常，偏差來自實車光達資料，真正原因未證實（推測黑泡棉的回波跟入射角有關）。
+- WSL 在 NAT 模式下看不到 Orin 的 topic，用 Foxglove 看（[real/NETWORK.md](real/NETWORK.md)）。
+- Orin 的 `~/ros2_ws` 是舊 driver 的備份，不要動。
+
+## 模擬線（`src/wro2026_sim`）：已結束，只當參考
+
+Gazebo 模擬在 2026-07 完成（Phase 6J 驗收），Phase 7 的 odom 校正在模擬模型中證明不可行。程式不移植到實車、不修改。規則見 [sim/SPEC.md](sim/SPEC.md)，歷史紀錄在 [archive/](archive/)。
