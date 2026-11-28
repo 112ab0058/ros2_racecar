@@ -11,6 +11,15 @@ WHEELTEC R550 mini akm 的底盤 package。有：協定 module、**只讀**的�
 
 韌體只在開機第 10 秒取一個樣本當 gyro 零點，之後溫度一變偏差就跑掉（2026-10-20：開機後每分鐘飄 0.61°）。阿克曼車後輪不轉就不能轉向，所以後輪靜止超過 `zupt_still_time`（1 s）時，gyro 讀到的就是偏差：用時間常數 `zupt_time_constant`（5 s）低通濾波學起來，從 `/imu/data` 扣掉。手拿著車轉的時候（輪子不動、車身在轉），離目前偏差超過 `zupt_max_rate` 的樣本不用。`/diagnostics` 有 `gyro_bias_z`、`zupt_learning`；`zupt_enable: false` 可以關掉。
 
+## gyro 比例（`gyro_scale`，2026-11-28）
+
+扣掉零點後，`/imu/data` 的 z 軸轉速再乘 `gyro_scale`（1.0032）；`/imu/data_raw` 不乘。
+
+- 怎麼量的：場地紀錄裡，車每次經過起點時的光達掃描，跟起點靜止時的掃描做點雲對齊（ICP），得到真正的位置和方向，不用捲尺（6 趟、14 次經過，11-13 到 11-26，順逆時針都有）。車子沒動的 3 次紀錄，這個方法算出 0.2–0.3 cm、0.07° 以內。
+- 結果：EKF 的方向誤差跟著轉彎方向變號（逆時針 3 圈 −2.5～−3.2°，順時針 2 圈 +1.5～+2.5°）→ 是比例誤差，不是零點漂移（加上漂移項沒有更準）。陀螺儀少算 0.32 %；每次拿掉一趟重算是 0.27–0.36 %。
+- 用其他趟的比例校正每一趟：EKF 回到起點時的位置誤差平均 2.2 → 1.3 cm（最大 4.4 → 2.7 cm），方向誤差平均 2.05 → 0.82°。
+- 換算常數沒錯（`protocol.py`：1/65.5/57.30，跟精確值差 0.007 %），所以是這顆晶片的比例誤差（或安裝稍微傾斜：傾斜 4.6° 也會少 0.32 %）。
+
 ## 鍵盤遙控（`teleop_node`）
 
 `ros2 run wro2026_base_r550 teleop_node`（要在真的終端機裡跑，例如 ssh），或用 `tools/real/orin_teleop.sh` 一個終端機全部開好。只發布 `/cmd_vel`，不碰序列埠；要 `base_node` 開了 `enable_commands` 才會動。按住 `w`/`q`/`e` 前進、`x`/`z`/`c` 倒車，放開就送 0。用 timer 固定 20 Hz 發布（`ros2 topic pub` 曾停頓超過 0.3 秒）。邏輯在 `teleop.py`，測試在 `test/test_teleop.py`。操作說明見 `docs/real/RUNBOOK.md` 6c 節。

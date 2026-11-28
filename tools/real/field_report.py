@@ -23,7 +23,13 @@ Per run:
                     (all walls are parallel or square): a truth for the heading in every
                     run, without a tape; 'vs walls' = each estimate's heading error mod 90.
                     2026-11-13 / 11-20 ccw runs (2.5 laps): ekf -4.5 deg, slam -26 / -36.
-             With RUN_DIR/tape.txt: the tape-measured truth and every estimate's error.
+             scan   the lidar's truth (scan_align.py, 2026-11-28): the end scans and every
+                    pass of the start (EKF within 0.25 m, >= 3 m since the last pass),
+                    aligned (ICP) to the still start scans. Errors are against it; with
+                    the car still it reads 0.2-0.3 cm. The pass table gives the EKF's
+                    error after each lap.
+             With RUN_DIR/tape.txt: the tape-measured truth (errors against it when
+             there is no scan truth).
 
 tape.txt (docs/real/tasks/2026-11-26_field_night.md), cm, four numbers:
     left rear wheel: forward along the start tape, out (away from the car)
@@ -44,6 +50,7 @@ from wro2026_imitation.policy import outline_gap
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from map_measure import straightest  # noqa: E402  (same folder: tools/real, ~/racecar_ws/tools)
+from scan_align import StartReference, merged, scan_xy  # noqa: E402
 
 WHEELBASE = 0.144          # m, firmware; the tape marks sit on the left wheel centres
 HALF_TRACK = 0.085         # m, rear track 0.170 (R550_HARDWARE.md)
@@ -124,7 +131,7 @@ def read_bag(path):
 
     out = {'wheel': [], 'gyro': [], 'ekf': [], 'slam': [], 'clear_scan': [],
            'clear_filled': [], 'map_last': None, 't0': None, 't1': None,
-           'first_scans': [], 'last_scans': []}
+           'first_scans': [], 'last_scans': [], 'scans': []}
     gyro_pose = [0.0, 0.0, 0.0]
     v_wheel, v_ekf, wz_imu, t_imu = 0.0, 0.0, None, None
     ekf_pose, map_odom = None, None
@@ -175,6 +182,8 @@ def read_bag(path):
             if len(out['first_scans']) < 10:          # the 5 after the first 5
                 out['first_scans'].append(msg)
             out['last_scans'] = (out['last_scans'] + [msg])[-5:]
+            out['scans'].append((t, np.asarray(msg.ranges, dtype=np.float32), msg.angle_min,
+                                 msg.angle_increment))
         if topic in ('/scan', '/scan_filled') and abs(v_ekf) > MOVING:
             gap = outline_gap(np.asarray(msg.ranges, dtype=float), msg.angle_min,
                               msg.angle_increment)
@@ -229,6 +238,65 @@ def end_poses(bag):
     return poses
 
 
+def scan_truth(bag, near=0.25, between=3.0):
+    """
+    E1 truth from the lidar (scan_align): return (end, passes).
+
+    end = (pose, rms, pairs, agree, tried) of the end scans when the car is still there,
+    near the start, else None; passes = list of
+    (driven m, truth pose, EKF pose) at every pass of the start: the EKF within `near` m
+    of the start pose after `between` m of driving since the last pass; the nearest scan
+    and its two neighbours, merged with the EKF's motion over those 0.2 s.
+    """
+    scans, ekf = bag['scans'], bag['ekf']
+    if len(scans) < 20 or len(ekf) < 10:
+        return None, []
+    e = np.array(ekf)
+    uy = np.unwrap(e[:, 3])
+    cum = np.concatenate([[0.0], np.cumsum(np.hypot(np.diff(e[:, 1]), np.diff(e[:, 2])))])
+
+    def pose(t):
+        return (float(np.interp(t, e[:, 0], e[:, 1])), float(np.interp(t, e[:, 0], e[:, 2])),
+                float(np.interp(t, e[:, 0], uy)))
+
+    ref_scans = scans[5:10]                       # as wall_turn: the 5 after the first 5
+    ref = StartReference([s[1:] for s in ref_scans])
+    start = pose(ref_scans[2][0])
+    end = None
+    last = scans[-5:]
+    p0, p1 = pose(last[0][0]), pose(last[-1][0])
+    guess = relative(start, p1)
+    # still at the end, near the start (far away the scans hardly overlap: 11-26 22:48
+    # ended 1.3 m off, 64 pairs, 2 of 8 starts agreed)
+    if math.hypot(p1[0] - p0[0], p1[1] - p0[1]) < 0.005 and math.hypot(*guess[:2]) < 0.5:
+        src = np.vstack([scan_xy(*s[1:]) for s in last])
+        end = ref.align(src, guess, also_still=True)
+        if end and 2 * end[3] <= end[4]:
+            end = None
+    st = np.array([s[0] for s in scans])
+    rel = [relative(start, pose(t)) for t in st]
+    d = np.array([math.hypot(r[0], r[1]) for r in rel])
+    dist = np.interp(st, e[:, 0], cum)
+    passes, last_d, i = [], 0.0, 0
+    while i < len(st):
+        if d[i] < near and dist[i] - last_d > between:
+            j = i
+            while j + 1 < len(st) and d[j + 1] < near:
+                j += 1
+            k = i + int(np.argmin(d[i:j + 1]))
+            last_d, i = dist[k], j + 1
+            if 1 <= k < len(scans) - 1:
+                group = scans[k - 1:k + 2]
+                src = merged([s[1:] for s in group], [pose(s[0]) for s in group])
+                got = ref.align(src, rel[k])
+                if got and 2 * got[3] <= got[4]:
+                    got = None                      # the starts disagree: no truth
+                passes.append((float(dist[k]), got, rel[k]))
+        else:
+            i += 1
+    return end, passes
+
+
 def lowest(track):
     """(m, seconds into the run) of the smallest clearance, or None."""
     if not track:
@@ -263,17 +331,24 @@ def report(run):
                   % (label, low[0], low[1] - t0))
     poses = end_poses(bag)
     tape = read_tape(run)
-    truth = tape_truth(*tape) if tape else None
+    tape_pose = tape_truth(*tape) if tape else None
     walls = wall_turn(bag['first_scans'][5:], bag['last_scans'])
+    end_scan, passes = scan_truth(bag)
+    truth = end_scan[0] if end_scan else tape_pose
     if poses:
         print('   E1 end - start      forward m   left m   heading deg'
               + ('   vs walls deg' if walls is not None else '')
-              + ('   error m   heading err deg' if truth else ''))
+              + ('   error m   heading err deg (vs %s)' % ('scan' if end_scan else 'tape')
+                 if truth else ''))
     if walls is not None:
         print('      walls (heading mod 90 deg)                %5.1f' % math.degrees(walls))
-    if truth:
-        print('      tape          %9.3f %8.3f %11.1f' % (truth[0], truth[1],
-                                                         math.degrees(truth[2])))
+    if end_scan:
+        print('      scan          %9.3f %8.3f %11.1f   (ICP rms %.4f m, %d pairs, %d/%d '
+              'starts agree)' % (end_scan[0][0], end_scan[0][1], math.degrees(end_scan[0][2]),
+                                 *end_scan[1:]))
+    if tape_pose:
+        print('      tape          %9.3f %8.3f %11.1f'
+              % (tape_pose[0], tape_pose[1], math.degrees(tape_pose[2])))
     for k, (fx, fy, fh) in poses.items():
         line = '      %-6s        %9.3f %8.3f %11.1f' % (k, fx, fy, math.degrees(fh))
         if walls is not None:
@@ -282,6 +357,19 @@ def report(run):
             line += '   %7.3f %13.1f' % (math.hypot(fx - truth[0], fy - truth[1]),
                                          math.degrees(wrap(fh - truth[2])))
         print(line)
+    if passes:
+        print('   E1 passes of the start (scan truth; EKF error = EKF - truth)')
+        print('      driven m   truth fwd  left m  heading deg | EKF err fwd  left  |e| m  '
+              'heading deg | rms m  pairs agree')
+        for dist, got, ekf in passes:
+            if got is None:
+                print('      %8.2f   no truth (ICP failed or the starts disagree)' % dist)
+                continue
+            (tx, ty, th), rms, n, agree, tried = got
+            ex, ey = ekf[0] - tx, ekf[1] - ty
+            print('      %8.2f   %+9.3f %+7.3f %+9.2f   | %+11.3f %+6.3f %5.3f %+9.2f   | %.4f '
+                  '%5d %d/%d' % (dist, tx, ty, math.degrees(th), ex, ey, math.hypot(ex, ey),
+                                 math.degrees(wrap(ekf[2] - th)), rms, n, agree, tried))
     low_s, low_f = lowest(bag['clear_scan']), lowest(bag['clear_filled'])
     return (name, logs['driver'], bag['laps'], logs['latches'],
             low_s[0] if low_s else float('nan'), low_f[0] if low_f else float('nan'),

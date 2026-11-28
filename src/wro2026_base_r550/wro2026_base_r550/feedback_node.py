@@ -47,6 +47,9 @@ PARAMETERS = [
     # 2026-11-10: 3 motor-driven floor runs against a tape, see r550_feedback.yaml
     ('vx_scale', 1.035, 'multiply STM32 vx by this (floor test 2026-11-10)'),
     ('wz_scale', 1.01, 'multiply STM32 wz by this (floor test 2026-11-10, gyro as reference)'),
+    ('gyro_scale', 1.0032, 'multiply the bias-corrected gyro z of /imu/data by this '
+                           '(2026-11-28: lidar ICP at 14 passes of the start, the gyro read '
+                           'turns 0.32 % short); /imu/data_raw is not scaled'),
     ('feedback_timeout', 0.5, '/diagnostics ERROR when no valid frame for this long (s)'),
     ('expected_rate', 20.0, 'expected frame rate (Hz); WARN below half of it'),
     ('low_battery_voltage', 10.8, 'WARN below this voltage (vendor: charge below 10.8 V)'),
@@ -154,7 +157,8 @@ class R550Feedback(Node):
             wz = fb.wz * self.p['wz_scale']
             self.odom.update(now, vx, wz)
             x, y, yaw = self.odom.x, self.odom.y, self.odom.yaw
-            gyro = self.gyro_bias.update(now, vx, wz, fb.gyro_x, fb.gyro_y, fb.gyro_z)
+            gx, gy, gz = self.gyro_bias.update(now, vx, wz, fb.gyro_x, fb.gyro_y, fb.gyro_z)
+            gyro = (gx, gy, gz * self.p['gyro_scale'])
             self.rate.tick(now)
             self.last_frame_time = now
             self.last_fb = fb
