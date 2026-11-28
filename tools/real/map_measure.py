@@ -12,10 +12,15 @@ The map's frame is the car's start pose, so the field sits at an angle. Steps:
   3. outer walls: median position of the points beyond 0.6 m from the centre, taking
      only the middle 0.5 m of each side (no corners); island faces: the same, 0.2-0.55 m
      from the centre, re-centred on the island (field 2026-11: island ~0.8 m,
-     corridors ~0.4 m)
-  4. field inside size, island size, the four corridors (island face to outer wall)
+     corridors ~0.4 m). 2026-11-28: started from several centres; the island must be
+     square (sides 0.4-1.1 m, within 0.1 m of each other) and the start whose island
+     faces and outer walls hold the most cells wins (things outside the field, seen
+     over the 10 cm walls, had moved the single start off the island in rebuilt maps).
+  4. field inside size, island size, the four corridors (island face to outer wall);
+     INCOMPLETE when an outer wall is missing (runs of a few corners).
 The lidar sees the walls' inner faces and the island's outer faces, as a tape measured
-from inside the field does. A map cell is 2 cm, so expect about +-2 cm.
+from inside the field does. A map cell is 2 cm, so expect about +-2 cm. Also reads the
+maps of rebuild_map.py (1 cm cells).
 """
 import math
 import os
@@ -102,19 +107,39 @@ def measure(pts):
         side = d[pick, k]
         return (float(np.median(side)) if len(side) >= 10 else float('nan')), int(len(side))
 
-    lo, hi = np.percentile(pts, 1, axis=0), np.percentile(pts, 99, axis=0)
-    centre = (lo + hi) / 2.0
-    island = None
-    for _ in range(3):                      # re-centre on the island's faces
+    def on_island(centre):
+        """Re-centre on the island's faces: (island, centre, cells on the faces and walls)."""
+        island = None
+        for _ in range(3):
+            d = pts - centre
+            f = [face(d, k, s, 0.2, 0.55) for k in (0, 1) for s in (-1, 1)]
+            if any(math.isnan(v) for v, _ in f):
+                return None, centre, 0
+            island = (np.array([f[0][0], f[2][0]]) + centre,
+                      np.array([f[1][0], f[3][0]]) + centre)
+            centre = (island[0] + island[1]) / 2.0
+        w, h = island[1] - island[0]
+        if not (0.4 < w < 1.1 and 0.4 < h < 1.1 and abs(w - h) < 0.1):
+            return None, centre, 0          # the island is square; an outer wall taken for a face
         d = pts - centre
-        f = [face(d, k, s, 0.2, 0.55)[0] for k in (0, 1) for s in (-1, 1)]
-        if any(math.isnan(v) for v in f):
-            island = None
-            break
-        island = (np.array([f[0], f[2]]) + centre, np.array([f[1], f[3]]) + centre)
-        centre = (island[0] + island[1]) / 2.0
+        walls = [face(d, k, s, 0.6, 1.2)[1] for k in (0, 1) for s in (-1, 1)]
+        return island, centre, sum(n for _, n in f) + sum(walls)
+
+    # Several starts, the one whose island faces and outer walls hold the most cells wins.
+    # (Before 2026-11-28 only the middle of the 1-99 % range: things outside the field, seen
+    # over the 10 cm walls, are > 1 % of the cells in some rebuilt maps and moved it off.)
+    lo, hi = np.percentile(pts, 1, axis=0), np.percentile(pts, 99, axis=0)
+    med = np.median(pts, axis=0)
+    starts = [(lo + hi) / 2.0, med] + [med + [dx, dy] for dx in np.arange(-0.3, 0.31, 0.15)
+                                       for dy in np.arange(-0.3, 0.31, 0.15)]
+    island, centre, best = None, (lo + hi) / 2.0, 0
+    for st in starts:
+        isl, c, n = on_island(np.asarray(st, dtype=float))
+        if isl is not None and n > best:
+            island, centre, best = isl, c, n
     d = pts - centre
-    out = {'island': (island[0] - centre, island[1] - centre) if island else None}
+    out = {'island': (island[0] - centre, island[1] - centre) if island else None,
+           'centre': centre}
     for k, names in ((0, ('left', 'right')), (1, ('bottom', 'top'))):
         for sign, name in ((-1, names[0]), (1, names[1])):
             out[name], out[name + '_n'] = face(d, k, sign, 0.6, 1.2)
@@ -144,6 +169,8 @@ def main(argv):
         print('   corridors: left %.1f, right %.1f, bottom %.1f, top %.1f cm'
               % (cm(ix0 - m['left']), cm(m['right'] - ix1), cm(iy0 - m['bottom']),
                  cm(m['top'] - iy1)))
+        if any(math.isnan(m[k]) for k in ('left', 'right', 'bottom', 'top')):
+            print('   INCOMPLETE map (an outer wall is missing): island and corridors not usable')
     return 0
 
 
