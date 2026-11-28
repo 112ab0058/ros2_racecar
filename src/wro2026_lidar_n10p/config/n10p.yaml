@@ -13,4 +13,4 @@ n10p_scan:
     range_offset_m: 0.036        # subtracted from every distance: tape vs lidar centre 2026-11-19 read +3.2 cm at 0.575 m, +4.0 cm at 0.975 m (README)
     scan_timeout: 1.0            # s
     echo2_topic: 'scan_echo2'    # the second echo as a LaserScan ('' = off); /scan carries the first echo's intensities (2026-11-27)
-    mask_sectors_deg: '168:181,186:190,195:221'  # hide our own car (ROS deg, 0 = front, CCW), each part plus one beam on both sides: a beam half on a part returns a mixed range when a wall is behind (11-26: the cable's edge beam 255 deg made the cw wrong points). Re-measured 2026-11-27 after Ray moved the cables (README); re-measure after moving cables
+    mask_sectors_deg: '168:181,184:192,195:222'  # hide our own car (ROS deg, 0 = front, CCW), each part plus one beam on both sides: a beam half on a part returns a mixed range when a wall is behind (11-26: the cable's edge beam 255 deg made the cw wrong points). Re-measured 2026-11-27 and 2026-11-28 at the field (cables shifted in transport; README); re-measure after moving cables
